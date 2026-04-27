@@ -5,9 +5,10 @@ export const KNOWN_ACCOUNTS_KEY = `${STORAGE_PREFIX}-known-accounts`;
 
 /**
  * Hash a per-account suffix so app-owned localStorage keys (snapshots, UI
- * options, etc.) don't leak between accounts.
+ * options, etc.) don't leak between accounts. Internal helper — callers
+ * should use accountSlot(address).key(base).
  */
-export function scopedKey(base, userAddress) {
+function scopedKey(base, userAddress) {
     if (!userAddress) return `${STORAGE_PREFIX}-${base}`;
     let h = 0;
     for (let i = 0; i < userAddress.length; i++) {
