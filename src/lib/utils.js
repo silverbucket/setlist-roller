@@ -133,37 +133,32 @@ export function tryParseJson(text, fallback) {
 
 export const DEFAULT_DIE_COLOR = "#e15b37";
 
-function parseHexChannel(hex, offset) {
-    const v = parseInt(hex.slice(offset, offset + 2), 16);
-    return Number.isFinite(v) ? v : 0;
+// Parse a #rrggbb string into [r, g, b]. Falls back to DEFAULT_DIE_COLOR
+// for any invalid input so callers don't have to guard.
+function parseHex(hex) {
+    const source = typeof hex === "string" && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : DEFAULT_DIE_COLOR;
+    return [parseInt(source.slice(1, 3), 16), parseInt(source.slice(3, 5), 16), parseInt(source.slice(5, 7), 16)];
 }
 
-function clampByte(v) {
-    return Math.min(255, Math.max(0, Math.round(v)));
+function toHexByte(v) {
+    return Math.min(255, Math.max(0, Math.round(v)))
+        .toString(16)
+        .padStart(2, "0");
 }
 
 export function hexToRgb(hex) {
-    if (typeof hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
-        return hexToRgb(DEFAULT_DIE_COLOR);
-    }
-    return `${parseHexChannel(hex, 1)}, ${parseHexChannel(hex, 3)}, ${parseHexChannel(hex, 5)}`;
+    const [r, g, b] = parseHex(hex);
+    return `${r}, ${g}, ${b}`;
 }
 
 export function hexToRgba(hex, alpha) {
-    if (typeof hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
-        return hexToRgba(DEFAULT_DIE_COLOR, alpha);
-    }
+    const [r, g, b] = parseHex(hex);
     const a = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
-    return `rgba(${parseHexChannel(hex, 1)}, ${parseHexChannel(hex, 3)}, ${parseHexChannel(hex, 5)}, ${a})`;
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
 export function darkenHex(hex, factor) {
-    if (typeof hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
-        return darkenHex(DEFAULT_DIE_COLOR, factor);
-    }
     const f = Number.isFinite(factor) ? Math.min(1, Math.max(0, factor)) : 1;
-    const r = clampByte(parseHexChannel(hex, 1) * f);
-    const g = clampByte(parseHexChannel(hex, 3) * f);
-    const b = clampByte(parseHexChannel(hex, 5) * f);
-    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+    const [r, g, b] = parseHex(hex);
+    return `#${toHexByte(r * f)}${toHexByte(g * f)}${toHexByte(b * f)}`;
 }

@@ -33,7 +33,6 @@
 
     let dieColor = $derived(store.appConfig?.ui?.dieColor || DEFAULT_DIE_COLOR);
     let dieColorRgb = $derived(hexToRgb(dieColor));
-    let customDieColor = $derived(store.appConfig?.ui?.dieColor || null);
 
     let faviconHref = $derived(
         `data:image/svg+xml,${encodeURIComponent(generateDieSvgString(dieColor))}`
@@ -45,25 +44,23 @@
 
     $effect(() => {
         const root = document.documentElement;
-        if (customDieColor) {
-            root.style.setProperty("--accent", customDieColor);
-            root.style.setProperty("--accent-strong", darkenHex(customDieColor, 0.85));
-            root.style.setProperty("--accent-soft", hexToRgba(customDieColor, 0.12));
-            root.style.setProperty("--accent-line", hexToRgba(customDieColor, 0.24));
-        } else {
-            root.style.removeProperty("--accent");
-            root.style.removeProperty("--accent-strong");
-            root.style.removeProperty("--accent-soft");
-            root.style.removeProperty("--accent-line");
-        }
+        root.style.setProperty("--accent", dieColor);
+        root.style.setProperty("--accent-strong", darkenHex(dieColor, 0.85));
+        root.style.setProperty("--accent-soft", hexToRgba(dieColor, 0.12));
+        root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
     // iOS standalone PWA: after the sync-shell → app-shell DOM swap,
     // WebKit's compositor has stale hit-test regions for the new
     // fixed-position elements (TopBar, BottomNav). A micro-scroll
     // forces the compositor to rebuild its layer hit-test tree.
+    // Account swaps re-flip initialSyncComplete (true → false → true);
+    // the nudge only matters on the first true after boot, so latch it.
+    let iosScrollNudged = false;
     $effect(() => {
+        if (iosScrollNudged) return;
         if (store.initialSyncComplete && isIosStandaloneAuthContext()) {
+            iosScrollNudged = true;
             requestAnimationFrame(() => {
                 const x = window.scrollX;
                 const y = window.scrollY;

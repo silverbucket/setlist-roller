@@ -8,7 +8,6 @@ import {
     KNOWN_ACCOUNTS_KEY,
     removeKnownAccountEntry,
     saveKnownAccount,
-    scopedKey,
 } from "./accounts.js";
 
 // ===================================================================
@@ -36,43 +35,37 @@ afterEach(() => {
 });
 
 // ===================================================================
-// scopedKey / accountSlot
+// accountSlot
 // ===================================================================
-describe("scopedKey", () => {
+describe("accountSlot", () => {
     it("returns unscoped key when no user address", () => {
-        expect(scopedKey("snapshot", "")).toBe("setlist-roller-snapshot");
-        expect(scopedKey("snapshot", undefined)).toBe("setlist-roller-snapshot");
+        expect(accountSlot("").key("snapshot")).toBe("setlist-roller-snapshot");
+        expect(accountSlot(undefined).key("snapshot")).toBe("setlist-roller-snapshot");
     });
 
     it("returns hashed key for a user address", () => {
-        const key = scopedKey("snapshot", "alice@example.com");
-        expect(key).toMatch(/^setlist-roller-snapshot-[a-z0-9]+$/);
+        expect(accountSlot("alice@example.com").key("snapshot")).toMatch(/^setlist-roller-snapshot-[a-z0-9]+$/);
     });
 
     it("produces different keys for different addresses", () => {
-        const a = scopedKey("snapshot", "alice@example.com");
-        const b = scopedKey("snapshot", "bob@example.com");
+        const a = accountSlot("alice@example.com").key("snapshot");
+        const b = accountSlot("bob@example.com").key("snapshot");
         expect(a).not.toBe(b);
     });
 
     it("produces the same key for the same address", () => {
-        const a = scopedKey("snapshot", "alice@example.com");
-        const b = scopedKey("snapshot", "alice@example.com");
+        const a = accountSlot("alice@example.com").key("snapshot");
+        const b = accountSlot("alice@example.com").key("snapshot");
         expect(a).toBe(b);
     });
 
     it("produces different keys for different bases", () => {
-        const a = scopedKey("snapshot", "alice@example.com");
-        const b = scopedKey("opts", "alice@example.com");
-        expect(a).not.toBe(b);
-    });
-});
-
-describe("accountSlot", () => {
-    it("derives the same key as scopedKey for the same address", () => {
         const slot = accountSlot("alice@example.com");
-        expect(slot.address).toBe("alice@example.com");
-        expect(slot.key("snapshot")).toBe(scopedKey("snapshot", "alice@example.com"));
+        expect(slot.key("snapshot")).not.toBe(slot.key("opts"));
+    });
+
+    it("exposes the address", () => {
+        expect(accountSlot("alice@example.com").address).toBe("alice@example.com");
     });
 
     it("isolates keys between accounts", () => {

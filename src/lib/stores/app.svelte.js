@@ -164,7 +164,6 @@ export function createAppStore(repo) {
     let appConfig = $state(null);
     let bootstrapMeta = $state(null);
     let generatedSetlist = $state(null);
-    let setlistViewVersion = $state(0);
     let isGenerating = $state(false);
     let activeWorker = null;
     let generationId = 0;
@@ -467,7 +466,6 @@ export function createAppStore(repo) {
 
     function replaceGeneratedSetlist(nextSetlist) {
         generatedSetlist = nextSetlist;
-        if (nextSetlist) setlistViewVersion += 1;
     }
 
     function updateCurrentSetlist(nextSetlist) {
@@ -2567,7 +2565,6 @@ export function createAppStore(repo) {
         get appConfig() { return appConfig; },
         get bandMembers() { return bandMembers; },
         get generatedSetlist() { return generatedSetlist; },
-        get setlistViewVersion() { return setlistViewVersion; },
         get isGenerating() { return isGenerating; },
         get setlistLocked() { return setlistLocked; },
         get setlistSaved() { return setlistSaved; },
