@@ -11,8 +11,12 @@
         "test:watch": "vitest",
         "test:e2e": "playwright test --project=chromium",
         "test:e2e:mobile": "playwright test --project=mobile",
-        "test:e2e:all": "playwright test",
+        "test:e2e:real": "playwright test --project=real-chromium",
+        "test:e2e:all": "playwright test --project=chromium --project=mobile",
         "test:e2e:ui": "playwright test --ui",
+        "armadietto:up": "docker compose up -d",
+        "armadietto:down": "docker compose down",
+        "armadietto:reset": "docker compose down -v && docker compose up -d",
         "lint": "biome check .",
         "lint:fix": "biome check --write .",
         "format": "biome format --write ."
@@ -26,6 +30,7 @@
         "@biomejs/biome": "2.4.10",
         "@playwright/test": "^1.59.1",
         "@sveltejs/vite-plugin-svelte": "^5.0.3",
+        "jsdom": "^29.1.0",
         "vite": "^6.2.4",
         "vite-plugin-pwa": "^1.2.0",
         "vitest": "^3.2.4"

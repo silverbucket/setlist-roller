@@ -2,6 +2,82 @@ import RemoteStorage from "remotestoragejs";
 import { createDefaultAppConfig, normalizeAppConfig, normalizeSongRecord, sortSongs } from "./defaults.js";
 import { clone, nowIso } from "./utils.js";
 
+// Re-enable WebFinger lookups against localhost / private-IP RS servers.
+//
+// webfinger.js v3 (a transitive dep of remotestoragejs >=2.0.0-beta.9) added an
+// `allow_private_addresses` config flag that defaults to `false`. With it off,
+// `WebFinger#resolveAndValidateHost` throws `private or internal addresses are
+// not allowed` BEFORE any HTTP request fires for any host that matches its
+// private/localhost regex. rs.js's `Discover` constructs WebFinger without the
+// flag, so `rs.connect("user@localhost:8000")` (and any private-LAN address)
+// fails synchronously with a `DiscoveryError` and the app sits on
+// "Connecting…" forever — that's exactly the user-reported regression after
+// the beta.8 → beta.9 upgrade in PR #87.
+//
+// We can't fix this by monkey-patching `webfinger.js` from our app: rs.js's
+// published bundle inlines its own copy, so the `WebFinger` class we'd patch
+// from `import WebFinger from 'webfinger.js'` is a different class than the
+// one rs.js's `Discover` instantiates. Instead we replace `RemoteStorage.Discover`
+// outright — `connect()` calls `RemoteStorage.Discover(userAddress)` (see
+// `src/remotestorage.ts` in rs.js), so swapping the static gets us in front of
+// every lookup. Our replacement does the same WebFinger lookup with raw `fetch`,
+// which is gated by browser CORS already — the v3 SSRF protection is a
+// server-side concern that doesn't apply here.
+//
+// Track removal at remotestorage/remotestorage.js#1384 — once rs.js sets
+// `allow_private_addresses: true` (or exposes it as a constructor option), the
+// hack goes away. Adapted from inbox-rs PR #105.
+{
+    const RS_LINK_RELS = new Set(["remotestorage", "http://tools.ietf.org/id/draft-dejong-remotestorage"]);
+    const AUTH_URL_PROPS = ["http://tools.ietf.org/html/rfc6749#section-4.2", "auth-endpoint"];
+
+    // Hosts we treat as plain HTTP (no TLS) when building the webfinger URL.
+    // Anything in this list is also a `webfinger.js` "private" host, which
+    // is exactly the case we're working around. Public hosts go through
+    // HTTPS as the spec requires.
+    const PLAIN_HTTP_HOST_RE = /^(localhost|127\.[0-9.]+|\[?::1\]?|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/;
+
+    const customDiscover = (userAddress) => {
+        const at = userAddress.lastIndexOf("@");
+        if (at < 0) return Promise.reject(new Error("Invalid user address"));
+        const host = userAddress.slice(at + 1);
+        const hostNoPort = host.split(":")[0];
+        const scheme = PLAIN_HTTP_HOST_RE.test(host) || PLAIN_HTTP_HOST_RE.test(hostNoPort) ? "http" : "https";
+        const url = `${scheme}://${host}/.well-known/webfinger?resource=acct:${encodeURIComponent(userAddress)}`;
+
+        return fetch(url).then(async (resp) => {
+            if (!resp.ok) throw new Error(`WebFinger failed: ${resp.status}`);
+            const data = await resp.json();
+            const link = Array.isArray(data?.links)
+                ? data.links.find((l) => l?.rel && RS_LINK_RELS.has(l.rel))
+                : undefined;
+            if (!link?.href) throw new Error("No remoteStorage link in WebFinger response");
+            const properties = link.properties ?? {};
+            const storageApi =
+                (typeof link.type === "string" ? link.type : undefined) ??
+                (typeof properties["http://remotestorage.io/spec/version"] === "string"
+                    ? properties["http://remotestorage.io/spec/version"]
+                    : undefined);
+            let authURL;
+            for (const key of AUTH_URL_PROPS) {
+                const v = properties[key];
+                if (typeof v === "string") {
+                    authURL = v;
+                    break;
+                }
+            }
+            return { href: link.href, storageApi, authURL, properties };
+        });
+    };
+
+    // Preserve `RemoteStorage.Discover.DiscoveryError` — rs.js's connect path
+    // throws `new RemoteStorage.DiscoveryError(...)`, and the static type also
+    // surfaces it as `Discover.DiscoveryError`.
+    const original = RemoteStorage.Discover;
+    customDiscover.DiscoveryError = original?.DiscoveryError;
+    RemoteStorage.Discover = customDiscover;
+}
+
 const APP_SCOPE = "setlist-roller";
 const TYPES = {
     song: "setlist-roller-song",
@@ -214,7 +290,7 @@ export function createRemoteStorageRepository() {
             conflict: true,
             window: false,
         },
-        logging: false,
+        logging: typeof window !== "undefined" && window.localStorage?.getItem("__SR_RS_DEBUG__") === "1",
     });
 
     const localEventHandlers = new Map();

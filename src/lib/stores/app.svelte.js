@@ -49,19 +49,6 @@ export function normalizeAuthToken(token) {
     return typeof token === "string" && token.length > 0 ? token : undefined;
 }
 
-// Sanity-check a remoteStorage address before handing it to webfinger
-// discovery. Accepts either `user@host.tld` or a bare `host.tld`. We
-// can't validate that the host actually serves remoteStorage without a
-// network round-trip — this just rejects obvious typos so the user
-// gets immediate feedback instead of a 1–3 s spinner ending in a
-// confusing rs.js error.
-const CONNECT_ADDRESS_RE = /^([^\s@]+@)?[^\s@.]+\.[^\s@]+$/;
-
-export function isValidConnectAddress(address) {
-    if (typeof address !== "string") return false;
-    return CONNECT_ADDRESS_RE.test(address.trim());
-}
-
 export function syncSavedSongIntoSetlist(setlist, savedSong, appConfig, keyFlow = false) {
     if (!setlist?.songs?.length || !savedSong?.id) return setlist;
 
@@ -752,12 +739,13 @@ export function createAppStore(repo) {
             toastError("Put in a remoteStorage address first.");
             return;
         }
-        if (!isValidConnectAddress(trimmed)) {
-            // Inline error — webfinger would otherwise spin 1–3 s before
-            // reporting a confusing DiscoveryError.
-            loadError = "That doesn't look like a remoteStorage address. Try user@host or host.tld.";
-            return;
-        }
+        // Address shape validation is webfinger.js's job — it knows the
+        // full set of valid remoteStorage address forms (user@host,
+        // bare host, IPs, single-label hostnames like `localhost`, etc.)
+        // and surfaces real failures via the existing DiscoveryError
+        // path. Duplicating that check here would just relitigate the
+        // same rules with worse coverage. The empty-input guard above
+        // stays because we don't want to send an empty string at all.
         const normalizedToken = normalizeAuthToken(token);
         clearSyncLog();
         connectionStatus = "connecting";
@@ -1060,8 +1048,18 @@ export function createAppStore(repo) {
             if (!errors.bootstrap) {
                 bootstrapMeta = data.bootstrap;
             }
-            if (!errors.config) {
-                appConfig = data.config ? normalizeAppConfig(data.config) : null;
+            // Single-doc slices (config) need an extra-careful policy: a
+            // null read does NOT mean "remote returned no config" during a
+            // post-swap bootstrap window — rs.js's cache for the new
+            // account hasn't loaded the body yet, so getObject resolves
+            // with null. Blanking appConfig here would tip
+            // showFirstRunPrompt true and bounce a returning user into the
+            // band-name modal even though they have a perfectly good
+            // config locally (snapshot) and remotely. Genuine config
+            // deletion arrives via a remote-origin onChange event with a
+            // null newValue (see detachChange below) and is handled there.
+            if (!errors.config && data.config) {
+                appConfig = normalizeAppConfig(data.config);
             }
             if (data.setlists !== undefined) {
                 savedSetlists = stripEnergy(data.setlists);

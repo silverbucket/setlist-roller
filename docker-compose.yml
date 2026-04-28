@@ -1,0 +1,18 @@
+# Local remoteStorage server for real-backend e2e tests. Used by the
+# `npm run test:e2e:real` Playwright project, which exercises the full
+# discovery + OAuth + sync stack against a real RS server instead of the
+# in-memory fake-repo. Adapted from the inbox-rs project's setup.
+services:
+  armadietto:
+    build:
+      context: .
+      dockerfile: Dockerfile.armadietto
+    ports:
+      # Maps to host port used in tests/real-e2e/* and the playwright project
+      # config; keep in sync with the SR_RS_HOST env var if you change it.
+      - "8000:8000"
+    volumes:
+      - rs-data:/data
+
+volumes:
+  rs-data:

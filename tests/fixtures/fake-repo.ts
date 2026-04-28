@@ -6,6 +6,16 @@
  *
  * Tests can pre-seed state by setting `window.__SR_FAKE_SEED__` before
  * navigating, and can drive the repo at runtime via `window.__SR_REPO__`.
+ *
+ * Two behaviors that mirror the real rs.js library so tests can exercise
+ * full connect / swap / reload lifecycles:
+ *   - Per-account data isolation. Each user address has its own in-memory
+ *     bucket; switching accounts does not leak songs/config/etc.
+ *   - Session persistence across page reloads. The connected user's address
+ *     and token are written to localStorage on connect (under a fake-repo
+ *     namespace), and the factory reads them back on construction, firing
+ *     a synthetic `connected` event the way rs.js does. Without this the
+ *     "refresh stays logged in" path was unreachable in tests.
  */
 
 /**
@@ -19,9 +29,23 @@ export type SeedMember = { name: string; [key: string]: unknown };
 export type SeedConfig = { bandName?: string; [key: string]: unknown };
 export type SeedBootstrap = { [key: string]: unknown };
 
+export type SeedUserData = {
+    songs?: Record<string, SeedSong>;
+    setlists?: Record<string, SeedSetlist>;
+    members?: Record<string, SeedMember>;
+    config?: SeedConfig | null;
+    bootstrap?: SeedBootstrap | null;
+};
+
 export type FakeRepoSeed = {
     /** When set, the repo boots in connected state with this user address */
     autoConnectAs?: string;
+    /**
+     * Per-user data buckets. The auto-connect user reads from `users[address]`
+     * if present; otherwise from the top-level legacy fields below (kept for
+     * backward compatibility with existing single-user tests).
+     */
+    users?: Record<string, SeedUserData>;
     songs?: Record<string, SeedSong>;
     setlists?: Record<string, SeedSetlist>;
     members?: Record<string, SeedMember>;
@@ -40,24 +64,85 @@ export const FAKE_REPO_INIT_SCRIPT = `
     window.__SR_FAKE_REPO_INSTALLED__ = true;
     window.__SR_TEST__ = true;
 
+    // localStorage keys used to persist the fake-repo session across reloads,
+    // mirroring how the real rs.js writes its session into localStorage.
+    const SESSION_USER_KEY = "__SR_FAKE_SESSION_USER__";
+    const SESSION_TOKEN_KEY = "__SR_FAKE_SESSION_TOKEN__";
+
     function clone(value) { return JSON.parse(JSON.stringify(value)); }
     function nowIso() { return new Date().toISOString(); }
 
+    function readSession() {
+        try {
+            const user = localStorage.getItem(SESSION_USER_KEY) || "";
+            const token = localStorage.getItem(SESSION_TOKEN_KEY) || "";
+            return user ? { user, token } : null;
+        } catch { return null; }
+    }
+    function writeSession(user, token) {
+        try {
+            localStorage.setItem(SESSION_USER_KEY, user || "");
+            localStorage.setItem(SESSION_TOKEN_KEY, token || "");
+        } catch { /* ignore */ }
+    }
+    function clearSession() {
+        try {
+            localStorage.removeItem(SESSION_USER_KEY);
+            localStorage.removeItem(SESSION_TOKEN_KEY);
+        } catch { /* ignore */ }
+    }
+
     function createFakeRepo() {
         const seed = window.__SR_FAKE_SEED__ || {};
-        // Independent in-memory stores per repo instance.
-        const data = {
-            songs: clone(seed.songs || {}),
-            setlists: clone(seed.setlists || {}),
-            members: clone(seed.members || {}),
-            config: seed.config ? clone(seed.config) : null,
-            bootstrap: seed.bootstrap ? clone(seed.bootstrap) : null,
-        };
+
+        // Per-account in-memory data buckets so account swaps don't leak
+        // data between users. We seed the auto-connect user's bucket from
+        // either seed.users[addr] or (legacy) the top-level seed fields,
+        // and lazy-create empty buckets for any other address that connects.
+        const userBuckets = {};
+        function emptyBucket() {
+            return { songs: {}, setlists: {}, members: {}, config: null, bootstrap: null };
+        }
+        function ensureBucket(address) {
+            if (!address) return emptyBucket();
+            if (!userBuckets[address]) {
+                const seeded = seed.users && seed.users[address];
+                if (seeded) {
+                    userBuckets[address] = {
+                        songs: clone(seeded.songs || {}),
+                        setlists: clone(seeded.setlists || {}),
+                        members: clone(seeded.members || {}),
+                        config: seeded.config ? clone(seeded.config) : null,
+                        bootstrap: seeded.bootstrap ? clone(seeded.bootstrap) : null,
+                    };
+                } else {
+                    userBuckets[address] = emptyBucket();
+                }
+            }
+            return userBuckets[address];
+        }
+
+        // Legacy single-bucket seed: if the test set top-level songs/config/etc.
+        // and an autoConnectAs, hydrate that user's bucket from those fields.
+        if (seed.autoConnectAs && !(seed.users && seed.users[seed.autoConnectAs])) {
+            userBuckets[seed.autoConnectAs] = {
+                songs: clone(seed.songs || {}),
+                setlists: clone(seed.setlists || {}),
+                members: clone(seed.members || {}),
+                config: seed.config ? clone(seed.config) : null,
+                bootstrap: seed.bootstrap ? clone(seed.bootstrap) : null,
+            };
+        }
 
         let connected = false;
         let userAddress = "";
         let token = "";
         let syncIntervalMs = 10000;
+
+        // Currently-active data bucket — points at userBuckets[userAddress]
+        // when connected. Reads/writes go through this so they always hit
+        // the connected user.
+        let data = emptyBucket();
 
         const listeners = new Map();
         const changeListeners = new Set();
@@ -94,15 +179,21 @@ export const FAKE_REPO_INIT_SCRIPT = `
             });
         }
 
+        function activateUser(addr, tok) {
+            userAddress = String(addr || "").trim();
+            token = tok || "";
+            data = ensureBucket(userAddress);
+            connected = true;
+        }
+
         const repo = {
             // Public test helpers — not part of the production interface.
             __isFake: true,
-            __seed: data,
+            __buckets: userBuckets,
 
             connect(addr, tok) {
-                userAddress = String(addr || "").trim();
-                token = tok || "";
-                connected = true;
+                activateUser(addr, tok);
+                writeSession(userAddress, token);
                 emitAsync("connecting");
                 emitAsync("connected");
                 emitAsync("sync-done", { completed: true });
@@ -112,6 +203,8 @@ export const FAKE_REPO_INIT_SCRIPT = `
                 connected = false;
                 userAddress = "";
                 token = "";
+                data = emptyBucket();
+                clearSession();
                 emitAsync("disconnected");
             },
 
@@ -120,9 +213,8 @@ export const FAKE_REPO_INIT_SCRIPT = `
                     connected = false;
                     emit("disconnected");
                 }
-                userAddress = String(addr || "").trim();
-                token = tok || "";
-                connected = true;
+                activateUser(addr, tok);
+                writeSession(userAddress, token);
                 emitAsync("connecting");
                 emitAsync("connected");
                 emitAsync("sync-done", { completed: true });
@@ -179,6 +271,7 @@ export const FAKE_REPO_INIT_SCRIPT = `
                     setlists: setlistsRes.setlists,
                     members: membersRes.members,
                     pendingBodies: 0,
+                    errors: {},
                 };
             },
 
@@ -288,20 +381,48 @@ export const FAKE_REPO_INIT_SCRIPT = `
             },
         };
 
-        // Auto-connect path: tests can boot the app already connected by setting
-        // __SR_FAKE_SEED__.autoConnectAs. Without this, every test would have
-        // to walk the connection screen. The address is what determines the
-        // localStorage key prefix the app uses for snapshots.
-        if (seed.autoConnectAs) {
+        // Boot path. Order of precedence:
+        //   1. Persisted fake-repo session in localStorage — this user was
+        //      already connected on the previous page load. Restore them
+        //      transparently so reload-stays-logged-in works in tests.
+        //   2. seed.autoConnectAs — explicit test seed for cold-boot
+        //      auto-connect.
+        //   3. Otherwise fire "not-connected" so the app shows the connect
+        //      screen.
+        const persistedSession = readSession();
+        if (persistedSession) {
+            // Make sure the bucket exists so listSongs/etc. don't blow up.
+            ensureBucket(persistedSession.user);
+            try {
+                const KNOWN_ACCOUNTS_KEY = "setlist-roller-known-accounts";
+                const existing = JSON.parse(localStorage.getItem(KNOWN_ACCOUNTS_KEY) || "[]");
+                if (!existing.find((a) => a.address === persistedSession.user)) {
+                    existing.push({
+                        address: persistedSession.user,
+                        metadata: { bandName: userBuckets[persistedSession.user]?.config?.bandName || "" },
+                        token: persistedSession.token || "",
+                        lastUsed: nowIso(),
+                    });
+                    localStorage.setItem(KNOWN_ACCOUNTS_KEY, JSON.stringify(existing));
+                }
+            } catch { /* ignore */ }
+            setTimeout(() => {
+                activateUser(persistedSession.user, persistedSession.token);
+                emit("connecting");
+                emit("connected");
+                emit("sync-done", { completed: true });
+            }, 0);
+        } else if (seed.autoConnectAs) {
             // Seed the accounts list so the app sees a "known" account.
             try {
                 const KNOWN_ACCOUNTS_KEY = "setlist-roller-known-accounts";
                 const existing = JSON.parse(localStorage.getItem(KNOWN_ACCOUNTS_KEY) || "[]");
                 const has = existing.find((a) => a.address === seed.autoConnectAs);
                 if (!has) {
+                    const seededBucket = userBuckets[seed.autoConnectAs];
                     existing.push({
                         address: seed.autoConnectAs,
-                        metadata: { bandName: data.config?.bandName || "" },
+                        metadata: { bandName: seededBucket?.config?.bandName || "" },
                         token: "fake-token",
                         lastUsed: nowIso(),
                     });
@@ -313,8 +434,8 @@ export const FAKE_REPO_INIT_SCRIPT = `
             // reconnect. Wrapped in setTimeout so any listeners registered by
             // the store after construction are in place before events fire.
             setTimeout(() => {
-                userAddress = seed.autoConnectAs;
-                connected = true;
+                activateUser(seed.autoConnectAs, "fake-token");
+                writeSession(userAddress, token);
                 emit("connecting");
                 emit("connected");
                 emit("sync-done", { completed: true });

@@ -30,6 +30,13 @@ export default defineConfig({
     // Without this exclude, vitest picks up tests/e2e/*.spec.ts and Playwright's
     // test.describe() throws because it's running under the wrong runner.
     test: {
-        exclude: ["tests/e2e/**", "tests/pages/**", "tests/fixtures/**", "node_modules/**", "dist/**"],
+        exclude: [
+            "tests/e2e/**",
+            "tests/real-e2e/**",
+            "tests/pages/**",
+            "tests/fixtures/**",
+            "node_modules/**",
+            "dist/**",
+        ],
     },
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_APP_CONFIG } from "../defaults.js";
-import { createAppStore, isValidConnectAddress, normalizeAuthToken, syncSavedSongIntoSetlist } from "./app.svelte.js";
+import { createAppStore, normalizeAuthToken, syncSavedSongIntoSetlist } from "./app.svelte.js";
 
 afterEach(() => {
     vi.useRealTimers();
@@ -16,38 +16,6 @@ describe("normalizeAuthToken", () => {
         expect(normalizeAuthToken({ type: "click" })).toBeUndefined();
         expect(normalizeAuthToken("")).toBeUndefined();
         expect(normalizeAuthToken(null)).toBeUndefined();
-    });
-});
-
-describe("isValidConnectAddress", () => {
-    it("accepts user@host addresses", () => {
-        expect(isValidConnectAddress("nick@silverbucket.net")).toBe(true);
-        expect(isValidConnectAddress("user@5apps.com")).toBe(true);
-    });
-
-    it("accepts bare host names", () => {
-        expect(isValidConnectAddress("storage.example.com")).toBe(true);
-        expect(isValidConnectAddress("example.org")).toBe(true);
-    });
-
-    it("trims whitespace before validating", () => {
-        expect(isValidConnectAddress("  nick@silverbucket.net  ")).toBe(true);
-    });
-
-    it("rejects obvious garbage", () => {
-        expect(isValidConnectAddress("not an address")).toBe(false);
-        expect(isValidConnectAddress("nick@")).toBe(false);
-        expect(isValidConnectAddress("@example.com")).toBe(false);
-        expect(isValidConnectAddress("nohost")).toBe(false);
-        expect(isValidConnectAddress(".com")).toBe(false);
-        expect(isValidConnectAddress("")).toBe(false);
-        expect(isValidConnectAddress("   ")).toBe(false);
-    });
-
-    it("rejects non-string input", () => {
-        expect(isValidConnectAddress(null)).toBe(false);
-        expect(isValidConnectAddress(undefined)).toBe(false);
-        expect(isValidConnectAddress(42)).toBe(false);
     });
 });
 
