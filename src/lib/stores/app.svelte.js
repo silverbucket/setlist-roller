@@ -49,41 +49,6 @@ export function normalizeAuthToken(token) {
     return typeof token === "string" && token.length > 0 ? token : undefined;
 }
 
-export function syncSavedSongIntoSetlist(setlist, savedSong, appConfig, keyFlow = false) {
-    if (!setlist?.songs?.length || !savedSong?.id) return setlist;
-
-    let changed = false;
-    const syncedSongs = setlist.songs.map((song) => {
-        if (song.id !== savedSong.id) return song;
-
-        const nextSong = {
-            ...song,
-            name: savedSong.name,
-            cover: savedSong.cover || false,
-            instrumental: savedSong.instrumental || false,
-            key: savedSong.key || "",
-            notes: savedSong.notes || "",
-        };
-
-        if (
-            nextSong.name !== song.name ||
-            nextSong.cover !== song.cover ||
-            nextSong.instrumental !== song.instrumental ||
-            nextSong.key !== song.key ||
-            nextSong.notes !== song.notes
-        ) {
-            changed = true;
-        }
-
-        return nextSong;
-    });
-
-    if (!changed) return setlist;
-
-    const rescored = scoreFixedOrder(syncedSongs, appConfig || DEFAULT_APP_CONFIG, { keyFlow });
-    return { ...setlist, songs: rescored.songs, summary: rescored.summary };
-}
-
 export function createAppStore(repo) {
     // ---- per-user localStorage scoping ----
     let currentUserAddress = "";
@@ -456,38 +421,91 @@ export function createAppStore(repo) {
         localStorage.setItem(storageKey("ui-options"), JSON.stringify(generationOptions));
     }
 
-    function replaceGeneratedSetlist(nextSetlist) {
-        generatedSetlist = nextSetlist;
-    }
-
-    function updateCurrentSetlist(nextSetlist) {
-        generatedSetlist = nextSetlist;
-    }
-
     function clearGeneratedSetlist() {
         generatedSetlist = null;
         loadedSavedId = "";
     }
 
-    // Strip deprecated "energy" field and energy-related notes from saved setlist songs
-    function stripEnergy(sets) {
-        if (!Array.isArray(sets)) return sets;
-        return sets.map((s) => ({
-            ...s,
-            songs: (s.songs || []).map((song) => {
-                const { energy, ...rest } = song;
-                return {
-                    ...rest,
-                    transitionNotes: (rest.transitionNotes || []).filter((n) => !/energy/i.test(n)),
-                    contextNotes: (rest.contextNotes || []).filter((n) => !/energy/i.test(n)),
-                };
-            }),
+    // Catalog lookup table. Recomputes whenever `songs` changes, which is
+    // what makes the displayed setlists below auto-refresh on RS pulls and
+    // local edits — no manual sync paths required.
+    let songsById = $derived(new Map((songs || []).map((s) => [s.id, s])));
+
+    // Take a lean setlist + the live catalog and produce the fully-fat
+    // form that views render: catalog fields overlaid, scores and summary
+    // recomputed by scoreFixedOrder. Songs whose ids no longer exist in
+    // the catalog are filtered out — saved setlists shrink gracefully when
+    // their referenced songs have been deleted.
+    function hydrateSetlist(setlist) {
+        if (!setlist || !Array.isArray(setlist.songs)) return setlist || null;
+        const fat = [];
+        for (const entry of setlist.songs) {
+            const song = songsById.get(entry.songId);
+            if (song) fat.push({ ...song, performance: entry.performance || {} });
+        }
+        const scored = scoreFixedOrder(fat, appConfig || DEFAULT_APP_CONFIG, {
+            keyFlow: generationOptions?.keyFlow,
+        });
+        return {
+            ...setlist,
+            songs: scored.songs,
+            summary: {
+                ...scored.summary,
+                minimumsRelaxed: !!setlist.minimumsRelaxed,
+                openerFilterRelaxed: !!setlist.openerFilterRelaxed,
+                closerFilterRelaxed: !!setlist.closerFilterRelaxed,
+            },
+        };
+    }
+
+    let displayedSetlist = $derived(hydrateSetlist(generatedSetlist));
+    let displayedSavedSetlists = $derived((savedSetlists || []).map(hydrateSetlist));
+
+    // Strip a generator/scoring result down to the lean persisted shape:
+    // each setlist entry keeps only what isn't derivable from the catalog
+    // (the song reference and the rolled performance choice). Generation
+    // metadata moves to top-level fields; the scored summary is recomputed
+    // at display time inside hydrateSetlist().
+    function leanFromGeneratorResult(result) {
+        if (!result) return null;
+        const summary = result.summary || {};
+        return {
+            seed: result.seed,
+            minimumsRelaxed: !!summary.minimumsRelaxed,
+            openerFilterRelaxed: !!summary.openerFilterRelaxed,
+            closerFilterRelaxed: !!summary.closerFilterRelaxed,
+            songs: (result.songs || []).map((s) => ({
+                songId: s.id,
+                performance: s.performance || {},
+            })),
+        };
+    }
+
+    // Detect a pre-refactor (fat) saved/persisted setlist where each song
+    // entry carries embedded catalog fields, and convert it to the lean
+    // shape. Idempotent — already-lean entries pass through unchanged.
+    function normalizeLeanSetlist(setlist) {
+        if (!setlist || !Array.isArray(setlist.songs)) return setlist;
+        const songs = setlist.songs.map((s) => ({
+            songId: s.songId || s.id,
+            performance: s.performance || {},
         }));
+        const out = { ...setlist, songs };
+        if (out.summary) {
+            for (const flag of ["minimumsRelaxed", "openerFilterRelaxed", "closerFilterRelaxed"]) {
+                if (out.summary[flag] !== undefined && out[flag] === undefined) out[flag] = out.summary[flag];
+            }
+            delete out.summary;
+        }
+        delete out.songNames;
+        delete out.songCount;
+        return out;
     }
 
     function loadCurrentSetlist() {
         if (typeof localStorage === "undefined") return null;
-        return tryParseJson(localStorage.getItem(storageKey("current-set")), null);
+        const raw = tryParseJson(localStorage.getItem(storageKey("current-set")), null);
+        return normalizeLeanSetlist(raw);
     }
 
     function persistCurrentSetlist() {
@@ -523,7 +541,7 @@ export function createAppStore(repo) {
     function loadUserLocalData() {
         const current = loadCurrentSetlist();
         const locked = current?._locked || false;
-        if (locked) replaceGeneratedSetlist(current);
+        if (locked) generatedSetlist = current;
         else clearGeneratedSetlist();
         setlistLocked = locked;
         setlistSaved = false;
@@ -955,7 +973,7 @@ export function createAppStore(repo) {
             if (!data.config) return false;
             songs = (data.songs || []).map(normalizeSongRecord);
             appConfig = normalizeAppConfig(data.config);
-            savedSetlists = stripEnergy(data.setlists || []);
+            savedSetlists = (data.setlists || []).map((s) => migrator.migrateDocument("setlists", s));
             bandMembers = Object.fromEntries(
                 Object.entries(data.members || {}).map(([name, d]) => [name, normalizeMemberRecord(d)])
             );
@@ -1065,7 +1083,7 @@ export function createAppStore(repo) {
                 appConfig = normalizeAppConfig(data.config);
             }
             if (data.setlists !== undefined) {
-                savedSetlists = stripEnergy(data.setlists);
+                savedSetlists = data.setlists.map((s) => migrator.migrateDocument("setlists", s));
             }
             if (data.members !== undefined) {
                 bandMembers = Object.fromEntries(
@@ -1296,7 +1314,7 @@ export function createAppStore(repo) {
                 ]));
                 return;
             }
-            replaceGeneratedSetlist(result);
+            generatedSetlist = leanFromGeneratorResult(result);
             if (opts._keepLock) {
                 setlistSaved = false;
             } else {
@@ -1349,7 +1367,6 @@ export function createAppStore(repo) {
     async function saveCurrentSetlist() {
         if (!generatedSetlist) return;
         const currentSaved = savedSetlists || [];
-        const songNames = generatedSetlist.songs.map(s => s.name || s.title || "?");
 
         // If this setlist was loaded from a saved entry, update that entry in
         // place instead of creating a duplicate with a new id and name.
@@ -1358,11 +1375,11 @@ export function createAppStore(repo) {
             if (existing) {
                 await updateSavedSetlist(loadedSavedId, {
                     savedAt: nowIso(),
-                    summary: clone(generatedSetlist.summary),
-                    songs: clone(generatedSetlist.songs),
-                    songNames,
                     seed: generatedSetlist.seed,
-                    songCount: generatedSetlist.songs.length,
+                    minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
+                    openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
+                    closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
+                    songs: clone(generatedSetlist.songs),
                 });
                 setlistSaved = true;
                 return;
@@ -1389,11 +1406,12 @@ export function createAppStore(repo) {
             id: uid("set"),
             name: randomName,
             savedAt: nowIso(),
-            summary: clone(generatedSetlist.summary),
-            songs: clone(generatedSetlist.songs),
-            songNames,
+            schemaVersion: 2,
             seed: generatedSetlist.seed,
-            songCount: generatedSetlist.songs.length
+            minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
+            openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
+            closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
+            songs: clone(generatedSetlist.songs),
         };
         try {
             await withSync("Saving setlist", () => repo.putSetlist(entry));
@@ -1430,78 +1448,71 @@ export function createAppStore(repo) {
     function loadSavedSetlist(id) {
         const saved = savedSetlists.find((s) => s.id === id);
         if (!saved) return;
-        replaceGeneratedSetlist({
-            songs: clone(saved.songs),
-            summary: clone(saved.summary),
+        const valid = (saved.songs || []).filter((e) => songsById.has(e.songId));
+        const dropped = (saved.songs || []).length - valid.length;
+        generatedSetlist = {
             seed: saved.seed,
-        });
+            minimumsRelaxed: !!saved.minimumsRelaxed,
+            openerFilterRelaxed: !!saved.openerFilterRelaxed,
+            closerFilterRelaxed: !!saved.closerFilterRelaxed,
+            songs: valid.map((e) => ({ songId: e.songId, performance: e.performance || {} })),
+        };
         setlistLocked = true;
         setlistSaved = true;
         loadedSavedId = id;
         persistCurrentSetlist();
-        toastInfo(`Loaded ${saved.songs?.length || 0}-song set.`);
+        if (dropped > 0) {
+            toastWarn(`Skipped ${dropped} song${dropped === 1 ? "" : "s"} no longer in your catalog.`);
+        }
+        toastInfo(`Loaded ${valid.length}-song set.`);
     }
 
+    // Mutation helpers operate on the lean entries — no rescoring needed,
+    // since `displayedSetlist` runs scoreFixedOrder() in its derivation
+    // chain whenever the underlying data changes.
     function reorderSetlistSong(fromIndex, toIndex) {
         if (!generatedSetlist) return;
-        const songList = clone(generatedSetlist.songs);
-        const [moved] = songList.splice(fromIndex, 1);
-        songList.splice(toIndex, 0, moved);
-        const rescored = scoreFixedOrder(songList, appConfig, { keyFlow: generationOptions.keyFlow });
-        updateCurrentSetlist({ ...generatedSetlist, songs: rescored.songs, summary: rescored.summary });
+        const list = [...generatedSetlist.songs];
+        const [moved] = list.splice(fromIndex, 1);
+        list.splice(toIndex, 0, moved);
+        generatedSetlist = { ...generatedSetlist, songs: list };
         setlistSaved = false;
         persistCurrentSetlist();
     }
 
     function removeSetlistSong(index) {
         if (!generatedSetlist) return;
-        const songList = clone(generatedSetlist.songs);
-        songList.splice(index, 1);
-        if (!songList.length) {
+        const list = [...generatedSetlist.songs];
+        list.splice(index, 1);
+        if (!list.length) {
             clearGeneratedSetlist();
             setlistLocked = false;
             setlistSaved = false;
             persistCurrentSetlist();
             return;
         }
-        const rescored = scoreFixedOrder(songList, appConfig, { keyFlow: generationOptions.keyFlow });
-        updateCurrentSetlist({ ...generatedSetlist, songs: rescored.songs, summary: rescored.summary });
+        generatedSetlist = { ...generatedSetlist, songs: list };
         setlistSaved = false;
         persistCurrentSetlist();
     }
 
     function addSetlistSong(songId) {
         if (!generatedSetlist) return;
-        if (generatedSetlist.songs.some((s) => s.id === songId)) return;
-        const song = songs.find((s) => s.id === songId);
+        if (generatedSetlist.songs.some((s) => s.songId === songId)) return;
+        const song = songsById.get(songId);
         if (!song) return;
         const performance = buildDefaultPerformance(song, generationOptions?.show || {});
-        const songList = clone(generatedSetlist.songs);
-        songList.push({
-            id: song.id,
-            name: song.name,
-            cover: song.cover || false,
-            instrumental: song.instrumental || false,
-            key: song.key || "",
-            notes: song.notes || "",
-            performance,
-            // position is intentionally omitted; scoreFixedOrder re-stamps it
-            // after rescoring. Setting it here was off-by-one.
-            incrementalScore: 0,
-            cumulativeScore: 0,
-            transitionNotes: [],
-            positionNotes: [],
-            contextNotes: [],
-        });
-        const rescored = scoreFixedOrder(songList, appConfig, { keyFlow: generationOptions.keyFlow });
-        updateCurrentSetlist({ ...generatedSetlist, songs: rescored.songs, summary: rescored.summary });
+        generatedSetlist = {
+            ...generatedSetlist,
+            songs: [...generatedSetlist.songs, { songId, performance }],
+        };
         setlistSaved = false;
         persistCurrentSetlist();
     }
 
     let songsNotInSetlist = $derived.by(() => {
         if (!generatedSetlist?.songs) return songs.filter((s) => !s.unpracticed);
-        const usedIds = new Set(generatedSetlist.songs.map((s) => s.id));
+        const usedIds = new Set(generatedSetlist.songs.map((s) => s.songId));
         return songs.filter((s) => !s.unpracticed && !usedIds.has(s.id));
     });
 
@@ -1654,16 +1665,8 @@ export function createAppStore(repo) {
                 ...editorSong, updatedAt: nowIso()
             }));
             songs = songs.filter((s) => s.id !== saved.id).concat(saved).sort((a, b) => a.name.localeCompare(b.name));
-            const syncedSetlist = syncSavedSongIntoSetlist(
-                generatedSetlist,
-                saved,
-                appConfig,
-                generationOptions.keyFlow,
-            );
-            if (syncedSetlist !== generatedSetlist) {
-                updateCurrentSetlist(syncedSetlist);
-                persistCurrentSetlist();
-            }
+            // No manual setlist sync needed: displayedSetlist re-derives from
+            // the catalog automatically when `songs` changes.
 
             // Sync member names and instruments from the song into band members
             const dirtyMembers = new Map();
@@ -2114,7 +2117,7 @@ export function createAppStore(repo) {
             songs: songs.map(normalizeSongRecord),
             config: clone(appConfig),
             bandMembers: clone(bandMembers),
-            savedSetlists: stripEnergy(clone(currentSaved)),
+            savedSetlists: clone(currentSaved),
             meta: {
                 bandName: appConfig?.bandName || "",
                 songCount: songs.length,
@@ -2158,7 +2161,9 @@ export function createAppStore(repo) {
                 songs: payload.songs.map(normalizeSongRecord),
                 config: migratedConfig,
                 bandMembers: importedMembers,
-                savedSetlists: Array.isArray(payload.savedSetlists) ? stripEnergy(payload.savedSetlists) : null,
+                savedSetlists: Array.isArray(payload.savedSetlists)
+                    ? payload.savedSetlists.map((s) => migrator.migrateDocument("setlists", s))
+                    : null,
             };
         }
         if (payload && payload.general && payload.show && payload.props) {
@@ -2263,7 +2268,7 @@ export function createAppStore(repo) {
             const raw = localStorage.getItem(localKey);
             if (raw) {
                 pushSyncLog("Migrating saved setlists from local storage");
-                const localSets = stripEnergy(tryParseJson(raw, []) || []);
+                const localSets = tryParseJson(raw, []) || [];
                 if (localSets.length > 0) {
                     // Normalize via rs-migrate before uploading
                     const remoteIds = new Set(savedSetlists.map((s) => s.id));
@@ -2568,6 +2573,8 @@ export function createAppStore(repo) {
         get appConfig() { return appConfig; },
         get bandMembers() { return bandMembers; },
         get generatedSetlist() { return generatedSetlist; },
+        get displayedSetlist() { return displayedSetlist; },
+        get displayedSavedSetlists() { return displayedSavedSetlists; },
         get isGenerating() { return isGenerating; },
         get setlistLocked() { return setlistLocked; },
         get setlistSaved() { return setlistSaved; },

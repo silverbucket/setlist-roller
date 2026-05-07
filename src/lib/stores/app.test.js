@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_APP_CONFIG } from "../defaults.js";
-import { createAppStore, normalizeAuthToken, syncSavedSongIntoSetlist } from "./app.svelte.js";
+import { migrator } from "../migrations.js";
+import { createAppStore, normalizeAuthToken } from "./app.svelte.js";
 
 afterEach(() => {
     vi.useRealTimers();
@@ -52,90 +53,85 @@ describe("retrySync", () => {
     });
 });
 
-describe("syncSavedSongIntoSetlist", () => {
-    it("updates matching song metadata in the current setlist immediately", () => {
-        const setlist = {
+describe("setlist v2 migration", () => {
+    it("collapses a fat saved setlist to lean references and hoists the relaxed flags", () => {
+        const fat = {
+            id: "set-1",
+            name: "Old School",
+            savedAt: "2026-01-01T00:00:00.000Z",
             seed: 42,
-            summary: { score: 999 },
+            songNames: ["A", "B"],
+            songCount: 2,
+            summary: {
+                score: 17,
+                anxiety: { scaled: 4 },
+                minimumsRelaxed: true,
+                openerFilterRelaxed: false,
+                closerFilterRelaxed: true,
+            },
             songs: [
                 {
                     id: "song-1",
-                    name: "Old Name",
+                    name: "A",
                     cover: false,
                     instrumental: false,
                     key: "C",
-                    notes: "old notes",
-                    performance: {
-                        nick: { instrument: "guitar", tuning: "Standard", capo: 0, picking: [] },
-                    },
+                    notes: "n1",
+                    performance: { nick: { instrument: "guitar" } },
+                    position: 1,
+                    incrementalScore: 0,
+                    cumulativeScore: 0,
+                    transitionNotes: ["whatever"],
                 },
                 {
                     id: "song-2",
-                    name: "Keep Me",
-                    cover: false,
+                    name: "B",
+                    cover: true,
                     instrumental: false,
                     key: "G",
                     notes: "",
-                    performance: {
-                        nick: { instrument: "guitar", tuning: "DADGAD", capo: 0, picking: [] },
-                    },
+                    performance: { nick: { instrument: "bass" } },
+                    position: 2,
                 },
             ],
         };
 
-        const savedSong = {
-            id: "song-1",
-            name: "New Name",
-            cover: true,
-            instrumental: true,
-            key: "D",
-            notes: "new notes",
-        };
+        const migrated = migrator.migrateDocument("setlists", fat);
 
-        const result = syncSavedSongIntoSetlist(setlist, savedSong, DEFAULT_APP_CONFIG, false);
-
-        expect(result).not.toBe(setlist);
-        expect(result.songs[0]).toMatchObject({
-            id: "song-1",
-            name: "New Name",
-            cover: true,
-            instrumental: true,
-            key: "D",
-            notes: "new notes",
-        });
-        expect(result.songs[1]).toMatchObject({
-            id: "song-2",
-            name: "Keep Me",
-            key: "G",
-        });
-        expect(result.summary).toBeDefined();
+        expect(migrated.songs).toEqual([
+            { songId: "song-1", performance: { nick: { instrument: "guitar" } } },
+            { songId: "song-2", performance: { nick: { instrument: "bass" } } },
+        ]);
+        expect(migrated.minimumsRelaxed).toBe(true);
+        expect(migrated.openerFilterRelaxed).toBe(false);
+        expect(migrated.closerFilterRelaxed).toBe(true);
+        expect(migrated.summary).toBeUndefined();
+        expect(migrated.songNames).toBeUndefined();
+        expect(migrated.songCount).toBeUndefined();
+        // Identity fields are preserved.
+        expect(migrated.id).toBe("set-1");
+        expect(migrated.name).toBe("Old School");
+        expect(migrated.seed).toBe(42);
     });
 
-    it("returns the original setlist when the saved song is not present", () => {
-        const setlist = {
-            summary: { score: 1 },
-            songs: [
-                {
-                    id: "song-1",
-                    name: "Only Song",
-                    cover: false,
-                    instrumental: false,
-                    key: "C",
-                    notes: "",
-                    performance: {
-                        nick: { instrument: "guitar", tuning: "Standard", capo: 0, picking: [] },
-                    },
-                },
-            ],
+    it("is idempotent on already-lean entries", () => {
+        const lean = {
+            id: "set-2",
+            name: "Already Lean",
+            savedAt: "2026-01-02T00:00:00.000Z",
+            schemaVersion: 2,
+            seed: 7,
+            minimumsRelaxed: false,
+            openerFilterRelaxed: false,
+            closerFilterRelaxed: false,
+            songs: [{ songId: "song-9", performance: {} }],
         };
 
-        const result = syncSavedSongIntoSetlist(
-            setlist,
-            { id: "song-2", name: "Different Song", notes: "no-op" },
-            DEFAULT_APP_CONFIG,
-            false,
-        );
+        const once = migrator.migrateDocument("setlists", { ...lean, songs: [...lean.songs] });
+        const twice = migrator.migrateDocument("setlists", once);
 
-        expect(result).toBe(setlist);
+        expect(twice.songs).toEqual([{ songId: "song-9", performance: {} }]);
+        expect(twice.summary).toBeUndefined();
+        expect(twice.minimumsRelaxed).toBe(false);
     });
 });

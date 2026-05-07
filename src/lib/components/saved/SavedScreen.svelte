@@ -178,14 +178,14 @@
 <div class="saved-screen">
   <h2 class="screen-title">Greatest Hits</h2>
 
-  {#if !store.savedSetlists?.length}
+  {#if !store.displayedSavedSetlists?.length}
     <div class="empty-state">
       <p class="empty-title">Nothing saved yet</p>
       <p class="empty-sub">Roll a setlist you love, lock it in, then save it here for safekeeping.</p>
     </div>
   {:else}
     <div class="saved-list">
-      {#each store.savedSetlists as saved}
+      {#each store.displayedSavedSetlists as saved}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="saved-card" onclick={() => handleView(saved)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') handleView(saved); }}>
           {#if editingId === saved.id}
@@ -200,11 +200,11 @@
             </div>
           {:else}
             <div class="saved-top">
-              <span class="saved-name">{saved.name || `Set #${saved.songCount || "?"}`}</span>
+              <span class="saved-name">{saved.name || `Set #${saved.songs?.length || "?"}`}</span>
               <span class="saved-date">{formatDate(saved.savedAt)}</span>
             </div>
             <div class="saved-meta">
-              <span>{saved.songCount || saved.songs?.length || 0} songs</span>
+              <span>{saved.songs?.length || 0} songs</span>
             </div>
             <div class="saved-card-actions">
               <button type="button" class="card-btn edit" onclick={(e) => startEdit(e, saved)}>Edit</button>
