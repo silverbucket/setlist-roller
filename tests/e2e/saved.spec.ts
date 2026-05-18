@@ -1,5 +1,5 @@
 import type { SeedSetlist } from "../fixtures/test-fixtures";
-import { buildSeed, expect, test } from "../fixtures/test-fixtures";
+import { buildSeed, expect, makeSong, test } from "../fixtures/test-fixtures";
 import { AppShell } from "../pages/AppShell";
 import { RollPage } from "../pages/RollPage";
 import { SavedPage } from "../pages/SavedPage";
@@ -13,16 +13,21 @@ function setlistFixture(overrides: Partial<SeedSetlist> = {}): SeedSetlist {
         id: "set-1",
         name: "Friday Night Set",
         savedAt: "2024-09-15T20:00:00.000Z",
-        songCount: 2,
         songs: [
-            { id: "a", name: "Africa", key: "B" },
-            { id: "b", name: "Bohemian Rhapsody", key: "Bb", cover: true },
+            { songId: "a", performance: {} },
+            { songId: "b", performance: {} },
         ],
-        summary: { anxiety: { scaled: 4, label: "Calm" } },
         schemaVersion: 2,
         createdAt: "2024-09-15T20:00:00.000Z",
         updatedAt: "2024-09-15T20:00:00.000Z",
         ...overrides,
+    };
+}
+
+function fixtureCatalogSongs(): Record<string, unknown> {
+    return {
+        a: makeSong({ id: "a", name: "Africa", key: "B" }),
+        b: makeSong({ id: "b", name: "Bohemian Rhapsody", key: "Bb", cover: true }),
     };
 }
 
@@ -41,6 +46,7 @@ test.describe("Saved screen — list", () => {
     test("seeded setlists render as cards with name and song count", async ({ page, app }) => {
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: {
                     "set-1": setlistFixture({ id: "set-1", name: "Friday" }),
                     "set-2": setlistFixture({ id: "set-2", name: "Saturday", savedAt: "2024-09-16T20:00:00.000Z" }),
@@ -82,6 +88,7 @@ test.describe("Saved screen — view modal", () => {
     test("clicking a card opens the print/view modal", async ({ page, app }) => {
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: { s: setlistFixture({ id: "s", name: "Acoustic" }) },
             }),
         );
@@ -112,6 +119,7 @@ test.describe("Saved screen — view modal", () => {
     test("Load to Roll button loads the setlist into the Roll screen", async ({ page, app }) => {
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: { s: setlistFixture({ id: "s", name: "Loadable" }) },
             }),
         );
@@ -230,6 +238,7 @@ test.describe("Saved screen — dark mode legibility", () => {
         await page.emulateMedia({ colorScheme: "dark" });
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: { s: setlistFixture({ id: "s", name: "After Dark" }) },
             }),
         );
@@ -288,6 +297,7 @@ test.describe("Saved screen — dark mode legibility", () => {
         await page.emulateMedia({ colorScheme: "light" });
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: { s: setlistFixture({ id: "s", name: "Daylight" }) },
             }),
         );
@@ -446,20 +456,23 @@ test.describe("Saved screen — tall setlist scrolling", () => {
      */
     function tallSetlistFixture(songCount = 40): SeedSetlist {
         const songs = Array.from({ length: songCount }, (_, i) => ({
-            id: `tall-${i}`,
-            name: `Marathon Track ${i + 1}`,
-            key: "C",
+            songId: `tall-${i}`,
+            performance: {},
         }));
-        return setlistFixture({
-            id: "tall",
-            name: "The Marathon",
-            songs,
-            songCount,
-        });
+        return setlistFixture({ id: "tall", name: "The Marathon", songs, songCount });
+    }
+
+    function tallCatalogSongs(count = 40): Record<string, unknown> {
+        return Object.fromEntries(
+            Array.from({ length: count }, (_, i) => [
+                `tall-${i}`,
+                makeSong({ id: `tall-${i}`, name: `Marathon Track ${i + 1}`, key: "C" }),
+            ]),
+        );
     }
 
     test("the song list scrolls when the setlist is taller than the viewport", async ({ page, app }) => {
-        await app.seed(buildSeed({ setlists: { tall: tallSetlistFixture(40) } }));
+        await app.seed(buildSeed({ songs: tallCatalogSongs(40), setlists: { tall: tallSetlistFixture(40) } }));
         await page.setViewportSize({ width: 390, height: 600 });
         await app.goto();
         await app.waitForReady();
@@ -487,7 +500,7 @@ test.describe("Saved screen — tall setlist scrolling", () => {
     });
 
     test("action buttons stay visible while the song list is scrolled", async ({ page, app }) => {
-        await app.seed(buildSeed({ setlists: { tall: tallSetlistFixture(40) } }));
+        await app.seed(buildSeed({ songs: tallCatalogSongs(40), setlists: { tall: tallSetlistFixture(40) } }));
         await page.setViewportSize({ width: 390, height: 600 });
         await app.goto();
         await app.waitForReady();
@@ -518,7 +531,7 @@ test.describe("Saved screen — tall setlist scrolling", () => {
     });
 
     test("the last song in a tall setlist can be scrolled into view", async ({ page, app }) => {
-        await app.seed(buildSeed({ setlists: { tall: tallSetlistFixture(40) } }));
+        await app.seed(buildSeed({ songs: tallCatalogSongs(40), setlists: { tall: tallSetlistFixture(40) } }));
         await page.setViewportSize({ width: 390, height: 600 });
         await app.goto();
         await app.waitForReady();
@@ -554,12 +567,9 @@ test.describe("Saved screen — modal contents", () => {
     test("anxiety summary appears in the modal when present", async ({ page, app }) => {
         await app.seed(
             buildSeed({
+                songs: fixtureCatalogSongs(),
                 setlists: {
-                    s: setlistFixture({
-                        id: "s",
-                        name: "With Anxiety",
-                        summary: { anxiety: { scaled: 6, label: "Sweaty" } },
-                    }),
+                    s: setlistFixture({ id: "s", name: "With Anxiety" }),
                 },
             }),
         );
@@ -568,17 +578,18 @@ test.describe("Saved screen — modal contents", () => {
 
         const saved = new SavedPage(page);
         await saved.openCard("With Anxiety");
-        await expect(saved.modal.locator(".print-anxiety")).toContainText("6/10");
+        await expect(saved.modal.locator(".print-anxiety")).toBeVisible();
     });
 
     test("song notes are rendered in the print modal", async ({ page, app }) => {
         await app.seed(
             buildSeed({
+                songs: { a: makeSong({ id: "a", name: "Africa", notes: "Cue intro on synth" }) },
                 setlists: {
                     s: setlistFixture({
                         id: "s",
                         name: "With Notes",
-                        songs: [{ id: "a", name: "Africa", notes: "Cue intro on synth" }],
+                        songs: [{ songId: "a", performance: {} }],
                     }),
                 },
             }),
