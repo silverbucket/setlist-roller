@@ -4,14 +4,17 @@
 
   const store = getContext("app");
 
-  let viewingSet = $state(null);
+  let viewingId = $state(null);
+  let viewingSet = $derived(
+    viewingId ? (store.displayedSavedSetlists?.find(s => s.id === viewingId) ?? null) : null
+  );
   let editingId = $state(null);
   let editName = $state("");
   let editDate = $state("");
 
   function handleView(saved) {
     if (editingId) return;
-    viewingSet = saved;
+    viewingId = saved.id;
   }
 
   function startEdit(e, saved) {
@@ -38,7 +41,7 @@
   }
 
   function handleClose() {
-    viewingSet = null;
+    viewingId = null;
   }
 
   function handleLoad(e, id) {
@@ -278,7 +281,7 @@
 
       <div class="modal-actions">
         <button type="button" class="modal-btn" onclick={handlePrint}>Print / Export PDF</button>
-        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingSet = null; }}>Load to Roll</button>
+        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>Load to Roll</button>
       </div>
     </div>
   </div>

@@ -1236,9 +1236,9 @@ export function createAppStore(repo) {
     }
 
     function confirmOptimizeOrder() {
-        if (!generatedSetlist) return;
+        if (!displayedSetlist) return;
         pendingRollConfirm = false;
-        const currentSongs = generatedSetlist.songs;
+        const currentSongs = displayedSetlist.songs;
         const currentCovers = currentSongs.filter(s => s.cover).length;
         const currentInstrumentals = currentSongs.filter(s => s.instrumental).length;
         generate({
