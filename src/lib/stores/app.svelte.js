@@ -537,7 +537,7 @@ export function createAppStore(repo) {
      * @returns {object|null} Setlist with lean `{songId, performance}` song entries.
      */
     function normalizeLeanSetlist(setlist) {
-        if (!setlist || !Array.isArray(setlist.songs)) return setlist;
+        if (!setlist || !Array.isArray(setlist.songs)) return null;
         const songs = setlist.songs.map((s) => ({
             songId: s.songId || s.id,
             performance: s.performance || {},
@@ -1516,21 +1516,33 @@ export function createAppStore(repo) {
         // not-yet-pulled songs don't trigger a false "no longer in catalog" warn.
         const songs = catalogSettled ? all.filter((e) => songsById.has(e.songId)) : all;
         const dropped = catalogSettled ? all.length - songs.length : 0;
-        generatedSetlist = {
-            seed: saved.seed,
-            minimumsRelaxed: !!saved.minimumsRelaxed,
-            openerFilterRelaxed: !!saved.openerFilterRelaxed,
-            closerFilterRelaxed: !!saved.closerFilterRelaxed,
-            songs,
-        };
-        setlistLocked = true;
-        setlistSaved = true;
-        loadedSavedId = id;
-        persistCurrentSetlist();
+        if (catalogSettled && songs.length === 0) {
+            // All songs were pruned — don't mark a saved set as loaded with an
+            // empty lean list; that would let the next save clobber the document
+            // with songs:[]. Clear instead, mirroring the pruning-effect path.
+            clearGeneratedSetlist();
+            setlistLocked = false;
+            setlistSaved = false;
+            persistCurrentSetlist();
+        } else {
+            generatedSetlist = {
+                seed: saved.seed,
+                minimumsRelaxed: !!saved.minimumsRelaxed,
+                openerFilterRelaxed: !!saved.openerFilterRelaxed,
+                closerFilterRelaxed: !!saved.closerFilterRelaxed,
+                songs,
+            };
+            setlistLocked = true;
+            setlistSaved = true;
+            loadedSavedId = id;
+            persistCurrentSetlist();
+        }
         if (dropped > 0) {
             toastWarn(`Skipped ${dropped} song${dropped === 1 ? "" : "s"} no longer in your catalog.`);
         }
-        toastInfo(`Loaded ${songs.length}-song set.`);
+        if (songs.length > 0) {
+            toastInfo(`Loaded ${songs.length}-song set.`);
+        }
     }
 
     // Mutation helpers operate on the lean entries — no rescoring needed,
