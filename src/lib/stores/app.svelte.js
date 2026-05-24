@@ -1379,7 +1379,7 @@ export function createAppStore(repo) {
                     minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
                     openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
                     closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
-                    songs: clone(generatedSetlist.songs),
+                    songs: clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId))),
                 });
                 setlistSaved = true;
                 return;
@@ -1411,7 +1411,7 @@ export function createAppStore(repo) {
             minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
             openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
             closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
-            songs: clone(generatedSetlist.songs),
+            songs: clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId))),
         };
         try {
             await withSync("Saving setlist", () => repo.putSetlist(entry));

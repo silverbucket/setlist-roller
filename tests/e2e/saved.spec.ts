@@ -459,7 +459,7 @@ test.describe("Saved screen — tall setlist scrolling", () => {
             songId: `tall-${i}`,
             performance: {},
         }));
-        return setlistFixture({ id: "tall", name: "The Marathon", songs, songCount });
+        return setlistFixture({ id: "tall", name: "The Marathon", songs });
     }
 
     function tallCatalogSongs(count = 40): Record<string, unknown> {
