@@ -15,7 +15,7 @@
   let showAddSongPicker = $state(false);
   let addSongSearch = $state("");
   let setlistSongIds = $derived(
-    new Set((store.generatedSetlist?.songs || []).map((s) => s.id))
+    new Set((store.displayedSetlist?.songs || []).map((s) => s.id))
   );
   let filteredPickerSongs = $derived.by(() => {
     const eligible = store.songs?.filter((s) => !s.unpracticed) || [];
@@ -30,7 +30,7 @@
     const generating = store.isGenerating;
     if (prevGenerating && !generating) {
       diceValue = Math.floor(Math.random() * 6) + 1;
-      if (store.generatedSetlist) {
+      if (store.displayedSetlist) {
         landed = true;
         showConfetti = true;
         setTimeout(() => { showConfetti = false; landed = false; }, 1200);
@@ -115,7 +115,7 @@
   let hasConstraints = $derived(membersWithChoices().length > 0);
   // anxietyLevel: pre-computed by the generator, label from anxiety lib
   let anxietyLevel = $derived.by(() => {
-    const anxiety = store.generatedSetlist?.summary?.anxiety;
+    const anxiety = store.displayedSetlist?.summary?.anxiety;
     if (!anxiety) return { scaled: 0, label: "" };
     return { scaled: anxiety.scaled, label: anxietyLabel(anxiety) };
   });
@@ -545,7 +545,7 @@
   {/if}
 
   <!-- Ready to roll but nothing rolled yet -->
-  {#if readyToRoll && !store.generatedSetlist}
+  {#if readyToRoll && !store.displayedSetlist}
     <div class="idle-nudge">
       <div class="idle-die-face" style="--pip-rgb: {pipColorRgb};">
         {#each PIP_LAYOUTS[5] as [px, py]}
@@ -557,10 +557,10 @@
   {/if}
 
   <!-- Setlist result -->
-  {#if store.generatedSetlist}
+  {#if store.displayedSetlist}
     <section class="result-section">
       <div class="song-list" bind:this={songListEl} class:drag-active={dragIndex !== null}>
-        {#each store.generatedSetlist.songs as song, i (song.id)}
+        {#each store.displayedSetlist.songs as song, i (song.id)}
           <div
             class="song-list-item"
             class:dragging={dragIndex === i}
@@ -575,7 +575,7 @@
             <SetlistSongCard
               {song}
               index={i}
-              prevSong={i > 0 ? store.generatedSetlist.songs[i - 1] : null}
+              prevSong={i > 0 ? store.displayedSetlist.songs[i - 1] : null}
               onDragStart={handleDragStart}
               onEdit={handleEditSong}
               onRemove={(idx) => store.removeSetlistSong(idx)}

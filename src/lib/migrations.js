@@ -27,3 +27,28 @@ migrator.register({
         return doc;
     },
 });
+
+migrator.register({
+    version: 2,
+    collection: "setlists",
+    description: "Lean shape — songs reference catalog by songId; drop embedded catalog fields and derived summary",
+    transform(doc) {
+        if (Array.isArray(doc.songs)) {
+            doc.songs = doc.songs.map((s) => ({
+                songId: s.songId || s.id,
+                performance: s.performance || {},
+            }));
+        }
+        if (doc.summary) {
+            for (const flag of ["minimumsRelaxed", "openerFilterRelaxed", "closerFilterRelaxed"]) {
+                if (doc.summary[flag] !== undefined && doc[flag] === undefined) {
+                    doc[flag] = doc.summary[flag];
+                }
+            }
+            delete doc.summary;
+        }
+        delete doc.songNames;
+        delete doc.songCount;
+        return doc;
+    },
+});

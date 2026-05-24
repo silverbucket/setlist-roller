@@ -40,8 +40,8 @@ const B_SONGS = [
 function names(state: { songs: { name: string }[] } | null): string[] {
     return (state?.songs ?? []).map((s) => s.name).sort();
 }
-function setlistIds(state: { generatedSetlist: { songs?: { id: string }[] } | null } | null): string[] {
-    return (state?.generatedSetlist?.songs ?? []).map((s) => s.id);
+function setlistIds(state: { generatedSetlist: { songs?: { songId: string }[] } | null } | null): string[] {
+    return (state?.generatedSetlist?.songs ?? []).map((s) => s.songId);
 }
 
 test.describe("Real backend — roll survives sync, swap retains roll-readiness", () => {

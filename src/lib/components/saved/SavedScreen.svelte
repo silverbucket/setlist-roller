@@ -4,14 +4,17 @@
 
   const store = getContext("app");
 
-  let viewingSet = $state(null);
+  let viewingId = $state(null);
+  let viewingSet = $derived(
+    viewingId ? (store.displayedSavedSetlists?.find(s => s.id === viewingId) ?? null) : null
+  );
   let editingId = $state(null);
   let editName = $state("");
   let editDate = $state("");
 
   function handleView(saved) {
     if (editingId) return;
-    viewingSet = saved;
+    viewingId = saved.id;
   }
 
   function startEdit(e, saved) {
@@ -38,7 +41,7 @@
   }
 
   function handleClose() {
-    viewingSet = null;
+    viewingId = null;
   }
 
   function handleLoad(e, id) {
@@ -178,14 +181,14 @@
 <div class="saved-screen">
   <h2 class="screen-title">Greatest Hits</h2>
 
-  {#if !store.savedSetlists?.length}
+  {#if !store.displayedSavedSetlists?.length}
     <div class="empty-state">
       <p class="empty-title">Nothing saved yet</p>
       <p class="empty-sub">Roll a setlist you love, lock it in, then save it here for safekeeping.</p>
     </div>
   {:else}
     <div class="saved-list">
-      {#each store.savedSetlists as saved}
+      {#each store.displayedSavedSetlists as saved}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="saved-card" onclick={() => handleView(saved)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') handleView(saved); }}>
           {#if editingId === saved.id}
@@ -200,11 +203,11 @@
             </div>
           {:else}
             <div class="saved-top">
-              <span class="saved-name">{saved.name || `Set #${saved.songCount || "?"}`}</span>
+              <span class="saved-name">{saved.name || `Set #${saved.songs?.length || "?"}`}</span>
               <span class="saved-date">{formatDate(saved.savedAt)}</span>
             </div>
             <div class="saved-meta">
-              <span>{saved.songCount || saved.songs?.length || 0} songs</span>
+              <span>{saved.songs?.length || 0} songs</span>
             </div>
             <div class="saved-card-actions">
               <button type="button" class="card-btn edit" onclick={(e) => startEdit(e, saved)}>Edit</button>
@@ -278,7 +281,7 @@
 
       <div class="modal-actions">
         <button type="button" class="modal-btn" onclick={handlePrint}>Print / Export PDF</button>
-        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingSet = null; }}>Load to Roll</button>
+        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>Load to Roll</button>
       </div>
     </div>
   </div>
