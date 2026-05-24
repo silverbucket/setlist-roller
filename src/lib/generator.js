@@ -237,6 +237,7 @@ class SetList {
             this._count = Math.min(this._options.count, this._catalog.length);
         }
         this._songBiasById = this._buildSongBiases(this._catalog);
+        this._songOrderBiasById = this._buildSongBiases(this._catalog);
         this._minConstraints = this._buildMinConstraints();
         this._minimumGroups = this._buildMinimumGroups();
         this._list = [];
@@ -320,6 +321,10 @@ class SetList {
 
     _songBias(songId) {
         return this._songBiasById[songId] || 0;
+    }
+
+    _songOrderBias(songId) {
+        return this._songOrderBiasById[songId] || 0;
     }
 
     _chaosAdjustment(prevItem, nextVariant) {
@@ -935,7 +940,7 @@ class SetList {
             const pool = eligible.length ? eligible : remaining;
             const ranked = pool
                 .map((item) => {
-                    const score = this._songBias(item.id);
+                    const score = this._songOrderBias(item.id);
                     return { item, score };
                 })
                 .sort((left, right) => left.score - right.score);
