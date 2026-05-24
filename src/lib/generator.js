@@ -1456,13 +1456,13 @@ const DEFAULT_WEIGHTS = {
 
 const DEFAULT_RANDOMNESS = {
     variantJitter: 1.5,
-    stateJitter: 1,
+    stateJitter: 2.5,
     finalChoicePool: 12,
     temperature: 0.85,
     shuffleCatalog: true,
     songBias: 3,
     beamChoicePoolMultiplier: 4,
-    beamTemperature: 1.1,
+    beamTemperature: 2.0,
     maxStatesPerLastSong: 8,
     blockShuffleTemperature: 1.4,
 };
