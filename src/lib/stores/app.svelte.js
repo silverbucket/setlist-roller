@@ -472,6 +472,15 @@ export function createAppStore(repo) {
     let displayedSetlist = $derived(hydrateSetlist(generatedSetlist));
     let displayedSavedSetlists = $derived((savedSetlists || []).map(hydrateSetlist));
 
+    // True only when the catalog is fully settled and safe to treat as
+    // authoritative. Excludes "syncing" (reload in flight) AND "error"
+    // (reload failed — catalog may be incomplete). Only "idle" (post-sync
+    // steady state) and "synced" (just completed) are considered settled.
+    // pendingBodies === 0 ensures all song bodies have arrived.
+    let catalogSettled = $derived(
+        (syncState === "idle" || syncState === "synced") && pendingBodies === 0,
+    );
+
     /**
      * Strip a generator/scoring result down to the lean persisted shape.
      *
@@ -1396,7 +1405,6 @@ export function createAppStore(repo) {
         // remotely but haven't loaded yet. When unsettled, we save the songs
         // verbatim — any truly-deleted entries will be pruned on the next save
         // once the catalog is stable.
-        const catalogSettled = syncState !== "syncing" && pendingBodies === 0;
         const persistedSongs = catalogSettled
             ? clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId)))
             : clone(generatedSetlist.songs);
@@ -1481,14 +1489,18 @@ export function createAppStore(repo) {
     function loadSavedSetlist(id) {
         const saved = savedSetlists.find((s) => s.id === id);
         if (!saved) return;
-        const valid = (saved.songs || []).filter((e) => songsById.has(e.songId));
-        const dropped = (saved.songs || []).length - valid.length;
+        const all = (saved.songs || []).map((e) => ({ songId: e.songId, performance: e.performance || {} }));
+        // Guard: only prune against songsById when the catalog is settled.
+        // If the catalog is still loading, treat every entry as valid so
+        // not-yet-pulled songs don't trigger a false "no longer in catalog" warn.
+        const songs = catalogSettled ? all.filter((e) => songsById.has(e.songId)) : all;
+        const dropped = catalogSettled ? all.length - songs.length : 0;
         generatedSetlist = {
             seed: saved.seed,
             minimumsRelaxed: !!saved.minimumsRelaxed,
             openerFilterRelaxed: !!saved.openerFilterRelaxed,
             closerFilterRelaxed: !!saved.closerFilterRelaxed,
-            songs: valid.map((e) => ({ songId: e.songId, performance: e.performance || {} })),
+            songs,
         };
         setlistLocked = true;
         setlistSaved = true;
@@ -1497,26 +1509,41 @@ export function createAppStore(repo) {
         if (dropped > 0) {
             toastWarn(`Skipped ${dropped} song${dropped === 1 ? "" : "s"} no longer in your catalog.`);
         }
-        toastInfo(`Loaded ${valid.length}-song set.`);
+        toastInfo(`Loaded ${songs.length}-song set.`);
     }
 
     // Mutation helpers operate on the lean entries — no rescoring needed,
     // since `displayedSetlist` runs scoreFixedOrder() in its derivation
     // chain whenever the underlying data changes.
+    //
+    // Indices come from the UI, which iterates displayedSetlist.songs.
+    // hydrateSetlist() filters out stale (deleted/not-yet-loaded) entries,
+    // so the displayed index may not match the raw generatedSetlist index.
+    // Resolve by songId to guarantee the right entry is mutated.
     function reorderSetlistSong(fromIndex, toIndex) {
-        if (!generatedSetlist) return;
+        if (!generatedSetlist || !displayedSetlist) return;
+        const fromSongId = displayedSetlist.songs[fromIndex]?.id;
+        const toSongId   = displayedSetlist.songs[toIndex]?.id;
+        if (!fromSongId || !toSongId) return;
+        const rawFrom = generatedSetlist.songs.findIndex((e) => e.songId === fromSongId);
+        const rawTo   = generatedSetlist.songs.findIndex((e) => e.songId === toSongId);
+        if (rawFrom === -1 || rawTo === -1) return;
         const list = [...generatedSetlist.songs];
-        const [moved] = list.splice(fromIndex, 1);
-        list.splice(toIndex, 0, moved);
+        const [moved] = list.splice(rawFrom, 1);
+        list.splice(rawTo, 0, moved);
         generatedSetlist = { ...generatedSetlist, songs: list };
         setlistSaved = false;
         persistCurrentSetlist();
     }
 
     function removeSetlistSong(index) {
-        if (!generatedSetlist) return;
+        if (!generatedSetlist || !displayedSetlist) return;
+        const songId = displayedSetlist.songs[index]?.id;
+        if (!songId) return;
+        const rawIndex = generatedSetlist.songs.findIndex((e) => e.songId === songId);
+        if (rawIndex === -1) return;
         const list = [...generatedSetlist.songs];
-        list.splice(index, 1);
+        list.splice(rawIndex, 1);
         if (!list.length) {
             clearGeneratedSetlist();
             setlistLocked = false;
