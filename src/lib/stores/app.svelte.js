@@ -288,6 +288,27 @@ export function createAppStore(repo) {
         if (currentUserAddress) scheduleSnapshot();
     });
 
+    // Once the catalog is fully settled, reconcile any stale song refs that
+    // were deferred during the initial sync (or pruned any time a song is
+    // deleted mid-session while a setlist is active). Runs whenever
+    // catalogSettled, generatedSetlist, or songsById changes — safe because
+    // a second run after the mutation finds dropped===0 and exits.
+    $effect(() => {
+        if (!catalogSettled || !generatedSetlist) return;
+        const valid = generatedSetlist.songs.filter((e) => songsById.has(e.songId));
+        const dropped = generatedSetlist.songs.length - valid.length;
+        if (dropped === 0) return;
+        if (valid.length === 0) {
+            clearGeneratedSetlist();
+            setlistLocked = false;
+        } else {
+            generatedSetlist = { ...generatedSetlist, songs: valid };
+        }
+        setlistSaved = false;
+        persistCurrentSetlist();
+        toastWarn(`Removed ${dropped} song${dropped === 1 ? "" : "s"} no longer in your catalog.`);
+    });
+
     // ---- helpers ----
 
     function defaultGenerationOptions(config = appConfig) {
