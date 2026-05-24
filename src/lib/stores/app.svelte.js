@@ -421,21 +421,32 @@ export function createAppStore(repo) {
         localStorage.setItem(storageKey("ui-options"), JSON.stringify(generationOptions));
     }
 
+    /** Reset the active generated setlist and clear any loaded-saved reference. */
     function clearGeneratedSetlist() {
         generatedSetlist = null;
         loadedSavedId = "";
     }
 
-    // Catalog lookup table. Recomputes whenever `songs` changes, which is
-    // what makes the displayed setlists below auto-refresh on RS pulls and
-    // local edits — no manual sync paths required.
+    /**
+     * Catalog lookup table keyed by song id.
+     * Recomputes whenever `songs` changes, which is what makes the displayed
+     * setlists below auto-refresh on RS pulls and local edits — no manual
+     * sync paths required.
+     */
     let songsById = $derived(new Map((songs || []).map((s) => [s.id, s])));
 
-    // Take a lean setlist + the live catalog and produce the fully-fat
-    // form that views render: catalog fields overlaid, scores and summary
-    // recomputed by scoreFixedOrder. Songs whose ids no longer exist in
-    // the catalog are filtered out — saved setlists shrink gracefully when
-    // their referenced songs have been deleted.
+    /**
+     * Take a lean setlist + the live catalog and produce the fully-fat form
+     * that views render: catalog fields overlaid, scores and summary
+     * recomputed by scoreFixedOrder.
+     *
+     * Songs whose ids no longer exist in the catalog are filtered out —
+     * saved setlists shrink gracefully when their referenced songs have
+     * been deleted.
+     *
+     * @param {object|null} setlist - Lean setlist object with `songs` array of `{songId, performance}`.
+     * @returns {object|null} Hydrated setlist with full song data and recomputed summary, or null.
+     */
     function hydrateSetlist(setlist) {
         if (!setlist || !Array.isArray(setlist.songs)) return setlist || null;
         const fat = [];
@@ -461,11 +472,17 @@ export function createAppStore(repo) {
     let displayedSetlist = $derived(hydrateSetlist(generatedSetlist));
     let displayedSavedSetlists = $derived((savedSetlists || []).map(hydrateSetlist));
 
-    // Strip a generator/scoring result down to the lean persisted shape:
-    // each setlist entry keeps only what isn't derivable from the catalog
-    // (the song reference and the rolled performance choice). Generation
-    // metadata moves to top-level fields; the scored summary is recomputed
-    // at display time inside hydrateSetlist().
+    /**
+     * Strip a generator/scoring result down to the lean persisted shape.
+     *
+     * Each setlist entry keeps only what isn't derivable from the catalog
+     * (the song reference and the rolled performance choice). Generation
+     * metadata moves to top-level fields; the scored summary is recomputed
+     * at display time inside hydrateSetlist().
+     *
+     * @param {object|null} result - Raw generator result with `songs`, `seed`, and `summary`.
+     * @returns {object|null} Lean setlist `{seed, minimumsRelaxed, …, songs: [{songId, performance}]}`.
+     */
     function leanFromGeneratorResult(result) {
         if (!result) return null;
         const summary = result.summary || {};
@@ -481,9 +498,14 @@ export function createAppStore(repo) {
         };
     }
 
-    // Detect a pre-refactor (fat) saved/persisted setlist where each song
-    // entry carries embedded catalog fields, and convert it to the lean
-    // shape. Idempotent — already-lean entries pass through unchanged.
+    /**
+     * Detect a pre-refactor (fat) saved/persisted setlist where each song
+     * entry carries embedded catalog fields, and convert it to the lean shape.
+     * Idempotent — already-lean entries pass through unchanged.
+     *
+     * @param {object|null} setlist - Raw setlist, possibly in the old fat format.
+     * @returns {object|null} Setlist with lean `{songId, performance}` song entries.
+     */
     function normalizeLeanSetlist(setlist) {
         if (!setlist || !Array.isArray(setlist.songs)) return setlist;
         const songs = setlist.songs.map((s) => ({
@@ -1368,6 +1390,17 @@ export function createAppStore(repo) {
         if (!generatedSetlist) return;
         const currentSaved = savedSetlists || [];
 
+        // Only prune stale song references when the catalog is fully settled.
+        // During initial sync or while bodies are still arriving, songsById is
+        // incomplete; filtering against it would silently drop songs that exist
+        // remotely but haven't loaded yet. When unsettled, we save the songs
+        // verbatim — any truly-deleted entries will be pruned on the next save
+        // once the catalog is stable.
+        const catalogSettled = syncState !== "syncing" && pendingBodies === 0;
+        const persistedSongs = catalogSettled
+            ? clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId)))
+            : clone(generatedSetlist.songs);
+
         // If this setlist was loaded from a saved entry, update that entry in
         // place instead of creating a duplicate with a new id and name.
         if (loadedSavedId) {
@@ -1379,7 +1412,7 @@ export function createAppStore(repo) {
                     minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
                     openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
                     closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
-                    songs: clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId))),
+                    songs: persistedSongs,
                 });
                 setlistSaved = true;
                 return;
@@ -1411,7 +1444,7 @@ export function createAppStore(repo) {
             minimumsRelaxed: !!generatedSetlist.minimumsRelaxed,
             openerFilterRelaxed: !!generatedSetlist.openerFilterRelaxed,
             closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
-            songs: clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId))),
+            songs: persistedSongs,
         };
         try {
             await withSync("Saving setlist", () => repo.putSetlist(entry));
