@@ -371,13 +371,24 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        min-height: var(--real-vh, 100dvh);
+        /* height (not min-height) locks the shell to the viewport so the body
+           never scrolls. Each screen scrolls within .main-content instead.
+           Prevents scroll state from bleeding between tabs and eliminates
+           blank space when short-content screens are visited after a
+           long-content screen. --real-vh is set from window.innerHeight in
+           main.js, which is authoritative on iOS PWA cold-start unlike 100dvh. */
+        height: var(--real-vh, 100dvh);
+        overflow: hidden;
         display: flex;
         flex-direction: column;
     }
 
     .main-content {
         flex: 1;
+        min-height: 0; /* flex items default to min-height:auto which prevents shrinking and blocks overflow-y scroll on Safari */
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
         padding: var(--space-3);
         padding-top: calc(var(--top-bar-height) + var(--space-3));
         padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
