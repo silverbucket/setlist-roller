@@ -47,8 +47,6 @@ function makeConfig(overrides = {}) {
                 instrument: 3,
                 technique: 1,
                 positionMiss: 8,
-                earlyCover: 2,
-                earlyInstrumental: 2,
             },
             randomness: {
                 variantJitter: 1.5,
@@ -577,7 +575,10 @@ describe("generateSetlist — position rules", () => {
         expect(result.summary.openerFilterRelaxed).toBe(false);
     });
 
-    it("avoids covers in first two positions", () => {
+    it("user-configured order rules keep covers rare in first two positions", () => {
+        // order.first and order.second both include ["cover", false], so covers
+        // incur a positionMiss penalty in slots 1–2. They should appear there
+        // only occasionally across a range of seeds, not in the majority of runs.
         const songs = [
             makeSong("Cover 1", { cover: true }),
             makeSong("Cover 2", { cover: true }),
@@ -593,7 +594,7 @@ describe("generateSetlist — position rules", () => {
             const result = generateSetlist(songs, config, deterministicOptions({ count: 10, seed }));
             if (result.songs[0]?.cover || result.songs[1]?.cover) coverEarly++;
         }
-        expect(coverEarly).toBeLessThanOrEqual(3);
+        expect(coverEarly).toBeLessThanOrEqual(5);
     });
 });
 
