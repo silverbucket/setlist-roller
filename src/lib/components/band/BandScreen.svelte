@@ -300,6 +300,15 @@
                                     <option value="true">Yes</option>
                                     <option value="false">No</option>
                                 </select>
+                            {:else if field.type === "order-rule"}
+                                <select
+                                    class="select-input"
+                                    value={store.configFieldValue(store.appConfig, field) ? "true" : "false"}
+                                    onchange={(e) => store.updateConfigField(field, e.currentTarget.value)}
+                                >
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
                             {:else if field.type === "number"}
                                 <input
                                     class="text-input"

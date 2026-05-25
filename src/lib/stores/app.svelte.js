@@ -1883,6 +1883,11 @@ export function createAppStore(repo) {
     function configFieldValue(config, field) {
         const value = getByPath(config, field.path);
         if (field.type === "list") return formatDelimitedList(value);
+        if (field.type === "order-rule") {
+            if (!Array.isArray(value)) return false;
+            const [ruleField, ruleValue] = field.rule;
+            return value.some(([f, v]) => f === ruleField && v === ruleValue);
+        }
         return value;
     }
 
@@ -1898,6 +1903,14 @@ export function createAppStore(repo) {
         if (field.type === "number") next = Number(rawValue);
         else if (field.type === "boolean") next = Boolean(rawValue);
         else if (field.type === "list") next = parseDelimitedList(rawValue);
+        else if (field.type === "order-rule") {
+            const current = getByPath(appConfig, field.path) ?? [];
+            const enabled = rawValue === "true" || rawValue === true;
+            const [ruleField, ruleValue] = field.rule;
+            const filtered = current.filter(([f, v]) => !(f === ruleField && v === ruleValue));
+            appConfig = setByPath(appConfig, field.path, enabled ? [...filtered, [ruleField, ruleValue]] : filtered);
+            return;
+        }
         appConfig = setByPath(appConfig, field.path, next);
     }
 

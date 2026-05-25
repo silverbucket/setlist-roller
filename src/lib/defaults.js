@@ -16,10 +16,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
                 ["cover", false],
                 ["instrumental", false],
             ],
-            second: [
-                ["cover", false],
-                ["instrumental", false],
-            ],
+            second: [],
             penultimate: [],
             last: [["notGoodCloser", false]],
         },
@@ -51,13 +48,13 @@ const DEFAULT_CONFIG_TEMPLATE = {
         tuning: {
             kind: "instrumentField",
             field: "tuning",
-            minStreak: 2,
+            minStreak: 1,
             allowChangeOnLastSong: true,
         },
         capo: {
             kind: "instrumentDelta",
             field: "capo",
-            minStreak: 2,
+            minStreak: 1,
             allowChangeOnLastSong: true,
         },
         instruments: {
