@@ -370,6 +370,11 @@
     .song-name {
         font-weight: 700;
         font-size: 1rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
     }
 
     .pill {
