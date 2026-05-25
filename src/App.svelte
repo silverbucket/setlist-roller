@@ -385,6 +385,7 @@
 
     .main-content {
         flex: 1;
+        min-height: 0; /* flex items default to min-height:auto which prevents shrinking and blocks overflow-y scroll on Safari */
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
