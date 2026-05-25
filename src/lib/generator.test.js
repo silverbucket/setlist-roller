@@ -1781,6 +1781,128 @@ describe("notes field", () => {
     });
 });
 
+// ===================================================================
+// Regression: cascading P1/P2 lock (opener predictability)
+//
+// When order.second prefers non-cover songs AND minStreak≥2 forces P2
+// into the same tuning cluster as P1, having a single non-cover song
+// in one cluster creates a structural lock: the generator exploits the
+// P2 cover bonus by always choosing that cluster at P1, collapsing the
+// opener to a single song.
+// ===================================================================
+describe("generateSetlist — cascading P1/P2 lock regression", () => {
+    /** Build a catalog that replicates the structural conditions of the bug:
+     *  - one non-cover, notGoodOpener song in tuning-A ("Anchor")
+     *  - one eligible opener in tuning-A ("Only Opener A")
+     *  - several eligible openers in tuning-B ("Opener B 1..N")
+     *  With the buggy config (cover pref at P2 + minStreak=2), "Only Opener A"
+     *  dominates near-100% of rolls because Anchor gives tuning-A a 10-pt P2 bonus
+     *  and minStreak locks P1 into the same cluster.
+     */
+    function buildLockCatalog(memberName = "nick") {
+        const tuningA = [{ name: "banjo", tuning: ["double"], capo: 2, picking: [] }];
+        const tuningB = [{ name: "banjo", tuning: ["standard"], capo: 0, picking: [] }];
+        const members = (instruments) => ({ [memberName]: { instruments } });
+
+        return [
+            // The only non-cover song — lives in tuning-A, not a good opener
+            makeSong("Anchor", { cover: false, notGoodOpener: true, members: members(tuningA) }),
+            // The only eligible opener in tuning-A — becomes dominant under the bug
+            makeSong("Only Opener A", { cover: true, members: members(tuningA) }),
+            // Several eligible openers in tuning-B
+            ...Array.from({ length: 8 }, (_, i) =>
+                makeSong(`Opener B ${i + 1}`, { cover: true, members: members(tuningB) }),
+            ),
+            // Filler songs to pad the setlist
+            ...Array.from({ length: 4 }, (_, i) =>
+                makeSong(`Filler ${i + 1}`, { cover: true, members: members(tuningB) }),
+            ),
+        ];
+    }
+
+    it("with cover pref at P2 and minStreak=2, opener collapses onto a single song", () => {
+        const songs = buildLockCatalog();
+        const buggyConfig = makeConfig({
+            general: {
+                order: {
+                    first: [
+                        ["notGoodOpener", false],
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
+                    second: [
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
+                    penultimate: [],
+                    last: [["notGoodCloser", false]],
+                },
+            },
+            props: {
+                tuning: { kind: "instrumentField", field: "tuning", minStreak: 2, allowChangeOnLastSong: true },
+                capo: { kind: "instrumentDelta", field: "capo", minStreak: 2, allowChangeOnLastSong: true },
+            },
+        });
+
+        const openerCounts = {};
+        for (let seed = 1; seed <= 30; seed++) {
+            const result = generateSetlist(songs, buggyConfig, {
+                count: 9,
+                seed,
+                beamWidth: 128,
+                randomness: { temperature: 1.7, shuffleCatalog: false, songBias: 0, variantJitter: 0, stateJitter: 0 },
+            });
+            const opener = result.songs[0]?.name;
+            openerCounts[opener] = (openerCounts[opener] || 0) + 1;
+        }
+        const dominance = (openerCounts["Only Opener A"] || 0) / 30;
+        // Under the buggy config the structural lock should be clearly visible
+        expect(dominance).toBeGreaterThan(0.7);
+    });
+
+    it("with no cover pref at P2 and minStreak=1, opener does not collapse onto a single song", () => {
+        const songs = buildLockCatalog();
+        const fixedConfig = makeConfig({
+            general: {
+                order: {
+                    first: [
+                        ["notGoodOpener", false],
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
+                    second: [],
+                    penultimate: [],
+                    last: [["notGoodCloser", false]],
+                },
+            },
+            props: {
+                tuning: { kind: "instrumentField", field: "tuning", minStreak: 1, allowChangeOnLastSong: true },
+                capo: { kind: "instrumentDelta", field: "capo", minStreak: 1, allowChangeOnLastSong: true },
+            },
+        });
+
+        const openerCounts = {};
+        for (let seed = 1; seed <= 30; seed++) {
+            const result = generateSetlist(songs, fixedConfig, {
+                count: 9,
+                seed,
+                beamWidth: 128,
+                // songBias must be non-zero so that different seeds actually produce
+                // different openers; the structural lock test above shows that without
+                // the bug the bias alone is sufficient to vary selection.
+                randomness: { temperature: 1.7, shuffleCatalog: false, songBias: 3, variantJitter: 0, stateJitter: 0 },
+            });
+            const opener = result.songs[0]?.name;
+            openerCounts[opener] = (openerCounts[opener] || 0) + 1;
+        }
+        const uniqueOpeners = Object.keys(openerCounts).length;
+        const maxDominance = Math.max(...Object.values(openerCounts)) / 30;
+        // Should see multiple different openers, none dominating heavily
+        expect(uniqueOpeners).toBeGreaterThanOrEqual(3);
+        expect(maxDominance).toBeLessThanOrEqual(0.5);
+    });
+});
+
 describe("generateSetlist — opener diversity", () => {
     it("does not collapse opener onto a single song when one tuning is in the minority", () => {
         // 5 songs in Drop D tuning (key of D), 15 songs in Standard tuning (various keys)
