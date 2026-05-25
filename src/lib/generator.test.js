@@ -1825,8 +1825,15 @@ describe("generateSetlist — cascading P1/P2 lock regression", () => {
         const buggyConfig = makeConfig({
             general: {
                 order: {
-                    first: [["notGoodOpener", false], ["cover", false], ["instrumental", false]],
-                    second: [["cover", false], ["instrumental", false]],
+                    first: [
+                        ["notGoodOpener", false],
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
+                    second: [
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
                     penultimate: [],
                     last: [["notGoodCloser", false]],
                 },
@@ -1858,7 +1865,11 @@ describe("generateSetlist — cascading P1/P2 lock regression", () => {
         const fixedConfig = makeConfig({
             general: {
                 order: {
-                    first: [["notGoodOpener", false], ["cover", false], ["instrumental", false]],
+                    first: [
+                        ["notGoodOpener", false],
+                        ["cover", false],
+                        ["instrumental", false],
+                    ],
                     second: [],
                     penultimate: [],
                     last: [["notGoodCloser", false]],
