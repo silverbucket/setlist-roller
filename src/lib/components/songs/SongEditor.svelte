@@ -495,6 +495,13 @@
         border-bottom: 1px solid var(--line);
         min-height: 48px;
         flex-shrink: 0;
+        /* The overlay uses display:grid with no explicit column template, so
+           grid items default to min-width:auto (= max-content of their flex
+           children).  A very long song title would expand this grid item past
+           the viewport, pushing the Save button off-screen.  Setting
+           min-width:0 lets the grid item shrink to the grid container's width
+           so the flex layout can do its job and the title truncates properly. */
+        min-width: 0;
     }
 
     .back-btn {
