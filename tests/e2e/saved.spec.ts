@@ -532,7 +532,9 @@ test.describe("Saved screen — tall setlist scrolling", () => {
 
     test("the last song in a tall setlist can be scrolled into view", async ({ page, app }) => {
         await app.seed(buildSeed({ songs: tallCatalogSongs(40), setlists: { tall: tallSetlistFixture(40) } }));
-        await page.setViewportSize({ width: 390, height: 600 });
+        // Use a shorter viewport than the sibling scroll test so 40 songs
+        // comfortably exceed the visible area regardless of CI font rendering.
+        await page.setViewportSize({ width: 390, height: 400 });
         await app.goto();
         await app.waitForReady();
         await new AppShell(page).gotoSaved();
