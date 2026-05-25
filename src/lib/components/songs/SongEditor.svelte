@@ -593,7 +593,8 @@
         border: 1px solid var(--line);
         background: var(--surface);
         font: inherit;
-        font-size: 1rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
+        font-size: 16px;
         box-sizing: border-box;
         width: 100%;
     }
@@ -737,7 +738,8 @@
     .field-input.small {
         min-height: 2.4rem;
         padding: 0.4rem 0.7rem;
-        font-size: 1rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
+        font-size: 16px;
     }
 
     .add-sm-btn {
