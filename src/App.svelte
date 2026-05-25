@@ -366,6 +366,7 @@
         min-height: 100dvh;
         display: flex;
         flex-direction: column;
+        overflow-x: hidden;
     }
 
     .main-content {
@@ -404,7 +405,8 @@
         border: 1px solid var(--line);
         background: var(--surface);
         color: var(--ink);
-        font-size: 1rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
+        font-size: 16px;
         transition: border-color 140ms ease, box-shadow 140ms ease;
     }
 

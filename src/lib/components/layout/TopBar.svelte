@@ -130,7 +130,7 @@
       aria-label={dotLabel}
       title={dotLabel}
     ></span>
-    <span class="band-name">{store.appTitle}</span>
+    <span class="band-name">{store.appConfig?.bandName || "Setlist Roller"}</span>
   </div>
 
   <div class="right">
