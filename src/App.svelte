@@ -51,10 +51,20 @@
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
-    // iOS standalone PWA: after the sync-shell → app-shell DOM swap,
-    // WebKit's compositor has stale hit-test regions for the new
-    // fixed-position elements (TopBar, BottomNav). A micro-scroll
-    // forces the compositor to rebuild its layer hit-test tree.
+    // iOS standalone PWA: after the sync-shell → app-shell DOM swap two
+    // things need to happen in one rAF chain:
+    //
+    // 1. Reset scroll to the top.  history.scrollRestoration = "manual"
+    //    (set in main.js) stops the runtime from re-applying a stale
+    //    scroll offset, but iOS may still start with a non-zero scrollY
+    //    from the compositor's previous frame.  Explicitly calling
+    //    scrollTo(0, 0) clears it.
+    //
+    // 2. Micro-scroll (+1 / back to 0).  WebKit's compositor builds its
+    //    hit-test tree against the *old* DOM (sync-shell).  Any positional
+    //    delta, however tiny, forces a rebuild so the new fixed-position
+    //    elements (TopBar, BottomNav) become tappable immediately.
+    //
     // Account swaps re-flip initialSyncComplete (true → false → true);
     // the nudge only matters on the first true after boot, so latch it.
     let iosScrollNudged = false;
@@ -63,10 +73,8 @@
         if (store.initialSyncComplete && isIosStandaloneAuthContext()) {
             iosScrollNudged = true;
             requestAnimationFrame(() => {
-                const x = window.scrollX;
-                const y = window.scrollY;
-                window.scrollTo(x, y + 1);
-                requestAnimationFrame(() => window.scrollTo(x, y));
+                window.scrollTo(0, 1); // micro-nudge forces compositor rebuild
+                requestAnimationFrame(() => window.scrollTo(0, 0)); // reset to top
             });
         }
     });
