@@ -191,7 +191,8 @@
         border-radius: var(--radius-md, 12px);
         border: 1px solid var(--line);
         background: var(--surface);
-        font-size: 1rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
+        font-size: 16px;
         box-sizing: border-box;
     }
 

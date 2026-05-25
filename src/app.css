@@ -117,6 +117,10 @@ body,
 #app {
     margin: 0;
     min-height: 100%;
+    /* Prevent iOS Safari from auto-inflating text (which can interact with the
+       16px input-zoom threshold below). Keep text sizing deterministic. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 body {

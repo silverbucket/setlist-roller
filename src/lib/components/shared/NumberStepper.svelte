@@ -57,7 +57,8 @@
         border-right: 1px solid var(--line);
         border-radius: 0;
         padding: 0.5rem 0.2rem;
-        font-size: 1rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
+        font-size: 16px;
         font-weight: 800;
         background: transparent;
         min-height: 2.8rem;
