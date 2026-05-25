@@ -16,7 +16,7 @@ test.describe("Connection screen", () => {
         await expect(connect.connectButton).toBeVisible();
     });
 
-    test("connects with an address and shows app shell", async ({ page, app }) => {
+    test("connects with an address and shows app shell", { tag: ["@smoke"] }, async ({ page, app }) => {
         const user = await app.provisionUser("alice");
         await app.goto();
         const connect = new ConnectPage(page);
@@ -90,7 +90,7 @@ test.describe("Connection screen", () => {
     });
 });
 
-test.describe("Auto-connect with seed", () => {
+test.describe("Auto-connect with seed", { tag: ["@smoke"] }, () => {
     test("seeded user boots straight into app shell", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();

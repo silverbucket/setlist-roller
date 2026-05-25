@@ -10,7 +10,7 @@ import { SongsPage } from "../pages/SongsPage";
  * techniques, duplicate, delete with confirmation.
  */
 test.describe("Song editor — basics", () => {
-    test("create a song with name, key, and notes", async ({ page, app }) => {
+    test("create a song with name, key, and notes", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
         await new AppShell(page).gotoSongs();

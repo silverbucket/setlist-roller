@@ -33,7 +33,7 @@ function seedWithCatalog(extraSongs: SeedSong[] = []) {
 }
 
 test.describe("Roll screen — onboarding & sync state", () => {
-    test("empty catalog shows onboarding card with link to Songs tab", async ({ page, app }) => {
+    test("empty catalog shows onboarding card with link to Songs tab", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
         const shell = new AppShell(page);
@@ -44,7 +44,7 @@ test.describe("Roll screen — onboarding & sync state", () => {
         await expect(roll.onboardingCard).toContainText("Almost showtime");
     });
 
-    test("catalog with songs shows the idle nudge before rolling", async ({ page, app }) => {
+    test("catalog with songs shows the idle nudge before rolling", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();
         const shell = new AppShell(page);
@@ -67,7 +67,7 @@ test.describe("Roll screen — onboarding & sync state", () => {
 });
 
 test.describe("Roll screen — generation flow", () => {
-    test("clicking Roll generates a setlist", async ({ page, app }) => {
+    test("clicking Roll generates a setlist", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
@@ -164,7 +164,7 @@ test.describe("Roll screen — settings drawer", () => {
 });
 
 test.describe("Roll screen — lock / save / re-roll", () => {
-    test("can lock a generated setlist; locked badge appears", async ({ page, app }) => {
+    test("can lock a generated setlist; locked badge appears", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
@@ -195,7 +195,7 @@ test.describe("Roll screen — lock / save / re-roll", () => {
         await expect(roll.lockedBadge).toBeVisible();
     });
 
-    test("saving a locked setlist adds it to Greatest Hits", async ({ page, app }) => {
+    test("saving a locked setlist adds it to Greatest Hits", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
