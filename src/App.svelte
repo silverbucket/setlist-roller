@@ -376,9 +376,12 @@
            Prevents scroll state from bleeding between tabs and eliminates
            blank space when short-content screens are visited after a
            long-content screen. --real-vh is set from window.innerHeight in
-           main.js, which is authoritative on iOS PWA cold-start unlike 100dvh. */
+           main.js, which is authoritative on iOS PWA cold-start unlike 100dvh.
+           No overflow:hidden — .main-content handles its own overflow via
+           overflow-y:auto, and overflow:hidden on a fixed-position ancestor
+           can cause Chrome to misreport getBoundingClientRect() for elements
+           inside position:fixed children (compositing layer clipping). */
         height: var(--real-vh, 100dvh);
-        overflow: hidden;
         display: flex;
         flex-direction: column;
     }
