@@ -373,6 +373,7 @@
         overflow-wrap: break-word;
         word-break: break-word;
         min-width: 0;
+        max-width: 100%;
     }
 
     .pill {
