@@ -5,7 +5,7 @@ import { AppShell } from "../pages/AppShell";
  * App-level navigation — bottom tab bar, hash routing, persistence across
  * reloads. Five tabs: roll, saved, songs, band, help.
  */
-test.describe("Tab navigation", () => {
+test.describe("Tab navigation", { tag: ["@smoke"] }, () => {
     test("each bottom-nav tab navigates to its view", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();

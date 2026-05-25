@@ -31,7 +31,7 @@ function fixtureCatalogSongs(): Record<string, unknown> {
     };
 }
 
-test.describe("Saved screen — empty state", () => {
+test.describe("Saved screen — empty state", { tag: ["@smoke"] }, () => {
     test("empty state appears when no saved setlists exist", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
@@ -43,7 +43,7 @@ test.describe("Saved screen — empty state", () => {
 });
 
 test.describe("Saved screen — list", () => {
-    test("seeded setlists render as cards with name and song count", async ({ page, app }) => {
+    test("seeded setlists render as cards with name and song count", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: fixtureCatalogSongs(),
@@ -116,7 +116,7 @@ test.describe("Saved screen — view modal", () => {
         await saved.closeCard();
     });
 
-    test("Load to Roll button loads the setlist into the Roll screen", async ({ page, app }) => {
+    test("Load to Roll button loads the setlist into the Roll screen", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: fixtureCatalogSongs(),
@@ -192,7 +192,7 @@ test.describe("Saved screen — load", () => {
 });
 
 test.describe("Saved screen — delete with confirm", () => {
-    test("Remove → Delete? confirms and deletes", async ({ page, app }) => {
+    test("Remove → Delete? confirms and deletes", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 setlists: { s: setlistFixture({ id: "s", name: "Doomed Set" }) },

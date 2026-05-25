@@ -7,7 +7,7 @@ import { SongsPage } from "../pages/SongsPage";
  * Songs catalog screen — list, search, filter (type/status/key), empty
  * states. The detailed editor flows live in `song-editor.spec.ts`.
  */
-test.describe("Songs catalog — empty states", () => {
+test.describe("Songs catalog — empty states", { tag: ["@smoke"] }, () => {
     test("empty catalog shows 'Crickets...' empty state", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
@@ -35,7 +35,7 @@ test.describe("Songs catalog — empty states", () => {
     });
 });
 
-test.describe("Songs catalog — list & count", () => {
+test.describe("Songs catalog — list & count", { tag: ["@smoke"] }, () => {
     test("renders all seeded songs sorted by name", async ({ page, app }) => {
         await app.seed(
             buildSeed({

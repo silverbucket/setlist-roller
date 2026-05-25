@@ -6,7 +6,7 @@ import { BandPage } from "../pages/BandPage";
  * Band screen — band name, members, advanced config, data import/export,
  * and account management.
  */
-test.describe("Band screen — band name", () => {
+test.describe("Band screen — band name", { tag: ["@smoke"] }, () => {
     test("editing the band name updates the top bar title", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
@@ -43,7 +43,7 @@ test.describe("Band screen — members", () => {
         await expect(band.screen.locator(".empty-state")).toContainText("No members yet");
     });
 
-    test("can add a member; appears in the list", async ({ page, app }) => {
+    test("can add a member; appears in the list", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
         await new AppShell(page).gotoBand();

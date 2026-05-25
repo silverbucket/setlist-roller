@@ -60,20 +60,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}-chromium
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium webkit
+        run: npx playwright install --with-deps chromium
 
       - name: Install Playwright system deps
         # Cached browsers don't include OS-level deps (libnss3, etc.), so we
         # still need the deps step on a cache hit.
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
+        run: npx playwright install-deps chromium
 
-      - name: Run E2E tests (chromium + mobile webkit)
-        run: npm run test:e2e:all
+      - name: Run smoke tests (chromium only)
+        # PRs run the @smoke subset (~20 tests) on Chromium only.
+        # The full suite (both browsers) runs as a release pre-flight in release.yml.
+        run: npm run test:e2e:smoke
 
       - name: Upload Playwright report on failure
         if: failure()

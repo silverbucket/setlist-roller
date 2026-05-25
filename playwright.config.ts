@@ -26,8 +26,9 @@ export default defineConfig({
     workers: process.env.CI ? 1 : undefined,
     reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"], ["html", { open: "never" }]],
     // Real-backend tests do real I/O — give them more headroom than the
-    // 30s the fake-repo suite ran with.
-    timeout: 60_000,
+    // 30s the fake-repo suite ran with. 45s is still generous for any
+    // single test but fails faster than 60s when something hangs.
+    timeout: 45_000,
     expect: {
         timeout: 10_000,
     },
