@@ -27,8 +27,6 @@ const DEFAULT_CONFIG_TEMPLATE = {
             technique: 1,
             keyFlow: 2,
             positionMiss: 8,
-            earlyCover: 2,
-            earlyInstrumental: 2,
         },
         randomness: {
             variantJitter: 1.5,

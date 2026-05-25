@@ -80,12 +80,6 @@ function compareStates(left, right) {
     if (leftRank !== rightRank) {
         return leftRank - rightRank;
     }
-    if (left.coverCount !== right.coverCount) {
-        return left.coverCount - right.coverCount;
-    }
-    if (left.instrumentalCount !== right.instrumentalCount) {
-        return left.instrumentalCount - right.instrumentalCount;
-    }
     // Use numeric tiebreaker instead of expensive string join + localeCompare
     return (left._tiebreaker || 0) - (right._tiebreaker || 0);
 }
@@ -1286,12 +1280,6 @@ class SetList {
             }
         }
 
-        if (song.cover && position <= 2) {
-            score += this._weights.earlyCover;
-        }
-        if (song.instrumental && position <= 2) {
-            score += this._weights.earlyInstrumental;
-        }
         return score;
     }
 
@@ -1409,16 +1397,6 @@ class SetList {
             }
         });
 
-        if (song.cover && position <= 2) {
-            score += this._weights.earlyCover;
-            notes.push("cover held back from the opener");
-        }
-
-        if (song.instrumental && position <= 2) {
-            score += this._weights.earlyInstrumental;
-            notes.push("instrumental held back from the opener");
-        }
-
         return { score, notes };
     }
 
@@ -1450,8 +1428,6 @@ class SetList {
 
 const DEFAULT_WEIGHTS = {
     positionMiss: 8,
-    earlyCover: 6,
-    earlyInstrumental: 4,
 };
 
 const DEFAULT_RANDOMNESS = {

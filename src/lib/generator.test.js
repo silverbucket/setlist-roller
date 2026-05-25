@@ -47,8 +47,6 @@ function makeConfig(overrides = {}) {
                 instrument: 3,
                 technique: 1,
                 positionMiss: 8,
-                earlyCover: 2,
-                earlyInstrumental: 2,
             },
             randomness: {
                 variantJitter: 1.5,
@@ -577,23 +575,17 @@ describe("generateSetlist — position rules", () => {
         expect(result.summary.openerFilterRelaxed).toBe(false);
     });
 
-    it("avoids covers in first two positions", () => {
-        const songs = [
-            makeSong("Cover 1", { cover: true }),
-            makeSong("Cover 2", { cover: true }),
-            ...simpleCatalog(13).map((s, i) => ({
-                ...s,
-                id: `other-${i}`,
-                name: `Other ${i + 1}`,
-            })),
-        ];
+    it("order.first cover rule records a position miss note when cover must be opener", () => {
+        // With an all-cover catalog the opener is always a cover.
+        // The order.first ["cover", false] rule must fire and produce a
+        // positionNotes entry — a deterministic check that the rule is applied.
+        const songs = simpleCatalog(6).map((s) => ({ ...s, cover: true }));
         const config = makeConfig();
-        let coverEarly = 0;
-        for (let seed = 1; seed <= 20; seed++) {
-            const result = generateSetlist(songs, config, deterministicOptions({ count: 10, seed }));
-            if (result.songs[0]?.cover || result.songs[1]?.cover) coverEarly++;
-        }
-        expect(coverEarly).toBeLessThanOrEqual(3);
+        config.general.limits.covers = -1; // no cover cap so songs fill all slots
+
+        const result = generateSetlist(songs, config, deterministicOptions({ count: 4, seed: 1 }));
+        expect(result.songs[0].cover).toBe(true);
+        expect(result.songs[0].positionNotes.some((n) => n.includes("cover"))).toBe(true);
     });
 });
 

@@ -372,7 +372,7 @@
         flex: 1;
         padding: var(--space-3);
         padding-top: calc(var(--top-bar-height) + var(--space-3));
-        padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--space-3));
+        padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
         max-width: 640px;
         width: 100%;
         margin: 0 auto;
