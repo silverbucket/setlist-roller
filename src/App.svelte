@@ -231,7 +231,7 @@
 <style>
     /* ---- Connect screen ---- */
     .connect-shell {
-        min-height: 100dvh;
+        min-height: var(--real-vh, 100dvh);
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -268,7 +268,7 @@
 
     /* ---- Sync screen ---- */
     .sync-shell {
-        min-height: 100dvh;
+        min-height: var(--real-vh, 100dvh);
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -371,7 +371,7 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        min-height: 100dvh;
+        min-height: var(--real-vh, 100dvh);
         display: flex;
         flex-direction: column;
     }
