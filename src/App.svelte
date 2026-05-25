@@ -366,7 +366,6 @@
         min-height: 100dvh;
         display: flex;
         flex-direction: column;
-        overflow-x: hidden;
     }
 
     .main-content {

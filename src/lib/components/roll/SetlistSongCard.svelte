@@ -280,6 +280,9 @@
     font-weight: 700;
     font-size: 0.92rem;
     color: var(--ink, #182230);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0;
   }
 
   .key-badge {
