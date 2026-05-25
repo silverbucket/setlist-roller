@@ -11,6 +11,16 @@ if ("scrollRestoration" in history) {
     history.scrollRestoration = "manual";
 }
 
+// iOS standalone PWA: 100dvh is computed lazily by WebKit and starts at an
+// incorrect (too large) value on cold-start, creating a gap before the first
+// user touch corrects it. window.innerHeight is authoritative from the first
+// render. Keep it updated on resize so keyboard show/hide is also covered.
+function syncAppHeight() {
+    document.documentElement.style.setProperty("--real-vh", window.innerHeight + "px");
+}
+syncAppHeight();
+window.addEventListener("resize", syncAppHeight);
+
 registerSW({ immediate: true });
 
 const app = mount(App, {
