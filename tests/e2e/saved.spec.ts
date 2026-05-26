@@ -545,23 +545,30 @@ test.describe("Saved screen — tall setlist scrolling", () => {
         const lastSong = saved.modal.locator(".print-song").last();
         // Without scrolling the last song is offscreen.
         const visibleBefore = await lastSong.isVisible();
-        // isVisible() returns true even for offscreen elements in Playwright,
-        // so we go further: assert it's not in the viewport, then scroll it.
-        const inViewportBefore = await lastSong.evaluate((el) => {
+        // isVisible() returns true even for clipped/offscreen elements in
+        // Playwright, so assert against the modal's actual scrollport rather
+        // than the global viewport.
+        const inScrollportBefore = await lastSong.evaluate((el) => {
+            const scrollport = el.closest(".modal-content");
+            if (!scrollport) return false;
             const r = el.getBoundingClientRect();
-            return r.top < window.innerHeight && r.bottom > 0;
+            const sr = scrollport.getBoundingClientRect();
+            return r.top < sr.bottom && r.bottom > sr.top;
         });
         expect(visibleBefore).toBe(true);
-        expect(inViewportBefore).toBe(false);
+        expect(inScrollportBefore).toBe(false);
 
         await saved.modalContent.evaluate((el) => {
             el.scrollTop = el.scrollHeight;
         });
-        const inViewportAfter = await lastSong.evaluate((el) => {
+        const inScrollportAfter = await lastSong.evaluate((el) => {
+            const scrollport = el.closest(".modal-content");
+            if (!scrollport) return false;
             const r = el.getBoundingClientRect();
-            return r.top < window.innerHeight && r.bottom > 0;
+            const sr = scrollport.getBoundingClientRect();
+            return r.top < sr.bottom && r.bottom > sr.top;
         });
-        expect(inViewportAfter).toBe(true);
+        expect(inScrollportAfter).toBe(true);
     });
 });
 

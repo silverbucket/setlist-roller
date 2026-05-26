@@ -1,5 +1,6 @@
 import { mintToken, signupUser } from "../fixtures/armadietto";
 import { expect, test } from "../fixtures/test-fixtures";
+import { AppShell } from "../pages/AppShell";
 
 /**
  * Real-backend account-switching coverage. Same scenarios as
@@ -79,6 +80,7 @@ test.describe("Real backend — multi-account swap", () => {
 
         await app.goto();
         await app.waitForReady();
+        await new AppShell(page).completeFirstRun("Account A Band");
 
         // Open menu → Switch-to user-b. The custom Discover override in
         // src/lib/remotestorage.js fetches user-b's webfinger record from
