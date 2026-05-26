@@ -27,8 +27,10 @@
 
 <style>
   .bottom-nav {
-    /* The app shell owns viewport anchoring; this row stays in normal grid
-       flow and extends through the bottom safe area. */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
     height: var(--bottom-nav-height);
     display: flex;
     align-items: stretch;

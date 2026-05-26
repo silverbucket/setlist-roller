@@ -132,32 +132,41 @@ test.describe("Top bar visibility", () => {
         await expect(shell.rollTab).not.toHaveClass(/active/);
     });
 
-    test("app chrome anchors the bottom nav to the viewport bottom", async ({ page, app }) => {
+    test("fixed chrome anchors the bottom nav to the viewport bottom", async ({ page, app }) => {
+        // Chromium cannot reproduce installed iOS PWA rubber-band/safe-area bugs;
+        // this guards the static CSS invariant before real-device verification.
         await page.setViewportSize({ width: 390, height: 600 });
         await app.seed(buildSeed());
         await app.goto();
         await app.waitForReady();
 
-        const chrome = await page.locator(".app-shell").evaluate((shell) => {
-            const nav = shell.querySelector("nav.bottom-nav");
-            const main = shell.querySelector(".main-content");
+        const chrome = await page.evaluate(() => {
+            const nav = document.querySelector("nav.bottom-nav");
+            const top = document.querySelector("header.top-bar");
+            const main = document.querySelector(".main-content");
             const navRect = nav?.getBoundingClientRect();
-            const shellStyles = getComputedStyle(shell);
+            const topRect = top?.getBoundingClientRect();
+            const topStyles = top ? getComputedStyle(top) : null;
+            const navStyles = nav ? getComputedStyle(nav) : null;
             const mainStyles = main ? getComputedStyle(main) : null;
 
             return {
-                shellPosition: shellStyles.position,
-                shellInsetTop: shellStyles.top,
-                shellInsetBottom: shellStyles.bottom,
+                topPosition: topStyles?.position,
+                topTopStyle: topStyles?.top,
+                topTop: topRect?.top ?? -1,
+                navPosition: navStyles?.position,
+                navBottomStyle: navStyles?.bottom,
                 mainOverflowY: mainStyles?.overflowY,
                 navBottom: navRect?.bottom ?? 0,
                 viewportHeight: window.innerHeight,
             };
         });
 
-        expect(chrome.shellPosition).toBe("fixed");
-        expect(chrome.shellInsetTop).toBe("0px");
-        expect(chrome.shellInsetBottom).toBe("0px");
+        expect(chrome.topPosition).toBe("fixed");
+        expect(chrome.topTopStyle).toBe("0px");
+        expect(Math.abs(chrome.topTop)).toBeLessThanOrEqual(1);
+        expect(chrome.navPosition).toBe("fixed");
+        expect(chrome.navBottomStyle).toBe("0px");
         expect(chrome.mainOverflowY).toBe("auto");
         expect(Math.abs(chrome.viewportHeight - chrome.navBottom)).toBeLessThanOrEqual(1);
     });
