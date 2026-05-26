@@ -325,14 +325,11 @@ test.describe("Roll screen — hero scroll behavior", () => {
         // top: var(--top-bar-height).
         //
         // Earlier iterations of this test depended on a rolled setlist's
-        // size to make the page tall enough to scroll. That was flaky on
-        // desktop chromium — a short rolled setlist plus a 600px viewport
-        // means scrollIntoViewIfNeeded sees nothing to do, and
-        // window.scrollTo silently no-ops. Decouple the test from
-        // generation entirely: inject a tall spacer at the bottom of the
-        // body so the document is guaranteed to overflow, then drive a
-        // known scroll amount via document.documentElement.scrollTop and
-        // confirm it committed before reading the hero's bbox.
+        // size to make the page tall enough to scroll. Decouple the test
+        // from generation entirely: inject a tall spacer into the app's
+        // dedicated scroll region, then drive a known scroll amount on
+        // .main-content and confirm it committed before reading the hero's
+        // bbox.
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
@@ -344,25 +341,25 @@ test.describe("Roll screen — hero scroll behavior", () => {
         expect(initialBox).not.toBeNull();
         const initialTop = initialBox?.y ?? 0;
 
-        // Force scrollable height on body.
+        // Force scrollable height inside the app's scroll container.
         await page.evaluate(() => {
             const spacer = document.createElement("div");
             spacer.id = "__hero_scroll_spacer";
             spacer.style.cssText = "height: 2000px; pointer-events: none;";
-            document.body.appendChild(spacer);
+            document.querySelector(".roll-screen")?.appendChild(spacer);
         });
 
         const SCROLL_BY = 600;
         await page.evaluate((y) => {
-            const se = (document.scrollingElement || document.documentElement) as HTMLElement;
-            se.scrollTop = y;
+            const se = document.querySelector(".main-content") as HTMLElement | null;
+            if (se) se.scrollTop = y;
         }, SCROLL_BY);
         // Verify the scroll commit so we don't false-pass when scrollTop
         // is silently rejected (would mean a scroll-trapping bug).
         await page.waitForFunction(
             (y) => {
-                const se = (document.scrollingElement || document.documentElement) as HTMLElement;
-                return se.scrollTop >= y - 1;
+                const se = document.querySelector(".main-content") as HTMLElement | null;
+                return !!se && se.scrollTop >= y - 1;
             },
             SCROLL_BY,
             { timeout: 2_000 },

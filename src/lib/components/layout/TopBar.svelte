@@ -184,10 +184,7 @@
 
 <style>
   .top-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: relative;
     height: var(--top-bar-height);
     padding-top: env(safe-area-inset-top, 0px);
     display: grid;

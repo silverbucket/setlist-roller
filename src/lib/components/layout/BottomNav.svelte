@@ -13,7 +13,7 @@
 </script>
 
 <nav class="bottom-nav">
-  {#each tabs as tab}
+  {#each tabs as tab (tab.id)}
     <button type="button"
       class="tab"
       class:active={store.activeView === tab.id}
@@ -27,14 +27,9 @@
 
 <style>
   .bottom-nav {
-    /* In-flow at the bottom of the .app-shell flex column (no longer fixed).
-       The shell's height is locked to --real-vh (from window.innerHeight).
-       This removes the fixed positioning vs. viewport measurement mismatches
-       that were causing whitespace below the nav on installed iOS PWAs.
-       Height still includes the safe area so the background extends under
-       the home indicator. */
+    /* The app shell owns viewport anchoring; this row stays in normal grid
+       flow and extends through the bottom safe area. */
     height: var(--bottom-nav-height);
-    flex-shrink: 0;
     display: flex;
     align-items: stretch;
     background: var(--paper);
