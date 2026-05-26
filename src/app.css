@@ -70,6 +70,7 @@
        the outer fixed height. */
     --top-bar-height: calc(48px + env(safe-area-inset-top, 0px));
     --bottom-nav-height: calc(56px + env(safe-area-inset-bottom, 0px));
+    --fixed-bottom-offset: 0px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 }

@@ -28,7 +28,7 @@
 <style>
   .bottom-nav {
     position: fixed;
-    bottom: 0;
+    bottom: var(--fixed-bottom-offset, 0px);
     left: 0;
     right: 0;
     height: var(--bottom-nav-height);
