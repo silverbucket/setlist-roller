@@ -344,19 +344,20 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr) auto;
-        overflow: hidden;
+        height: var(--real-vh, 100dvh);
+        display: flex;
+        flex-direction: column;
     }
 
     .main-content {
+        flex: 1;
         min-height: 0;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
         padding: var(--space-3);
+        padding-top: calc(var(--top-bar-height) + var(--space-3));
+        padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
         max-width: 640px;
         width: 100%;
         margin: 0 auto;
