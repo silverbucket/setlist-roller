@@ -2,6 +2,14 @@
 
 Notes for anyone (human or AI) writing code in this repo.
 
+## Pull requests
+
+Always update from the latest `origin/master` before creating a PR. Branch new
+PR work from current `origin/master`, not from an older local branch or a branch
+whose predecessor PR has not yet been merged/deployed. If a PR is merged while
+work continues, rebase or recreate the follow-up branch on the updated
+`origin/master` before opening the next PR.
+
 ## CSS / UI
 
 ### Inputs must never be smaller than 16px on iOS

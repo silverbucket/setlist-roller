@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover is required for env(safe-area-inset-*) to expose
-         non-zero values on notched iPhones. Combined with the
-         apple-mobile-web-app-status-bar-style=black-translucent below, the
-         status bar overlays the page, so any element near the top edge
-         (modal close buttons, the top bar) MUST inset itself by
-         env(safe-area-inset-top) or it sits under the status bar. This is
-         the canonical viewport meta — App.svelte does not duplicate it. -->
+         non-zero values on notched iPhones. The PWA status bar must stay
+         non-translucent: black-translucent makes iOS start the webview at
+         physical y=0 while reporting only screen-height - safe-top, which
+         duplicates that missing safe-top-sized region as blank space at the
+         bottom of the installed app. This is the canonical viewport meta —
+         App.svelte does not duplicate it. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta
       name="description"
@@ -17,7 +17,7 @@
     <title>Setlist Roller</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="theme-color" content="#e15b37" />
     <!-- SYNC: key + resolution logic duplicated from src/lib/theme.svelte.js to avoid FOITC -->
     <script>

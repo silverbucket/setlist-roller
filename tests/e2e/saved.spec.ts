@@ -336,11 +336,10 @@ test.describe("Saved screen — dark mode legibility", () => {
 
 test.describe("Saved screen — iOS safe-area handling", () => {
     /**
-     * Regression: on iOS PWAs with the translucent status bar overlaying the
-     * page (apple-mobile-web-app-status-bar-style=black-translucent), the
-     * modal-close (X) button at the top-right of the sheet ended up under
-     * the status bar because the centered modal had no top safe-area
-     * padding. Two pieces wire this up:
+     * Regression: on iOS PWAs with a notched display, the modal-close (X)
+     * button at the top-right of the sheet ended up under the status bar
+     * because the centered modal had no top safe-area padding. Two pieces
+     * wire this up:
      *   1) index.html declares viewport-fit=cover so iOS exposes the real
      *      env(safe-area-inset-*) values (without it, env() returns 0).
      *   2) The modal-backdrop's padding-top uses max(1rem, var(--safe-top))
