@@ -1,18 +1,9 @@
 <script>
+  import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
+
   const { song, index, prevSong, onDragStart, onEdit, onRemove, arming = false, dragging = false } = $props();
 
   let expanded = $state(false);
-
-  function normalizeTechniqueValue(value) {
-    if (!Array.isArray(value)) return String(value || "");
-    return value.filter((technique) => technique && technique !== "none").slice().sort().join(",");
-  }
-
-  function techniqueDisplay(value) {
-    if (!Array.isArray(value)) return value || null;
-    const normalized = value.filter((technique) => technique && technique !== "none").slice().sort();
-    return normalized.length ? normalized.join(", ") : null;
-  }
 
   function toggleExpand() {
     expanded = !expanded;
