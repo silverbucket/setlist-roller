@@ -28,6 +28,8 @@ function syncAppHeight() {
 
 setAppHeight();
 window.addEventListener("resize", syncAppHeight);
+// Rotation should also re-sync even on iOS builds that coalesce or delay resize.
+window.addEventListener("orientationchange", syncAppHeight);
 // Re-sync on bfcache restore: iOS may change orientation while backgrounded.
 window.addEventListener("pageshow", syncAppHeight);
 if (window.visualViewport) {

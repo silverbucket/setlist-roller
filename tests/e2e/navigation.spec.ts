@@ -133,6 +133,8 @@ test.describe("Top bar visibility", () => {
     });
 
     test("fixed chrome anchors the bottom nav to the viewport bottom", async ({ page, app }) => {
+        // Chromium cannot reproduce installed iOS PWA rubber-band/safe-area bugs;
+        // this guards the static CSS invariant before real-device verification.
         await page.setViewportSize({ width: 390, height: 600 });
         await app.seed(buildSeed());
         await app.goto();
