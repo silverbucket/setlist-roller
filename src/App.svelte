@@ -18,6 +18,9 @@
     setContext("app", store);
 
     // TEMP(iOS diagnostics): remove after the installed-PWA viewport gap is fixed.
+    const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
+        window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
+    ));
     let diagnosticsOpen = $state(false);
 
     if (typeof window !== "undefined" && window.__SR_TEST__) {
@@ -74,9 +77,11 @@
                 Connect to remoteStorage so your songs survive the tour bus.
             </p>
 
-            <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                Viewport Diagnostics
-            </button>
+            {#if viewportDiagnosticsEnabled}
+                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
+                    Viewport Diagnostics
+                </button>
+            {/if}
 
             <label class="field">
                 <span>remoteStorage address</span>
@@ -127,9 +132,11 @@
                 <span class="spinner"></span>
                 {store.syncStatusLabel}
             </div>
-            <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                Viewport Diagnostics
-            </button>
+            {#if viewportDiagnosticsEnabled}
+                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
+                    Viewport Diagnostics
+                </button>
+            {/if}
             {#if store.syncLogEntries.length > 0}
                 <div class="sync-console" role="log" aria-live="polite">
                     {#each store.syncLogEntries as entry (entry.id)}
@@ -173,7 +180,7 @@
     </div>
 {/if}
 
-{#if diagnosticsOpen}
+{#if viewportDiagnosticsEnabled && diagnosticsOpen}
     <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
 {/if}
 

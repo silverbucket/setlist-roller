@@ -4,6 +4,11 @@
   import ViewportDiagnostics from "./ViewportDiagnostics.svelte";
 
   const store = getContext("app");
+  // TEMP(iOS diagnostics): keep this reachable in installed PWA builds until
+  // the viewport gap is measured and fixed.
+  const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
+    window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
+  ));
 
   let menuOpen = $state(false);
   let diagnosticsOpen = $state(false);
@@ -190,15 +195,17 @@
           <div class="dropdown-divider"></div>
           <button type="button" class="dropdown-item" onclick={cycleTheme}>Theme: {themeLabel[getThemePreference()]}</button>
 
-          <div class="dropdown-divider"></div>
-          <button type="button" class="dropdown-item" onclick={openDiagnostics}>Viewport Diagnostics</button>
+          {#if viewportDiagnosticsEnabled}
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item" onclick={openDiagnostics}>Viewport Diagnostics</button>
+          {/if}
         </div>
       {/if}
     </div>
   </div>
 </header>
 
-{#if diagnosticsOpen}
+{#if viewportDiagnosticsEnabled && diagnosticsOpen}
   <ViewportDiagnostics onClose={closeDiagnostics} />
 {/if}
 

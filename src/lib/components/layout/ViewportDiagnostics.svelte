@@ -129,47 +129,10 @@
     return items.length > 0 ? items : ["No obvious viewport mismatch in current sample."];
   });
 
-  function getFocusableElements() {
-    if (!sheetEl) return [];
-    return [
-      ...sheetEl.querySelectorAll(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ];
-  }
-
   function handleKeydown(e) {
     if (e.key === "Escape") {
       e.preventDefault();
       onClose?.();
-      return;
-    }
-
-    if (e.key === "Tab") {
-      const focusable = getFocusableElements();
-      if (focusable.length === 0) {
-        e.preventDefault();
-        sheetEl?.focus();
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      if (!sheetEl?.contains(active)) {
-        e.preventDefault();
-        first.focus();
-        return;
-      }
-
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
     }
   }
 
