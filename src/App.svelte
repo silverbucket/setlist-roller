@@ -62,8 +62,9 @@
     //
     // 2. Micro-scroll (+1 / back to 0).  WebKit's compositor builds its
     //    hit-test tree against the *old* DOM (sync-shell).  Any positional
-    //    delta, however tiny, forces a rebuild so the new fixed-position
-    //    elements (TopBar, BottomNav) become tappable immediately.
+    //    delta, however tiny, forces a rebuild so the new TopBar (still fixed)
+    //    and layout changes become correct immediately. BottomNav is now
+    //    in-flow so it is less sensitive to this.
     //
     // Account swaps re-flip initialSyncComplete (true → false → true);
     // the nudge only matters on the first true after boot, so latch it.
@@ -377,10 +378,8 @@
            blank space when short-content screens are visited after a
            long-content screen. --real-vh is set from window.innerHeight in
            main.js, which is authoritative on iOS PWA cold-start unlike 100dvh.
-           No overflow:hidden — .main-content handles its own overflow via
-           overflow-y:auto, and overflow:hidden on a fixed-position ancestor
-           can cause Chrome to misreport getBoundingClientRect() for elements
-           inside position:fixed children (compositing layer clipping). */
+           BottomNav is now an in-flow flex child (no longer position:fixed),
+           so the flex column naturally places it at the visual bottom. */
         height: var(--real-vh, 100dvh);
         display: flex;
         flex-direction: column;
@@ -394,7 +393,10 @@
         overscroll-behavior: contain;
         padding: var(--space-3);
         padding-top: calc(var(--top-bar-height) + var(--space-3));
-        padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
+        /* Bottom padding reduced now that BottomNav is an in-flow flex child.
+           The previous calc(var(--bottom-nav-height) + ...) reservation was
+           required only when the nav was position:fixed. */
+        padding-bottom: var(--space-3);
         max-width: 640px;
         width: 100%;
         margin: 0 auto;
