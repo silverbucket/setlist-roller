@@ -68,29 +68,33 @@ import { clone, nowIso } from "./utils.js";
         const scheme = PLAIN_HTTP_HOST_RE.test(host) || PLAIN_HTTP_HOST_RE.test(hostNoPort) ? "http" : "https";
         const url = `${scheme}://${host}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
-        return fetch(url).then(async (resp) => {
-            if (!resp.ok) throw new Error(`WebFinger failed: ${resp.status}`);
-            const data = await resp.json();
-            const link = Array.isArray(data?.links)
-                ? data.links.find((l) => l?.rel && RS_LINK_RELS.has(l.rel))
-                : undefined;
-            if (!link?.href) throw new Error("No remoteStorage link in WebFinger response");
-            const properties = link.properties ?? {};
-            const storageApi =
-                (typeof link.type === "string" ? link.type : undefined) ??
-                (typeof properties["http://remotestorage.io/spec/version"] === "string"
-                    ? properties["http://remotestorage.io/spec/version"]
-                    : undefined);
-            let authURL;
-            for (const key of AUTH_URL_PROPS) {
-                const v = properties[key];
-                if (typeof v === "string") {
-                    authURL = v;
-                    break;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        return fetch(url, { signal: controller.signal })
+            .then(async (resp) => {
+                if (!resp.ok) throw new Error(`WebFinger failed: ${resp.status}`);
+                const data = await resp.json();
+                const link = Array.isArray(data?.links)
+                    ? data.links.find((l) => l?.rel && RS_LINK_RELS.has(l.rel))
+                    : undefined;
+                if (!link?.href) throw new Error("No remoteStorage link in WebFinger response");
+                const properties = link.properties ?? {};
+                const storageApi =
+                    (typeof link.type === "string" ? link.type : undefined) ??
+                    (typeof properties["http://remotestorage.io/spec/version"] === "string"
+                        ? properties["http://remotestorage.io/spec/version"]
+                        : undefined);
+                let authURL;
+                for (const key of AUTH_URL_PROPS) {
+                    const v = properties[key];
+                    if (typeof v === "string") {
+                        authURL = v;
+                        break;
+                    }
                 }
-            }
-            return { href: link.href, storageApi, authURL, properties };
-        });
+                return { href: link.href, storageApi, authURL, properties };
+            })
+            .finally(() => clearTimeout(timeoutId));
     };
 
     // Preserve `RemoteStorage.Discover.DiscoveryError` — rs.js's connect path

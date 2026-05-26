@@ -1,10 +1,14 @@
 // SYNC: key + resolution logic duplicated in index.html inline script to avoid FOITC
 const STORAGE_KEY = "setlist-roller-theme";
 const PREFS = ["system", "light", "dark"];
-const mq = window.matchMedia("(prefers-color-scheme: dark)");
+const mq =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : { matches: false };
 
 function readPref() {
   try {
+    if (typeof localStorage === "undefined") return "system";
     const v = localStorage.getItem(STORAGE_KEY);
     return PREFS.includes(v) ? v : "system";
   } catch {
@@ -18,6 +22,7 @@ function resolve(pref) {
 }
 
 function apply(eff) {
+  if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = eff;
 }
 
@@ -33,9 +38,19 @@ function onSystemChange() {
   }
 }
 
-mq.addEventListener("change", onSystemChange);
+if (typeof mq.addEventListener === "function") {
+  mq.addEventListener("change", onSystemChange);
+} else if (typeof mq.addListener === "function") {
+  mq.addListener(onSystemChange);
+}
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => mq.removeEventListener("change", onSystemChange));
+  import.meta.hot.dispose(() => {
+    if (typeof mq.removeEventListener === "function") {
+      mq.removeEventListener("change", onSystemChange);
+    } else if (typeof mq.removeListener === "function") {
+      mq.removeListener(onSystemChange);
+    }
+  });
 }
 
 export function getThemePreference() {
