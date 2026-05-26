@@ -45,7 +45,12 @@ class MemStorage {
     }
 }
 
+let _origLocalStorage;
+let _origWindow;
+
 beforeEach(() => {
+    _origLocalStorage = globalThis.localStorage;
+    _origWindow = globalThis.window;
     // Fresh per-test storage so saved tokens / snapshots don't leak.
     globalThis.localStorage = new MemStorage();
     // Minimum window surface the store touches: location.hash for routing
@@ -59,6 +64,10 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.useRealTimers();
+    if (typeof _origLocalStorage === "undefined") delete globalThis.localStorage;
+    else globalThis.localStorage = _origLocalStorage;
+    if (typeof _origWindow === "undefined") delete globalThis.window;
+    else globalThis.window = _origWindow;
 });
 
 /**

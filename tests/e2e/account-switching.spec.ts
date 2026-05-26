@@ -3,7 +3,7 @@ import { expect, test } from "../fixtures/test-fixtures";
 
 /**
  * Real-backend account-switching coverage. Same scenarios as
- * tests/e2e/account-switching.spec.ts but against a live armadietto +
+ * the fake-repo account-switching tests but against a live armadietto +
  * rs.js stack, so the OAuth redirect, webfinger discovery, and IndexedDB
  * cache are all exercised. The fake-repo equivalents pass — these catch
  * the regressions that only surface against real machinery.
