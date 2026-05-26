@@ -8,7 +8,7 @@
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
-    import { createRemoteStorageRepository, isIosStandaloneAuthContext } from "./lib/remotestorage.js";
+    import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
     import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb, hexToRgba } from "./lib/utils.js";
 
@@ -51,34 +51,6 @@
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
-    // iOS standalone PWA: after the sync-shell → app-shell DOM swap two
-    // things need to happen in one rAF chain:
-    //
-    // 1. Reset scroll to the top.  history.scrollRestoration = "manual"
-    //    (set in main.js) stops the runtime from re-applying a stale
-    //    scroll offset, but iOS may still start with a non-zero scrollY
-    //    from the compositor's previous frame.  Explicitly calling
-    //    scrollTo(0, 0) clears it.
-    //
-    // 2. Micro-scroll (+1 / back to 0).  WebKit's compositor builds its
-    //    hit-test tree against the *old* DOM (sync-shell).  Any positional
-    //    delta, however tiny, forces a rebuild so the new TopBar (still fixed)
-    //    and layout changes become correct immediately. BottomNav is now
-    //    in-flow so it is less sensitive to this.
-    //
-    // Account swaps re-flip initialSyncComplete (true → false → true);
-    // the nudge only matters on the first true after boot, so latch it.
-    let iosScrollNudged = false;
-    $effect(() => {
-        if (iosScrollNudged) return;
-        if (store.initialSyncComplete && isIosStandaloneAuthContext()) {
-            iosScrollNudged = true;
-            requestAnimationFrame(() => {
-                window.scrollTo(0, 1); // micro-nudge forces compositor rebuild
-                requestAnimationFrame(() => window.scrollTo(0, 0)); // reset to top
-            });
-        }
-    });
 </script>
 
 <svelte:head>
@@ -232,7 +204,7 @@
 <style>
     /* ---- Connect screen ---- */
     .connect-shell {
-        min-height: var(--real-vh, 100svh);
+        min-height: 100svh;
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -269,7 +241,7 @@
 
     /* ---- Sync screen ---- */
     .sync-shell {
-        min-height: var(--real-vh, 100svh);
+        min-height: 100svh;
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -372,30 +344,19 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        /* height (not min-height) locks the shell so the body never scrolls
-           and each tab keeps its own scroll position inside .main-content.
-           --real-vh is the critical value here. main.js keeps it in sync with
-           visualViewport.height (preferred) + multiple settling measurements
-           because plain innerHeight / 100dvh / 100svh are frequently wrong or
-           stale exactly on installed iOS PWA cold starts — the scenario that
-           produces whitespace below the bottom nav. */
-        height: var(--real-vh, 100svh);
-        display: flex;
-        flex-direction: column;
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
     }
 
     .main-content {
-        flex: 1;
-        min-height: 0; /* flex items default to min-height:auto which prevents shrinking and blocks overflow-y scroll on Safari */
+        min-height: 0;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
         padding: var(--space-3);
-        padding-top: calc(var(--top-bar-height) + var(--space-3));
-        /* Bottom padding reduced now that BottomNav is an in-flow flex child.
-           The previous calc(var(--bottom-nav-height) + ...) reservation was
-           required only when the nav was position:fixed. */
-        padding-bottom: var(--space-3);
         max-width: 640px;
         width: 100%;
         margin: 0 auto;

@@ -131,4 +131,34 @@ test.describe("Top bar visibility", () => {
         await expect(shell.songsTab).toHaveClass(/active/);
         await expect(shell.rollTab).not.toHaveClass(/active/);
     });
+
+    test("app chrome anchors the bottom nav to the viewport bottom", async ({ page, app }) => {
+        await page.setViewportSize({ width: 390, height: 600 });
+        await app.seed(buildSeed());
+        await app.goto();
+        await app.waitForReady();
+
+        const chrome = await page.locator(".app-shell").evaluate((shell) => {
+            const nav = shell.querySelector("nav.bottom-nav");
+            const main = shell.querySelector(".main-content");
+            const navRect = nav?.getBoundingClientRect();
+            const shellStyles = getComputedStyle(shell);
+            const mainStyles = main ? getComputedStyle(main) : null;
+
+            return {
+                shellPosition: shellStyles.position,
+                shellInsetTop: shellStyles.top,
+                shellInsetBottom: shellStyles.bottom,
+                mainOverflowY: mainStyles?.overflowY,
+                navBottom: navRect?.bottom ?? 0,
+                viewportHeight: window.innerHeight,
+            };
+        });
+
+        expect(chrome.shellPosition).toBe("fixed");
+        expect(chrome.shellInsetTop).toBe("0px");
+        expect(chrome.shellInsetBottom).toBe("0px");
+        expect(chrome.mainOverflowY).toBe("auto");
+        expect(Math.abs(chrome.viewportHeight - chrome.navBottom)).toBeLessThanOrEqual(1);
+    });
 });
