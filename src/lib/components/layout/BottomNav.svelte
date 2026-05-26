@@ -31,7 +31,11 @@
     bottom: 0;
     left: 0;
     right: 0;
-    height: 56px;
+    /* height must match --bottom-nav-height so the element covers the same
+       vertical space that main-content reserves in its padding-bottom.
+       Using only 56px leaves the safe-area zone (env(safe-area-inset-bottom))
+       uncovered, producing a persistent gap above the nav. */
+    height: var(--bottom-nav-height);
     display: flex;
     align-items: stretch;
     background: var(--paper);

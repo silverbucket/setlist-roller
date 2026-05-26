@@ -14,12 +14,20 @@ if ("scrollRestoration" in history) {
 // iOS standalone PWA: 100dvh is computed lazily by WebKit and starts at an
 // incorrect (too large) value on cold-start, creating a gap before the first
 // user touch corrects it. window.innerHeight is authoritative from the first
-// render. Keep it updated on resize so keyboard show/hide is also covered.
+// render. Keep it updated on multiple events so the value stays correct after
+// keyboard show/hide, orientation changes, and page-restore from background.
 function syncAppHeight() {
     document.documentElement.style.setProperty("--real-vh", window.innerHeight + "px");
 }
 syncAppHeight();
 window.addEventListener("resize", syncAppHeight);
+// pageshow fires on back-forward cache restore where resize may not fire
+window.addEventListener("pageshow", syncAppHeight);
+// visualViewport.resize is more reliable than window.resize on iOS for
+// catching height changes caused by the on-screen keyboard
+if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncAppHeight);
+}
 
 registerSW({ immediate: true });
 
