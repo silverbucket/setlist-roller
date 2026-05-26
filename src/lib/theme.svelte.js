@@ -22,6 +22,7 @@ function resolve(pref) {
 }
 
 function apply(eff) {
+  if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = eff;
 }
 

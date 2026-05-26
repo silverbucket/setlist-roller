@@ -1956,13 +1956,21 @@ export function createAppStore(repo) {
     // ---- band members ----
     async function persistMemberEdit(memberName, data, errorMessage = "Could not save member.") {
         const normalized = normalizeMemberRecord(data);
-        const previous = bandMembers;
+        const previousMember = bandMembers?.[memberName];
         bandMembers = { ...bandMembers, [memberName]: normalized };
         try {
             await withSync("Saving member", () => repo.putMember(memberName, normalized));
             return true;
         } catch (error) {
-            bandMembers = previous;
+            // Revert only our own key, and only if a newer edit hasn't already
+            // replaced it, so a failed save can't clobber a concurrent successful
+            // edit to this or another member.
+            if (bandMembers?.[memberName] === normalized) {
+                const next = { ...bandMembers };
+                if (previousMember === undefined) delete next[memberName];
+                else next[memberName] = previousMember;
+                bandMembers = next;
+            }
             toastError(error?.message || errorMessage);
             return false;
         }
