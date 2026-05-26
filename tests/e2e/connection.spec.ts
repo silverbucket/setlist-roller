@@ -65,6 +65,7 @@ test.describe("Connection screen", () => {
         await connect.connectViaOAuth(user);
         const shell = new AppShell(page);
         await expect(shell.rollTab).toBeVisible({ timeout: 15_000 });
+        await shell.completeFirstRun("Recurring Band");
 
         // Disconnect and verify the address shows up under Recent
         await shell.openMenu();
