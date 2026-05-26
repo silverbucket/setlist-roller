@@ -1,10 +1,12 @@
 <script>
   import { getContext, tick } from "svelte";
   import { cycleTheme, getThemePreference } from "../../theme.svelte.js";
+  import ViewportDiagnostics from "./ViewportDiagnostics.svelte";
 
   const store = getContext("app");
 
   let menuOpen = $state(false);
+  let diagnosticsOpen = $state(false);
   let menuBtnEl = $state();
   let dropdownEl = $state();
   const themeLabel = { system: "◐ System", light: "☀ Light", dark: "☽ Dark" };
@@ -15,6 +17,11 @@
 
   function closeMenu() {
     menuOpen = false;
+  }
+
+  function openDiagnostics() {
+    closeMenu();
+    diagnosticsOpen = true;
   }
 
   let currentAccount = $derived(
@@ -176,11 +183,18 @@
 
           <div class="dropdown-divider"></div>
           <button type="button" class="dropdown-item" onclick={cycleTheme}>Theme: {themeLabel[getThemePreference()]}</button>
+
+          <div class="dropdown-divider"></div>
+          <button type="button" class="dropdown-item" onclick={openDiagnostics}>Viewport Diagnostics</button>
         </div>
       {/if}
     </div>
   </div>
 </header>
+
+{#if diagnosticsOpen}
+  <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
+{/if}
 
 <style>
   .top-bar {
