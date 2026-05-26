@@ -27,6 +27,7 @@
     --success: #1f8f61;
     --danger: #992f20;
     --sync: #3a6df0;
+    --app-canvas-bg: #e9eef6;
 
     /* Semantic */
     --surface: rgba(255, 255, 255, 0.92);
@@ -95,6 +96,7 @@
     --success: #34b87a;
     --danger: #e05545;
     --sync: #7da0ff;
+    --app-canvas-bg: #1a1f28;
 
     --surface: rgba(38, 43, 54, 0.92);
     --overlay: rgba(0, 0, 0, 0.5);
@@ -137,7 +139,22 @@ body {
 body {
     min-width: 320px;
     color: var(--ink);
+    /* iOS standalone can expose a non-DOM strip outside the reported viewport.
+       Paint the browser canvas from body as well as :root so that strip does
+       not fall back to white when the app itself is correctly capped to the
+       measurable web viewport. */
+    background:
+        radial-gradient(circle at top left, rgba(244, 113, 76, 0.16), transparent 28%),
+        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.12), transparent 24%),
+        linear-gradient(180deg, #f7f8fc 0%, #f0f3f9 52%, var(--app-canvas-bg) 100%);
     background-attachment: fixed;
+}
+
+:root[data-theme="dark"] body {
+    background:
+        radial-gradient(circle at top left, rgba(232, 118, 74, 0.08), transparent 28%),
+        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.06), transparent 24%),
+        linear-gradient(180deg, #14171e 0%, #181c24 52%, var(--app-canvas-bg) 100%);
 }
 
 button,
