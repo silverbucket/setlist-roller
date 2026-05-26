@@ -232,7 +232,7 @@
 <style>
     /* ---- Connect screen ---- */
     .connect-shell {
-        min-height: var(--real-vh, 100dvh);
+        min-height: var(--real-vh, 100svh);
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -269,7 +269,7 @@
 
     /* ---- Sync screen ---- */
     .sync-shell {
-        min-height: var(--real-vh, 100dvh);
+        min-height: var(--real-vh, 100svh);
         display: grid;
         place-items: center;
         padding: var(--space-4);
@@ -372,15 +372,14 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        /* height (not min-height) locks the shell to the viewport so the body
-           never scrolls. Each screen scrolls within .main-content instead.
-           Prevents scroll state from bleeding between tabs and eliminates
-           blank space when short-content screens are visited after a
-           long-content screen. --real-vh is set from window.innerHeight in
-           main.js, which is authoritative on iOS PWA cold-start unlike 100dvh.
-           BottomNav is now an in-flow flex child (no longer position:fixed),
-           so the flex column naturally places it at the visual bottom. */
-        height: var(--real-vh, 100dvh);
+        /* height (not min-height) locks the shell so the body never scrolls
+           and each tab keeps its own scroll position inside .main-content.
+           --real-vh is the critical value here. main.js keeps it in sync with
+           visualViewport.height (preferred) + multiple settling measurements
+           because plain innerHeight / 100dvh / 100svh are frequently wrong or
+           stale exactly on installed iOS PWA cold starts — the scenario that
+           produces whitespace below the bottom nav. */
+        height: var(--real-vh, 100svh);
         display: flex;
         flex-direction: column;
     }

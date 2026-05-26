@@ -62,7 +62,12 @@
     --space-6: 1.5rem;
     --space-8: 2rem;
 
-    /* Layout */
+    /* Layout
+       The JS in main.js keeps --real-vh in sync with the best available
+       visual viewport measurement (preferring visualViewport.height on
+       iOS PWA). The 100svh fallback is deliberately conservative; it is
+       overridden at runtime on iOS standalone where dvh/svh/innerHeight
+       are known to be unreliable on cold start. */
     --top-bar-height: calc(48px + env(safe-area-inset-top, 0px));
     --bottom-nav-height: calc(56px + env(safe-area-inset-bottom, 0px));
     --safe-top: env(safe-area-inset-top, 0px);
