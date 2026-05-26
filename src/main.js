@@ -18,9 +18,7 @@ if ("scrollRestoration" in history) {
 // scenarios). We also do extra settling measurements on iOS standalone.
 function syncAppHeight() {
     const vv = window.visualViewport;
-    const h = vv && typeof vv.height === "number" && vv.height > 0
-        ? vv.height
-        : window.innerHeight;
+    const h = vv && typeof vv.height === "number" && vv.height > 0 ? vv.height : window.innerHeight;
     document.documentElement.style.setProperty("--real-vh", `${h}px`);
 }
 
@@ -40,8 +38,7 @@ if (window.visualViewport) {
 // Extra aggressive settling for installed iOS PWA. visualViewport and
 // innerHeight can take a few frames (or a user gesture) to report the
 // true visual bounds. We re-measure a few times after first paint.
-const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches
-    || window.navigator?.standalone === true;
+const isStandalone = window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true;
 
 if (isStandalone) {
     // Run a few settling syncs. These are cheap and have prevented the
