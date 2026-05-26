@@ -4,6 +4,7 @@
     import HelpScreen from "./lib/components/help/HelpScreen.svelte";
     import BottomNav from "./lib/components/layout/BottomNav.svelte";
     import TopBar from "./lib/components/layout/TopBar.svelte";
+    import ViewportDiagnostics from "./lib/components/layout/ViewportDiagnostics.svelte";
     import RollScreen from "./lib/components/roll/RollScreen.svelte";
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
@@ -15,6 +16,12 @@
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
     setContext("app", store);
+
+    // TEMP(iOS diagnostics): remove after the installed-PWA viewport gap is fixed.
+    const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
+        window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
+    ));
+    let diagnosticsOpen = $state(false);
 
     if (typeof window !== "undefined" && window.__SR_TEST__) {
         // Test-mode escape hatch: expose the store + repo on window so
@@ -70,6 +77,12 @@
                 Connect to remoteStorage so your songs survive the tour bus.
             </p>
 
+            {#if viewportDiagnosticsEnabled}
+                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
+                    Viewport Diagnostics
+                </button>
+            {/if}
+
             <label class="field">
                 <span>remoteStorage address</span>
                 <input
@@ -119,6 +132,11 @@
                 <span class="spinner"></span>
                 {store.syncStatusLabel}
             </div>
+            {#if viewportDiagnosticsEnabled}
+                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
+                    Viewport Diagnostics
+                </button>
+            {/if}
             {#if store.syncLogEntries.length > 0}
                 <div class="sync-console" role="log" aria-live="polite">
                     {#each store.syncLogEntries as entry (entry.id)}
@@ -160,6 +178,10 @@
 
         <BottomNav />
     </div>
+{/if}
+
+{#if viewportDiagnosticsEnabled && diagnosticsOpen}
+    <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
 {/if}
 
 {#if store.showFirstRunPrompt}
@@ -238,6 +260,18 @@
 
     .lede {
         color: var(--muted);
+    }
+
+    .debug-link {
+        justify-self: start;
+        min-height: 44px;
+        padding: 0.6rem 0.85rem;
+        border: 1px dashed var(--accent-line);
+        border-radius: var(--radius-md);
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 16px;
+        font-weight: 800;
     }
 
     /* ---- Sync screen ---- */

@@ -1,10 +1,17 @@
 <script>
   import { getContext, tick } from "svelte";
   import { cycleTheme, getThemePreference } from "../../theme.svelte.js";
+  import ViewportDiagnostics from "./ViewportDiagnostics.svelte";
 
   const store = getContext("app");
+  // TEMP(iOS diagnostics): keep this reachable in installed PWA builds until
+  // the viewport gap is measured and fixed.
+  const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
+    window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
+  ));
 
   let menuOpen = $state(false);
+  let diagnosticsOpen = $state(false);
   let menuBtnEl = $state();
   let dropdownEl = $state();
   const themeLabel = { system: "◐ System", light: "☀ Light", dark: "☽ Dark" };
@@ -15,6 +22,17 @@
 
   function closeMenu() {
     menuOpen = false;
+  }
+
+  function openDiagnostics() {
+    closeMenu();
+    diagnosticsOpen = true;
+  }
+
+  async function closeDiagnostics() {
+    diagnosticsOpen = false;
+    await tick();
+    menuBtnEl?.focus();
   }
 
   let currentAccount = $derived(
@@ -176,11 +194,20 @@
 
           <div class="dropdown-divider"></div>
           <button type="button" class="dropdown-item" onclick={cycleTheme}>Theme: {themeLabel[getThemePreference()]}</button>
+
+          {#if viewportDiagnosticsEnabled}
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item" onclick={openDiagnostics}>Viewport Diagnostics</button>
+          {/if}
         </div>
       {/if}
     </div>
   </div>
 </header>
+
+{#if viewportDiagnosticsEnabled && diagnosticsOpen}
+  <ViewportDiagnostics onClose={closeDiagnostics} />
+{/if}
 
 <style>
   .top-bar {
