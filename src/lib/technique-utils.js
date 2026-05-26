@@ -6,8 +6,11 @@
  * @returns {string}
  */
 export function normalizeTechniqueValue(value) {
-    if (!Array.isArray(value)) return String(value || "");
-    return value.filter((technique) => technique && technique !== "none").slice().sort().join(",");
+    return (Array.isArray(value) ? value : [value])
+        .filter((technique) => technique && technique !== "none")
+        .slice()
+        .sort()
+        .join(",");
 }
 
 /**
@@ -18,7 +21,9 @@ export function normalizeTechniqueValue(value) {
  * @returns {string|null}
  */
 export function techniqueDisplay(value) {
-    if (!Array.isArray(value)) return value || null;
-    const normalized = value.filter((technique) => technique && technique !== "none").slice().sort();
+    const normalized = (Array.isArray(value) ? value : [value])
+        .filter((technique) => technique && technique !== "none")
+        .slice()
+        .sort();
     return normalized.length ? normalized.join(", ") : null;
 }
