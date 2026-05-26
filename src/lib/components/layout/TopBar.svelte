@@ -24,6 +24,12 @@
     diagnosticsOpen = true;
   }
 
+  async function closeDiagnostics() {
+    diagnosticsOpen = false;
+    await tick();
+    menuBtnEl?.focus();
+  }
+
   let currentAccount = $derived(
     store.knownAccounts.find((a) => a.address === store.connectAddress)
   );
@@ -193,7 +199,7 @@
 </header>
 
 {#if diagnosticsOpen}
-  <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
+  <ViewportDiagnostics onClose={closeDiagnostics} />
 {/if}
 
 <style>

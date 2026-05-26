@@ -1,10 +1,17 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
+
+  // TEMP(iOS diagnostics): remove this component after the installed-PWA
+  // viewport gap is measured and fixed.
 
   let { onClose } = $props();
 
   let diagnostics = $state({});
   let copied = $state(false);
+  let copyError = $state("");
+  let sheetEl = $state();
+  let closeBtnEl = $state();
+  let previousFocus = null;
 
   function round(value) {
     return typeof value === "number" ? Math.round(value * 100) / 100 : value;
@@ -97,52 +104,157 @@
   }
 
   let diagnosticsText = $derived(JSON.stringify(diagnostics, null, 2));
+  let findings = $derived.by(() => {
+    const layout = diagnostics.layout || {};
+    const mode = diagnostics.mode || {};
+    const viewport = diagnostics.visualViewport;
+    const items = [];
+
+    if (!mode.standaloneMedia && mode.navigatorStandalone !== true) {
+      items.push("Not detected as standalone PWA.");
+    }
+    if (Math.abs(layout.gapBelowNavFromInnerHeight || 0) > 2) {
+      items.push(`innerHeight/nav gap: ${layout.gapBelowNavFromInnerHeight}px`);
+    }
+    if (Math.abs(layout.gapBelowNavFromVisualViewport || 0) > 2) {
+      items.push(`visualViewport/nav gap: ${layout.gapBelowNavFromVisualViewport}px`);
+    }
+    if (viewport?.scale && viewport.scale !== 1) {
+      items.push(`visualViewport scale is ${viewport.scale}.`);
+    }
+    if (!diagnostics.css?.realVh) {
+      items.push("--real-vh is missing.");
+    }
+
+    return items.length > 0 ? items : ["No obvious viewport mismatch in current sample."];
+  });
+
+  function getFocusableElements() {
+    if (!sheetEl) return [];
+    return [
+      ...sheetEl.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ];
+  }
+
+  function handleKeydown(e) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose?.();
+      return;
+    }
+
+    if (e.key === "Tab") {
+      const focusable = getFocusableElements();
+      if (focusable.length === 0) {
+        e.preventDefault();
+        sheetEl?.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (!sheetEl?.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
 
   async function copyDiagnostics() {
     copied = false;
-    await navigator.clipboard.writeText(diagnosticsText);
-    copied = true;
+    copyError = "";
+    try {
+      await navigator.clipboard.writeText(diagnosticsText);
+      copied = true;
+    } catch (error) {
+      copyError = error instanceof Error ? error.message : "Clipboard copy failed";
+    }
   }
 
   onMount(() => {
-    let timeoutIds = [];
-    let intervalId;
+    const timeoutIds = [];
+    let rafId = 0;
 
+    previousFocus = document.activeElement;
     collectDiagnostics();
 
-    const schedule = () => requestAnimationFrame(collectDiagnostics);
+    const schedule = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        collectDiagnostics();
+      });
+    };
+
+    tick().then(() => {
+      closeBtnEl?.focus();
+    });
+
+    window.addEventListener("keydown", handleKeydown);
     window.addEventListener("resize", schedule);
     window.addEventListener("orientationchange", schedule);
     window.addEventListener("pageshow", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("scroll", schedule);
 
-    intervalId = window.setInterval(collectDiagnostics, 250);
-    timeoutIds.push(window.setTimeout(() => window.clearInterval(intervalId), 5000));
-    for (const delay of [50, 120, 350, 800, 1500, 3000]) {
+    for (const delay of [50, 250, 1000]) {
       timeoutIds.push(window.setTimeout(collectDiagnostics, delay));
     }
 
     return () => {
+      window.removeEventListener("keydown", handleKeydown);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("orientationchange", schedule);
       window.removeEventListener("pageshow", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
-      window.clearInterval(intervalId);
+      if (rafId) cancelAnimationFrame(rafId);
       for (const timeoutId of timeoutIds) window.clearTimeout(timeoutId);
+      if (
+        previousFocus &&
+        typeof previousFocus.focus === "function" &&
+        document.body.contains(previousFocus)
+      ) {
+        previousFocus.focus();
+      }
+      previousFocus = null;
     };
   });
 </script>
 
-<div class="diagnostics-backdrop" role="presentation" onclick={onClose}></div>
-<div class="diagnostics-sheet" role="dialog" aria-modal="true" aria-labelledby="viewport-diagnostics-title">
+<div
+  class="diagnostics-sheet"
+  bind:this={sheetEl}
+  role="dialog"
+  aria-modal="false"
+  aria-labelledby="viewport-diagnostics-title"
+  tabindex="-1"
+>
   <div class="diagnostics-header">
     <div>
       <p class="eyebrow">Debug</p>
       <h2 id="viewport-diagnostics-title">Viewport Diagnostics</h2>
     </div>
-    <button type="button" class="icon-btn" onclick={onClose} aria-label="Close viewport diagnostics">&times;</button>
+    <button bind:this={closeBtnEl} type="button" class="icon-btn" onclick={onClose} aria-label="Close viewport diagnostics">&times;</button>
+  </div>
+
+  <div class="findings" aria-live="polite">
+    {#each findings as finding (finding)}
+      <p>{finding}</p>
+    {/each}
   </div>
 
   <div class="diagnostics-actions">
@@ -152,33 +264,33 @@
     <button type="button" class="diag-btn" onclick={collectDiagnostics}>Refresh</button>
   </div>
 
+  {#if copyError}
+    <p class="copy-error" role="alert">Copy failed: {copyError}</p>
+  {/if}
+
   <pre>{diagnosticsText}</pre>
 </div>
 
 <style>
-  .diagnostics-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 500;
-    background: rgba(18, 24, 36, 0.42);
-    backdrop-filter: blur(4px);
-  }
-
   .diagnostics-sheet {
     position: fixed;
     left: 12px;
     right: 12px;
-    top: calc(var(--safe-top) + 12px);
-    bottom: calc(var(--safe-bottom) + 12px);
-    z-index: 501;
+    top: calc(var(--top-bar-height) + 8px);
+    bottom: calc(var(--bottom-nav-height) + 8px);
+    z-index: 250;
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
     gap: 12px;
     padding: 16px;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--paper-strong);
     box-shadow: var(--shadow);
+  }
+
+  .diagnostics-sheet:focus {
+    outline: none;
   }
 
   .diagnostics-header {
@@ -220,6 +332,26 @@
     gap: 8px;
   }
 
+  .findings {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius-md);
+    background: var(--accent-soft);
+  }
+
+  .findings p,
+  .copy-error {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .copy-error {
+    color: var(--danger);
+  }
+
   .diag-btn {
     min-height: 44px;
     padding: 10px 14px;
@@ -246,7 +378,7 @@
     border-radius: var(--radius-md);
     background: rgba(13, 18, 28, 0.92);
     color: #edf2ff;
-    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     white-space: pre-wrap;
   }
 </style>
