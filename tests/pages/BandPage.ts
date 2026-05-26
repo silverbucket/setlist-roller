@@ -124,16 +124,6 @@ export class BandPage {
         await expect(this.advancedTitle).toBeVisible();
     }
 
-    async setDieColor(color: string) {
-        await this.screen
-            .locator(".pip-swatch")
-            .filter({ has: this.page.locator(`[aria-label="Set die color to ${color}"]`) })
-            .first()
-            .click();
-        // The accessible-name route doesn't always pick up button aria-labels
-        // through filter — fallback selector that's resilient:
-    }
-
     async pickDieColor(color: string) {
         await this.screen.getByRole("button", { name: `Set die color to ${color}` }).click();
     }
