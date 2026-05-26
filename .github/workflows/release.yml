@@ -112,12 +112,18 @@ jobs:
     name: Version, build & deploy
     # Only runs when both validate and all e2e shards pass.
     needs: [validate, e2e]
+    # The deploy key can push to the protected master branch, so refuse to run
+    # this privileged job unless it was dispatched from master itself —
+    # otherwise dispatching from any branch would publish that branch to master.
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ github.token }}
+          # Origin pushes use the SSH deploy key, never the default token, so
+          # don't leave the token persisted in the local git config.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -167,11 +173,22 @@ jobs:
           git commit -m "deploy v${VERSION}"
           git push 5apps HEAD:refs/heads/master --force
 
+      # Push the release commit to the protected master branch using a
+      # dedicated SSH deploy key. That key is the ONLY actor on the master
+      # ruleset's bypass list, so the release job is the only thing that can
+      # write to master — no PAT, no human, not even a repo admin.
       - name: Tag and push version
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
         run: |
+          mkdir -p ~/.ssh
+          echo "$RELEASE_DEPLOY_KEY" > ~/.ssh/github_release_key
+          chmod 600 ~/.ssh/github_release_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+          printf 'Host github.com\n  IdentityFile ~/.ssh/github_release_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+          git remote set-url origin git@github.com:silverbucket/setlist-roller.git
           git tag "v${VERSION}" "${SOURCE_SHA}"
           git push origin "${SOURCE_SHA}":master --tags
 
