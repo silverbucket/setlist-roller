@@ -10,13 +10,46 @@ if ("scrollRestoration" in history) {
     history.scrollRestoration = "manual";
 }
 
-function setAppHeight() {
-    document.documentElement.style.setProperty("--real-vh", `${window.innerHeight}px`);
+function readPxCustomProperty(name) {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
 
-// Keep the shell height tied to the initial layout viewport value that iOS
-// standalone exposes most consistently for fixed chrome. The fixed top/bottom
-// bars do not depend on this for anchoring; content uses it for its scroll box.
+function isStandalonePwa() {
+    return window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true;
+}
+
+function getAppHeight() {
+    const viewportHeight = window.innerHeight;
+
+    if (!isStandalonePwa()) return viewportHeight;
+
+    const physicalHeight = Math.max(screen.height || 0, window.outerHeight || 0);
+    const missingHeight = physicalHeight - viewportHeight;
+    const safeTop = readPxCustomProperty("--safe-top");
+
+    // iOS standalone can report innerHeight/visualViewport.height as the area
+    // below the status bar while still painting the full physical screen. When
+    // the missing region exactly matches safe-area-inset-top, use the physical
+    // height and offset fixed bottom chrome into that recovered space.
+    if (physicalHeight > viewportHeight && safeTop > 0 && Math.abs(missingHeight - safeTop) <= 2) {
+        return physicalHeight;
+    }
+
+    return viewportHeight;
+}
+
+function setAppHeight() {
+    const appHeight = getAppHeight();
+    const fixedBottomOffset = Math.min(0, window.innerHeight - appHeight);
+
+    document.documentElement.style.setProperty("--real-vh", `${appHeight}px`);
+    document.documentElement.style.setProperty("--fixed-bottom-offset", `${fixedBottomOffset}px`);
+}
+
+// Keep shell/chrome sizing in sync with the viewport values iOS standalone
+// actually paints. Installed PWAs can under-report innerHeight by safe-top.
 let appHeightRaf = 0;
 function syncAppHeight() {
     if (appHeightRaf) return;
