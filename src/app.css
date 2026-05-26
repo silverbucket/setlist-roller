@@ -155,6 +155,7 @@ body {
         radial-gradient(circle at top left, rgba(232, 118, 74, 0.08), transparent 28%),
         radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.06), transparent 24%),
         linear-gradient(180deg, #14171e 0%, #181c24 52%, var(--app-canvas-bg) 100%);
+    background-attachment: fixed;
 }
 
 button,
