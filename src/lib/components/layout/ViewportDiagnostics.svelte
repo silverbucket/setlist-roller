@@ -84,7 +84,6 @@
       },
       css: {
         realVh: rootStyles.getPropertyValue("--real-vh").trim() || null,
-        fixedBottomOffset: rootStyles.getPropertyValue("--fixed-bottom-offset").trim() || null,
         safeTop: rootStyles.getPropertyValue("--safe-top").trim() || null,
         safeBottom: rootStyles.getPropertyValue("--safe-bottom").trim() || null,
         topBarHeight: rootStyles.getPropertyValue("--top-bar-height").trim() || null,
