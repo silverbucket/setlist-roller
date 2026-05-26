@@ -204,9 +204,10 @@
 <style>
     /* ---- Connect screen ---- */
     .connect-shell {
-        min-height: 100svh;
+        height: 100%;
         display: grid;
         place-items: center;
+        overflow-y: auto;
         padding: var(--space-4);
     }
 
@@ -241,9 +242,10 @@
 
     /* ---- Sync screen ---- */
     .sync-shell {
-        min-height: 100svh;
+        height: 100%;
         display: grid;
         place-items: center;
+        overflow-y: auto;
         padding: var(--space-4);
     }
 
@@ -345,12 +347,11 @@
     /* ---- App shell ---- */
     .app-shell {
         height: var(--real-vh, 100dvh);
-        display: flex;
-        flex-direction: column;
+        overflow: hidden;
     }
 
     .main-content {
-        flex: 1;
+        height: 100%;
         min-height: 0;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;

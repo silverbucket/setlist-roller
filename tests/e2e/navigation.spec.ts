@@ -143,12 +143,15 @@ test.describe("Top bar visibility", () => {
             const top = document.querySelector("header.top-bar");
             const main = document.querySelector(".main-content");
             const navRect = nav?.getBoundingClientRect();
+            const topRect = top?.getBoundingClientRect();
             const topStyles = top ? getComputedStyle(top) : null;
             const navStyles = nav ? getComputedStyle(nav) : null;
             const mainStyles = main ? getComputedStyle(main) : null;
 
             return {
                 topPosition: topStyles?.position,
+                topTopStyle: topStyles?.top,
+                topTop: topRect?.top ?? -1,
                 navPosition: navStyles?.position,
                 navBottomStyle: navStyles?.bottom,
                 mainOverflowY: mainStyles?.overflowY,
@@ -158,6 +161,8 @@ test.describe("Top bar visibility", () => {
         });
 
         expect(chrome.topPosition).toBe("fixed");
+        expect(chrome.topTopStyle).toBe("0px");
+        expect(Math.abs(chrome.topTop)).toBeLessThanOrEqual(1);
         expect(chrome.navPosition).toBe("fixed");
         expect(chrome.navBottomStyle).toBe("0px");
         expect(chrome.mainOverflowY).toBe("auto");

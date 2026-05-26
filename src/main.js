@@ -10,15 +10,25 @@ if ("scrollRestoration" in history) {
     history.scrollRestoration = "manual";
 }
 
-// Keep the shell height tied to the initial layout viewport value that iOS
-// standalone exposes most consistently for fixed chrome. The fixed top/bottom
-// bars do not depend on this for anchoring; content uses it for its scroll box.
-function syncAppHeight() {
+function setAppHeight() {
     document.documentElement.style.setProperty("--real-vh", `${window.innerHeight}px`);
 }
 
-syncAppHeight();
+// Keep the shell height tied to the initial layout viewport value that iOS
+// standalone exposes most consistently for fixed chrome. The fixed top/bottom
+// bars do not depend on this for anchoring; content uses it for its scroll box.
+let appHeightRaf = 0;
+function syncAppHeight() {
+    if (appHeightRaf) return;
+    appHeightRaf = requestAnimationFrame(() => {
+        appHeightRaf = 0;
+        setAppHeight();
+    });
+}
+
+setAppHeight();
 window.addEventListener("resize", syncAppHeight);
+// Re-sync on bfcache restore: iOS may change orientation while backgrounded.
 window.addEventListener("pageshow", syncAppHeight);
 if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncAppHeight);
