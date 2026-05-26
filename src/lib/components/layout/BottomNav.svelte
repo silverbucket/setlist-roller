@@ -27,15 +27,14 @@
 
 <style>
   .bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    /* height must match --bottom-nav-height so the element covers the same
-       vertical space that main-content reserves in its padding-bottom.
-       Using only 56px leaves the safe-area zone (env(safe-area-inset-bottom))
-       uncovered, producing a persistent gap above the nav. */
+    /* In-flow at the bottom of the .app-shell flex column (no longer fixed).
+       The shell's height is locked to --real-vh (from window.innerHeight).
+       This removes the fixed positioning vs. viewport measurement mismatches
+       that were causing whitespace below the nav on installed iOS PWAs.
+       Height still includes the safe area so the background extends under
+       the home indicator. */
     height: var(--bottom-nav-height);
+    flex-shrink: 0;
     display: flex;
     align-items: stretch;
     background: var(--paper);

@@ -1072,10 +1072,12 @@
         color: var(--ink, #182230);
     }
 
-    /* Sticky footer */
+    /* Sticky footer — positioned above the (now in-flow) BottomNav.
+       --bottom-nav-height already includes env(safe-area-inset-bottom),
+       so do not add it again here. */
     .sticky-footer {
         position: sticky;
-        bottom: calc(var(--bottom-nav-height, 56px) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+        bottom: calc(var(--bottom-nav-height, 56px) + 0.5rem);
         padding: 0.75rem 0;
         z-index: 10;
     }
