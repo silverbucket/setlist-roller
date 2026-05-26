@@ -2287,7 +2287,7 @@ export function createAppStore(repo) {
                     : null,
             };
         }
-        if (payload && payload.general && payload.show && payload.props) {
+        if (payload?.general && payload.show && payload.props) {
             return {
                 payloadType: "config-object", songs: [],
                 config: normalizeAppConfig({ ...clone(payload), bandName: payload.bandName || appConfig?.bandName || "", updatedAt: nowIso() }),

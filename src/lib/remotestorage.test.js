@@ -847,7 +847,7 @@ describe("custom RemoteStorage.Discover override", () => {
         const url = fetchStub.mock.calls[0][0];
         // Public host ⇒ https. Resource is encoded `acct:nick@example.com`.
         expect(url).toBe(
-            "https://example.com/.well-known/webfinger?resource=" + encodeURIComponent("acct:nick@example.com"),
+            `https://example.com/.well-known/webfinger?resource=${encodeURIComponent("acct:nick@example.com")}`,
         );
         expect(info.href).toBe("https://storage.example.com/me");
         expect(info.authURL).toBe("https://storage.example.com/oauth/me");
@@ -863,7 +863,7 @@ describe("custom RemoteStorage.Discover override", () => {
         const fetchStub = makeFetchStub(() => Promise.resolve(jsonResponse(VALID_WEBFINGER)));
         await RemoteStorage.Discover("https://5apps.com");
         const url = fetchStub.mock.calls[0][0];
-        expect(url).toBe("https://5apps.com/.well-known/webfinger?resource=" + encodeURIComponent("https://5apps.com"));
+        expect(url).toBe(`https://5apps.com/.well-known/webfinger?resource=${encodeURIComponent("https://5apps.com")}`);
     });
 
     it("uses http (not https) for localhost-style private hosts to avoid TLS-required failures in dev", async () => {
