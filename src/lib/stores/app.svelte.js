@@ -1956,11 +1956,13 @@ export function createAppStore(repo) {
     // ---- band members ----
     async function persistMemberEdit(memberName, data, errorMessage = "Could not save member.") {
         const normalized = normalizeMemberRecord(data);
+        const previous = bandMembers;
         bandMembers = { ...bandMembers, [memberName]: normalized };
         try {
             await withSync("Saving member", () => repo.putMember(memberName, normalized));
             return true;
         } catch (error) {
+            bandMembers = previous;
             toastError(error?.message || errorMessage);
             return false;
         }

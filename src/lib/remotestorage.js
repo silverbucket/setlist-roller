@@ -68,7 +68,9 @@ import { clone, nowIso } from "./utils.js";
         const scheme = PLAIN_HTTP_HOST_RE.test(host) || PLAIN_HTTP_HOST_RE.test(hostNoPort) ? "http" : "https";
         const url = `${scheme}://${host}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
-        return fetch(url).then(async (resp) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        return fetch(url, { signal: controller.signal }).then(async (resp) => {
             if (!resp.ok) throw new Error(`WebFinger failed: ${resp.status}`);
             const data = await resp.json();
             const link = Array.isArray(data?.links)
@@ -90,7 +92,7 @@ import { clone, nowIso } from "./utils.js";
                 }
             }
             return { href: link.href, storageApi, authURL, properties };
-        });
+        }).finally(() => clearTimeout(timeoutId));
     };
 
     // Preserve `RemoteStorage.Discover.DiscoveryError` — rs.js's connect path
