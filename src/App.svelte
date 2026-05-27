@@ -282,9 +282,9 @@
     </div>
 {/if}
 
-{#if store.toastMessages.length > 0}
+{#if store.toastMessages[0]}
+    {@const toast = store.toastMessages[0]}
     <div class="toast-stack" class:with-busy={!!store.busyMessage} aria-live="polite">
-        {@const toast = store.toastMessages[0]}
         <div class="toast-pill {toast.tone}">
             {toast.message}
         </div>
