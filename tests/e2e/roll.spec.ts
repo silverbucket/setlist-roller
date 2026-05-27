@@ -326,10 +326,9 @@ test.describe("Roll screen — hero scroll behavior", () => {
         //
         // Earlier iterations of this test depended on a rolled setlist's
         // size to make the page tall enough to scroll. Decouple the test
-        // from generation entirely: inject a tall spacer into the app's
-        // dedicated scroll region, then drive a known scroll amount on
-        // .main-content and confirm it committed before reading the hero's
-        // bbox.
+        // from generation entirely: inject a tall spacer into the Roll screen,
+        // then drive root page scroll and confirm it committed before reading
+        // the hero's bbox.
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
@@ -341,7 +340,7 @@ test.describe("Roll screen — hero scroll behavior", () => {
         expect(initialBox).not.toBeNull();
         const initialTop = initialBox?.y ?? 0;
 
-        // Force scrollable height inside the app's scroll container.
+        // Force scrollable page height.
         await page.evaluate(() => {
             const spacer = document.createElement("div");
             spacer.id = "__hero_scroll_spacer";
@@ -350,20 +349,10 @@ test.describe("Roll screen — hero scroll behavior", () => {
         });
 
         const SCROLL_BY = 600;
-        await page.evaluate((y) => {
-            const se = document.querySelector(".main-content") as HTMLElement | null;
-            if (se) se.scrollTop = y;
-        }, SCROLL_BY);
+        await page.evaluate((y) => window.scrollTo(0, y), SCROLL_BY);
         // Verify the scroll commit so we don't false-pass when scrollTop
         // is silently rejected (would mean a scroll-trapping bug).
-        await page.waitForFunction(
-            (y) => {
-                const se = document.querySelector(".main-content") as HTMLElement | null;
-                return !!se && se.scrollTop >= y - 1;
-            },
-            SCROLL_BY,
-            { timeout: 2_000 },
-        );
+        await page.waitForFunction((y) => window.scrollY >= y - 1, SCROLL_BY, { timeout: 2_000 });
 
         const afterBox = await hero.boundingBox();
         // Sticky hero would keep y === initialTop. We expect the hero to
