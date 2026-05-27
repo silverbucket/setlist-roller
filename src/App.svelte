@@ -58,27 +58,73 @@
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
+    function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function nudgeIosStandaloneViewport() {
+        const status = {
+            startedAt: new Date().toISOString(),
+            attempts: 0,
+            maxScrollY: 0,
+            finishedAt: null,
+        };
+        window.__SR_IOS_VIEWPORT_NUDGE__ = status;
+
+        await nextFrame();
+        await nextFrame();
+
+        const existing = document.getElementById("sr-ios-viewport-spacer");
+        existing?.remove();
+
+        const spacer = document.createElement("div");
+        spacer.id = "sr-ios-viewport-spacer";
+        spacer.setAttribute("aria-hidden", "true");
+        spacer.style.cssText = [
+            `height:${Math.max(window.innerHeight, screen.height, 1200)}px`,
+            "width:1px",
+            "opacity:0",
+            "pointer-events:none",
+            "contain:layout",
+        ].join(";");
+        document.body.appendChild(spacer);
+
+        try {
+            await nextFrame();
+            await nextFrame();
+
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+                status.attempts = attempt;
+                const scrollRange = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                const targetY = Math.min(160, scrollRange);
+
+                window.scrollTo(0, targetY);
+                await nextFrame();
+                await nextFrame();
+                status.maxScrollY = Math.max(status.maxScrollY, window.scrollY);
+
+                window.scrollTo(0, 0);
+                await nextFrame();
+                await wait(120);
+            }
+        } finally {
+            spacer.remove();
+            window.scrollTo(0, 0);
+            status.finishedAt = new Date().toISOString();
+        }
+    }
+
     let iosViewportNudged = false;
     $effect(() => {
         if (iosViewportNudged) return;
         if (!store.initialSyncComplete || !isIosStandaloneAuthContext()) return;
 
         iosViewportNudged = true;
-        requestAnimationFrame(() => {
-            // Short first screens may not naturally scroll. Give iOS standalone
-            // one root-scroll frame so it performs the same viewport correction
-            // that a long Songs list triggers manually.
-            const spacer = document.createElement("div");
-            spacer.setAttribute("aria-hidden", "true");
-            spacer.style.cssText = "height:1px;width:1px;pointer-events:none;opacity:0;";
-            document.body.appendChild(spacer);
-
-            window.scrollTo(0, 1);
-            requestAnimationFrame(() => {
-                window.scrollTo(0, 0);
-                requestAnimationFrame(() => spacer.remove());
-            });
-        });
+        void nudgeIosStandaloneViewport();
     });
 
 </script>
