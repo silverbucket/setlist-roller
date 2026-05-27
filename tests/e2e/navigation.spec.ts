@@ -167,7 +167,7 @@ test.describe("Top bar visibility", () => {
         expect(Math.abs(chrome.topTop)).toBeLessThanOrEqual(1);
         expect(chrome.navPosition).toBe("fixed");
         expect(chrome.navBottomStyle).toBe("0px");
-        expect(chrome.mainOverflowY).toBe("auto");
+        expect(chrome.mainOverflowY).toBe("visible");
         expect(Math.abs(chrome.viewportHeight - chrome.navBottom)).toBeLessThanOrEqual(1);
     });
 });
