@@ -9,7 +9,7 @@
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
-    import { createRemoteStorageRepository } from "./lib/remotestorage.js";
+    import { createRemoteStorageRepository, isIosStandaloneAuthContext } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
     import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb, hexToRgba } from "./lib/utils.js";
 
@@ -56,6 +56,29 @@
         root.style.setProperty("--accent-strong", darkenHex(dieColor, 0.85));
         root.style.setProperty("--accent-soft", hexToRgba(dieColor, 0.12));
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
+    });
+
+    let iosViewportNudged = false;
+    $effect(() => {
+        if (iosViewportNudged) return;
+        if (!store.initialSyncComplete || !isIosStandaloneAuthContext()) return;
+
+        iosViewportNudged = true;
+        requestAnimationFrame(() => {
+            // Short first screens may not naturally scroll. Give iOS standalone
+            // one root-scroll frame so it performs the same viewport correction
+            // that a long Songs list triggers manually.
+            const spacer = document.createElement("div");
+            spacer.setAttribute("aria-hidden", "true");
+            spacer.style.cssText = "height:1px;width:1px;pointer-events:none;opacity:0;";
+            document.body.appendChild(spacer);
+
+            window.scrollTo(0, 1);
+            requestAnimationFrame(() => {
+                window.scrollTo(0, 0);
+                requestAnimationFrame(() => spacer.remove());
+            });
+        });
     });
 
 </script>
@@ -380,16 +403,10 @@
 
     /* ---- App shell ---- */
     .app-shell {
-        height: var(--real-vh, 100dvh);
-        overflow: hidden;
+        min-height: 100dvh;
     }
 
     .main-content {
-        height: 100%;
-        min-height: 0;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
         padding: var(--space-3);
         padding-top: calc(var(--top-bar-height) + var(--space-3));
         padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
