@@ -64,13 +64,12 @@
     --space-8: 2rem;
 
     /* Layout
-       These are the fixed chrome OUTER heights. They include the safe-area
-       inset so content can reserve the full covered region. TopBar/BottomNav
-       also apply the same inset as internal padding; with global border-box
-       sizing that positions controls away from device edges without increasing
-       the outer fixed height. */
+       These are the fixed chrome OUTER heights. TopBar reserves the full
+       top safe-area inset. BottomNav only uses part of the bottom inset so the
+       bar stays compact while tab buttons keep their 44px+ tap targets. */
     --top-bar-height: calc(48px + env(safe-area-inset-top, 0px));
-    --bottom-nav-height: calc(56px + env(safe-area-inset-bottom, 0px));
+    --bottom-nav-safe-padding: calc(env(safe-area-inset-bottom, 0px) * 0.5);
+    --bottom-nav-height: calc(48px + var(--bottom-nav-safe-padding));
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
