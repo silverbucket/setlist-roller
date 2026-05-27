@@ -38,7 +38,7 @@
     border-top: 1px solid var(--line);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--bottom-nav-safe-padding);
     z-index: 100;
   }
 
