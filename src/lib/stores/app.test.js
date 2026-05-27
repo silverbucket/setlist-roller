@@ -53,6 +53,29 @@ describe("retrySync", () => {
     });
 });
 
+describe("toasts", () => {
+    it("keeps only the latest toast and ignores stale dismiss timers", () => {
+        vi.useFakeTimers();
+        const store = createAppStore({});
+
+        store.toastInfo("First message");
+        store.toastError("Latest message");
+
+        expect(store.toastMessages).toHaveLength(1);
+        expect(store.toastMessages[0]).toMatchObject({
+            message: "Latest message",
+            tone: "danger",
+        });
+
+        vi.advanceTimersByTime(6000);
+        expect(store.toastMessages).toHaveLength(1);
+        expect(store.toastMessages[0]?.message).toBe("Latest message");
+
+        vi.advanceTimersByTime(6000);
+        expect(store.toastMessages).toHaveLength(0);
+    });
+});
+
 describe("setlist v2 migration", () => {
     it("collapses a fat saved setlist to lean references and hoists the relaxed flags", () => {
         const fat = {

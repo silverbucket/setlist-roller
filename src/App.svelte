@@ -284,11 +284,10 @@
 
 {#if store.toastMessages.length > 0}
     <div class="toast-stack" class:with-busy={!!store.busyMessage} aria-live="polite">
-        {#each store.toastMessages as toast (toast.id)}
-            <div class="toast-pill {toast.tone}">
-                {toast.message}
-            </div>
-        {/each}
+        {@const toast = store.toastMessages[0]}
+        <div class="toast-pill {toast.tone}">
+            {toast.message}
+        </div>
     </div>
 {/if}
 
@@ -685,14 +684,10 @@
     .toast-stack {
         position: fixed;
         top: var(--top-bar-height);
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0;
+        right: 0;
         z-index: 300;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: var(--space-1);
-        max-width: calc(100vw - 2rem);
+        width: 100%;
         pointer-events: none;
     }
 
@@ -704,7 +699,9 @@
     }
 
     .toast-pill {
-        max-width: 100%;
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
         padding: 5px 14px;
         font-size: 0.78rem;
         font-weight: 600;
@@ -714,10 +711,9 @@
         border: none;
         border-radius: 0 0 var(--radius-md, 12px) var(--radius-md, 12px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        /* Allow long error/info messages to wrap instead of getting truncated
-           with an ellipsis — the user needs to read the whole error. */
-        white-space: normal;
-        overflow-wrap: anywhere;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         animation: toast-slide-down 200ms ease;
     }
 
