@@ -18,9 +18,7 @@ const TOAST_TONE = Object.freeze({
     DANGER: "danger",
 });
 const VALID_TOAST_TONES = new Set(Object.values(TOAST_TONE));
-// Stack cap. New toasts past this drop the oldest so each one is visible.
-const MAX_TOASTS = 3;
-// Danger gets a longer dwell so multi-line error messages can actually be read.
+// Danger gets a longer dwell so more severe messages remain visible longer.
 const TOAST_DURATION_MS = { default: 6000, danger: 12000 };
 // Cap on the in-memory sync log surfaced in the diagnostic panel. Old entries
 // roll off so the list doesn't grow unbounded across a long session.
@@ -606,9 +604,7 @@ export function createAppStore(repo) {
         // default style with no semantic class (e.g. "warn" vs "warning").
         const validTone = VALID_TOAST_TONES.has(tone) ? tone : TOAST_TONE.INFO;
         const id = uid("toast");
-        // Cap the stack — drop oldest so a fresh toast is always visible.
-        const next = [...toastMessages, { id, message, tone: validTone }];
-        toastMessages = next.length > MAX_TOASTS ? next.slice(-MAX_TOASTS) : next;
+        toastMessages = [{ id, message, tone: validTone }];
         const duration = validTone === TOAST_TONE.DANGER ? TOAST_DURATION_MS.danger : TOAST_DURATION_MS.default;
         setTimeout(() => {
             toastMessages = toastMessages.filter((t) => t.id !== id);
