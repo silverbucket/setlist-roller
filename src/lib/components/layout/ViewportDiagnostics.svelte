@@ -46,6 +46,7 @@
         userAgent: navigator.userAgent,
         standaloneMedia: window.matchMedia?.("(display-mode: standalone)").matches ?? null,
         navigatorStandalone: navigator.standalone ?? null,
+        iosViewportNudge: window.__SR_IOS_VIEWPORT_NUDGE__ ?? null,
       },
       window: {
         innerWidth: round(window.innerWidth),
