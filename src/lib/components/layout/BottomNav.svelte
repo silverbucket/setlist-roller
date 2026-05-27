@@ -55,7 +55,7 @@
     background: none;
     cursor: pointer;
     color: var(--muted);
-    padding: 6px 0;
+    padding: 11px 0 1px;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transition: color 0.15s ease;
