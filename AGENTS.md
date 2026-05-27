@@ -48,3 +48,43 @@ only step down when you have a clear visual reason.
 When adding a new input, take 30 seconds to confirm the rendered size in
 DevTools' computed styles panel. The bug is silent on desktop and only shows
 up the first time someone opens the app on an actual iPhone.
+
+## Cursor Cloud specific instructions
+
+Setlist Roller is a client-side Svelte 5 + Vite PWA with no backend of its own.
+Data persistence uses [remoteStorage](https://remotestorage.io).
+
+### Quick reference
+
+| Task | Command |
+|------|---------|
+| Dev server | `npm run dev` (port 4173) |
+| Lint | `npm run lint` (Biome) |
+| Unit tests | `npm test` (Vitest) |
+| E2E tests | `npm run test:e2e` (Playwright + Chromium) |
+| Build | `npm run build` |
+
+### E2E test prerequisites
+
+E2E tests require Docker and the armadietto remoteStorage server:
+
+1. Docker must be running (`sudo dockerd` if not already started).
+2. Start armadietto: `npm run armadietto:up` (port 8000).
+3. Install Playwright browsers: `npx playwright install --with-deps chromium`.
+4. The Playwright `webServer` config auto-starts the Vite dev server for E2E
+   runs, so you do not need to start it separately.
+
+### Docker-in-Docker gotchas
+
+The Cloud Agent VM runs inside a container. To get Docker working:
+
+- Use `fuse-overlayfs` storage driver (`/etc/docker/daemon.json`).
+- Switch iptables to legacy: `sudo update-alternatives --set iptables /usr/sbin/iptables-legacy`.
+- Fix socket permissions after starting dockerd: `sudo chmod 666 /var/run/docker.sock`.
+
+### Notes
+
+- The `songs.spec.ts › clearing search restores full list` E2E test is
+  occasionally flaky (timing-sensitive); it passes on re-run.
+- The dev server binds to `0.0.0.0:4173`; Playwright expects `localhost:4173`
+  for OAuth redirect URI matching with armadietto.
