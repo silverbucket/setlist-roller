@@ -595,10 +595,20 @@ export function createAppStore(repo) {
     // Load all per-user localStorage data (called on connect when we know the user)
     function loadUserLocalData() {
         const current = loadCurrentSetlist();
-        const locked = current?._locked || false;
-        if (locked) generatedSetlist = current;
-        else clearGeneratedSetlist();
-        setlistLocked = locked;
+        // Restore the persisted current set whether or not it was locked.
+        // Previously only locked sets survived a reload — but the page can
+        // reload without the user asking for it (service-worker update,
+        // browser crash, iOS killing a backgrounded PWA), and losing a
+        // rolled-but-unlocked set to any of those mid-gig is unacceptable.
+        // The lock flag still means what it meant: it only guards against
+        // the NEXT ROLL clobbering the list, not against persistence.
+        if (current) {
+            generatedSetlist = current;
+            setlistLocked = current._locked || false;
+        } else {
+            clearGeneratedSetlist();
+            setlistLocked = false;
+        }
         setlistSaved = false;
         generationOptions = loadStoredGenerationOptions();
     }
