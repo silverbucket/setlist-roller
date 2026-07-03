@@ -1,4 +1,5 @@
 <script>
+    import { registerSW } from "virtual:pwa-register";
     import { onMount, setContext } from "svelte";
     import BandScreen from "./lib/components/band/BandScreen.svelte";
     import HelpScreen from "./lib/components/help/HelpScreen.svelte";
@@ -16,6 +17,26 @@
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
     setContext("app", store);
+
+    // Prompt-style service-worker updates. autoUpdate reloaded the page the
+    // moment a new deploy activated — mid-gig, that could eat an unsaved
+    // setlist. Instead we surface a persistent toast and let the user pick
+    // their moment; updateSW(true) applies the waiting worker and reloads.
+    const updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+            store.toastAction("A new version of Setlist Roller is ready.", "Refresh", () => updateSW(true));
+        },
+        onRegisteredSW(_swUrl, registration) {
+            // Long-lived sessions (installed PWA left open between shows)
+            // never re-navigate, so the browser's own update-on-navigation
+            // check never runs. Poll hourly instead.
+            if (!registration) return;
+            setInterval(() => {
+                registration.update().catch(() => { /* offline — retry next tick */ });
+            }, 60 * 60 * 1000);
+        },
+    });
 
     // TEMP(iOS diagnostics): remove after the installed-PWA viewport gap is fixed.
     const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
@@ -285,8 +306,18 @@
 {#if store.toastMessages[0]}
     {@const toast = store.toastMessages[0]}
     <div class="toast-stack" class:with-busy={!!store.busyMessage} aria-live="polite">
-        <div class="toast-pill {toast.tone}">
+        <div class="toast-pill {toast.tone}" class:sticky={toast.sticky}>
             {toast.message}
+            {#if toast.action}
+                <button
+                    type="button"
+                    class="toast-action"
+                    onclick={() => { store.dismissToast(toast.id); toast.action.onClick(); }}
+                >{toast.action.label}</button>
+            {/if}
+            {#if toast.sticky}
+                <button type="button" class="toast-dismiss" aria-label="Dismiss" onclick={() => store.dismissToast(toast.id)}>&times;</button>
+            {/if}
         </div>
     </div>
 {/if}
@@ -715,6 +746,40 @@
         overflow: hidden;
         text-overflow: ellipsis;
         animation: toast-slide-down 200ms ease;
+    }
+
+    /* Sticky toasts (e.g. the update prompt) carry buttons — switch from
+       centered ellipsized text to an inline flex row. */
+    .toast-pill.sticky {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        white-space: normal;
+        text-overflow: clip;
+    }
+
+    .toast-action {
+        flex: none;
+        padding: 2px 10px;
+        font: inherit;
+        font-weight: 700;
+        color: var(--toast-bg);
+        background: var(--toast-fg);
+        border: none;
+        border-radius: 999px;
+        cursor: pointer;
+    }
+
+    .toast-dismiss {
+        flex: none;
+        padding: 0 2px;
+        font-size: 1rem;
+        line-height: 1;
+        color: var(--toast-fg);
+        background: none;
+        border: none;
+        opacity: 0.7;
+        cursor: pointer;
     }
 
     .toast-pill.danger {

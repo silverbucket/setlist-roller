@@ -599,20 +599,42 @@ export function createAppStore(repo) {
     }
 
     // ---- toast ----
-    function addToast(message, tone) {
+    function addToast(message, tone, options = {}) {
         // Unknown tones fall back to INFO instead of silently rendering as the
         // default style with no semantic class (e.g. "warn" vs "warning").
         const validTone = VALID_TOAST_TONES.has(tone) ? tone : TOAST_TONE.INFO;
         const id = uid("toast");
-        toastMessages = [{ id, message, tone: validTone }];
+        // Optional action button (e.g. "Refresh" on the update prompt).
+        // Clicking it dismisses the toast, then runs the handler.
+        const action =
+            options.action && typeof options.action.onClick === "function"
+                ? { label: options.action.label || "OK", onClick: options.action.onClick }
+                : null;
+        toastMessages = [{ id, message, tone: validTone, action, sticky: !!options.sticky }];
+        if (options.sticky) return;
         const duration = validTone === TOAST_TONE.DANGER ? TOAST_DURATION_MS.danger : TOAST_DURATION_MS.default;
         setTimeout(() => {
             toastMessages = toastMessages.filter((t) => t.id !== id);
         }, duration);
     }
+    function dismissToast(id) {
+        toastMessages = toastMessages.filter((t) => t.id !== id);
+    }
     function toastInfo(message)  { addToast(message, TOAST_TONE.INFO); }
     function toastWarn(message)  { addToast(message, TOAST_TONE.WARN); }
     function toastError(message) { addToast(message, TOAST_TONE.DANGER); }
+    /**
+     * Persistent toast with an action button. Used for the service-worker
+     * update prompt: it must not auto-dismiss (the user may be mid-set and
+     * needs to choose their moment), so it stays until acted on or
+     * explicitly dismissed via the pill's close button.
+     */
+    function toastAction(message, actionLabel, onAction) {
+        addToast(message, TOAST_TONE.INFO, {
+            sticky: true,
+            action: { label: actionLabel, onClick: onAction },
+        });
+    }
 
     function pushSyncLog(message) {
         if (!message) return;
@@ -2836,6 +2858,8 @@ export function createAppStore(repo) {
         toastInfo,
         toastWarn,
         toastError,
+        toastAction,
+        dismissToast,
         songsUsingMember,
         songsUsingInstrument,
         songsUsingTuning,
