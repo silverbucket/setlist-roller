@@ -219,6 +219,7 @@ describe("change-driven reload coalescing", () => {
                 members: {},
                 errors: {},
             })),
+            getRawConfig: vi.fn(async () => null),
             isConnected: () => true,
             getUserAddress: () => "user@example.com",
             getToken: () => "stub-token",
