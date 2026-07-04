@@ -53,7 +53,11 @@ export function normalizeAuthToken(token) {
 
 export function createAppStore(repo) {
     // ---- per-user localStorage scoping ----
-    let currentUserAddress = "";
+    // $state is load-bearing: App.svelte's top-level render gate reads this
+    // first in a short-circuiting condition. If it were a plain variable,
+    // the {#if} would capture no reactive dependencies while it's truthy
+    // and never re-evaluate — the app shell would survive a sign-out.
+    let currentUserAddress = $state("");
     function storageKey(base) { return accountSlot(currentUserAddress).key(base); }
 
     // Monotonic session id — bumped on every connect/swap. Async work that
@@ -855,6 +859,12 @@ export function createAppStore(repo) {
         activeSession += 1;
         deactivateAccount();
         repo.disconnect();
+        // Don't wait for the `disconnected` event: rs.js can still report
+        // connected=true while emitting it, which the handler's staleness
+        // guard (rightly) skips. This is an explicit user action — the
+        // status change is unconditional.
+        connectionStatus = "disconnected";
+        knownAccounts = getKnownAccounts();
     }
 
     /** Blank the in-memory state and detach the mirror (data stays on disk). */
@@ -963,10 +973,13 @@ export function createAppStore(repo) {
             pendingRollConfirm = false;
             selectedSongId = "";
             editorSong = null;
-            await activateAccount(address);
-
+            // Enter "syncing" BEFORE the hydrate await: the old account's
+            // transient "synced" state must not be observable against the
+            // new account's address.
             setSyncState("syncing");
             syncStatusLabel = "Switching accounts";
+            await activateAccount(address);
+
             connectionStatus = "connecting";
             armConnectingWatchdog();
             const savedToken = normalizeAuthToken(getAccountToken(address));
@@ -2327,7 +2340,10 @@ export function createAppStore(repo) {
                 isSwitching = false;
                 cancelConnectingWatchdog();
                 if (repo.isConnected()) repo.disconnect();
-                else connectionStatus = "disconnected";
+                // Set the status directly — the disconnected event may be
+                // skipped by its staleness guard while rs.js still reports
+                // connected mid-teardown.
+                connectionStatus = "disconnected";
             }
         });
 

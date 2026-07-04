@@ -111,6 +111,13 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         const tStart = Date.now();
         await page.locator("header.top-bar").getByRole("button", { name: "Menu" }).click();
         await page.locator(".dropdown-item--account").filter({ hasText: userB.address }).click();
+        // The app shell never unmounts during a v3 swap, so "ready" is
+        // instant — the meaningful signal is the store switching accounts.
+        // Waiting on it also stops waitForSynced from sampling A's already-
+        // settled sync state before the swap has begun.
+        await expect
+            .poll(async () => (await app.getState())?.currentUserAddress, { timeout: 10_000 })
+            .toBe(userB.address);
         await app.waitForReady();
         // Switching hydrates the target's local mirror instantly; B has
         // never been visited in this test, so this is the cold path (empty

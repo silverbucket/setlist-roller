@@ -318,17 +318,16 @@ test.describe("Roll screen — hero scroll behavior", () => {
         expect(styles.maxHeight).toBe("none");
     });
 
-    test("the hero scrolls off the top of the viewport with the page", async ({ page, app }) => {
+    test("the hero scrolls off the top of the viewport with the content", async ({ page, app }) => {
         // The fix removed `position: sticky` from .hero. We assert
-        // behaviorally: when the page scrolls, the hero's viewport-
+        // behaviorally: when the content scrolls, the hero's viewport-
         // relative top moves up with it, instead of being pinned at
         // top: var(--top-bar-height).
         //
-        // Earlier iterations of this test depended on a rolled setlist's
-        // size to make the page tall enough to scroll. Decouple the test
-        // from generation entirely: inject a tall spacer into the Roll screen,
-        // then drive root page scroll and confirm it committed before reading
-        // the hero's bbox.
+        // Since the v3 flex app shell, the document never scrolls —
+        // .main-content is the scroll container. Inject a tall spacer into
+        // the Roll screen, drive the container's scrollTop, and confirm the
+        // scroll committed before reading the hero's bbox.
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();
@@ -340,7 +339,7 @@ test.describe("Roll screen — hero scroll behavior", () => {
         expect(initialBox).not.toBeNull();
         const initialTop = initialBox?.y ?? 0;
 
-        // Force scrollable page height.
+        // Force scrollable content height.
         await page.evaluate(() => {
             const spacer = document.createElement("div");
             spacer.id = "__hero_scroll_spacer";
@@ -349,10 +348,17 @@ test.describe("Roll screen — hero scroll behavior", () => {
         });
 
         const SCROLL_BY = 600;
-        await page.evaluate((y) => window.scrollTo(0, y), SCROLL_BY);
+        await page.evaluate((y) => {
+            const main = document.querySelector(".main-content");
+            if (main) main.scrollTop = y;
+        }, SCROLL_BY);
         // Verify the scroll commit so we don't false-pass when scrollTop
         // is silently rejected (would mean a scroll-trapping bug).
-        await page.waitForFunction((y) => window.scrollY >= y - 1, SCROLL_BY, { timeout: 2_000 });
+        await page.waitForFunction(
+            (y) => (document.querySelector(".main-content")?.scrollTop ?? 0) >= y - 1,
+            SCROLL_BY,
+            { timeout: 2_000 },
+        );
 
         const afterBox = await hero.boundingBox();
         // Sticky hero would keep y === initialTop. We expect the hero to

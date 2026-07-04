@@ -52,6 +52,7 @@ export type AppStateSnapshot = {
     activeView: string;
     syncState: string;
     initialSyncDone: boolean;
+    currentUserAddress: string;
     songs: { id: string; name: string; [key: string]: unknown }[];
     savedSetlists: unknown[];
     bandMembers: Record<string, unknown>;
@@ -306,6 +307,7 @@ export const test = base.extend<{ app: AppContext }>({
                         activeView: s.activeView as string,
                         syncState: s.syncState as string,
                         initialSyncDone: s.initialSyncDone as boolean,
+                        currentUserAddress: s.currentUserAddress as string,
                         songs: JSON.parse(JSON.stringify(s.songs)),
                         savedSetlists: JSON.parse(JSON.stringify(s.savedSetlists)),
                         bandMembers: JSON.parse(JSON.stringify(s.bandMembers)),
