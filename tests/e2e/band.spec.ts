@@ -226,6 +226,7 @@ test.describe("Band screen — die color", () => {
         await app.seed(buildSeed());
         await app.goto();
         await app.waitForReady();
+        await app.waitForSynced();
         await new AppShell(page).gotoBand();
 
         const band = new BandPage(page);
