@@ -233,6 +233,10 @@ test.describe("Delete all data", () => {
         );
         await app.goto();
         await app.waitForReady();
+        // Settle the bootstrap sync before wiping: deletes racing an
+        // in-flight pull of the same docs lose to rs.js's remote-wins
+        // conflict handling and the data resurrects.
+        await app.waitForSynced();
         const shell = new AppShell(page);
         await shell.gotoBand();
 
