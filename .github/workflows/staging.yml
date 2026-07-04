@@ -26,6 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No pushes from this job — don't leave the workflow token in
+          # the local git config (same hardening as the deploy job).
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22

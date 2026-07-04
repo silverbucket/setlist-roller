@@ -427,6 +427,47 @@ describe("stale async writes", () => {
         db.close();
         expect(data.songs).toEqual([]);
     });
+
+    it("drops a save that resolves after the account was forgotten", async () => {
+        saveKnownAccount("user-a@example.com", { bandName: "Band A" }, "token-a");
+        const repo = buildStubRepo({ initiallyConnected: true });
+        repo.setUserAddress("user-a@example.com");
+        let resolvePut;
+        repo.putSong = vi.fn(
+            () =>
+                new Promise((resolve) => {
+                    resolvePut = resolve;
+                }),
+        );
+        const store = createAppStore(repo);
+        store.init();
+        repo.fire("connected");
+        await settle();
+
+        store.openNewSong();
+        store.updateSongField("name", "Zombie Song");
+        const saving = store.saveSong();
+        await flush();
+        expect(repo.putSong).toHaveBeenCalledTimes(1);
+
+        // The user removes the account from this device while the write is
+        // still in flight.
+        store.forgetAccount("user-a@example.com");
+        await settle();
+        expect(store.currentUserAddress).toBe("");
+
+        // The late write must not resurrect the wiped data anywhere.
+        resolvePut({ id: "zombie-1", name: "Zombie Song" });
+        await saving;
+        await settle();
+
+        expect(store.songs).toEqual([]);
+        expect(store.knownAccounts.find((a) => a.address === "user-a@example.com")).toBeUndefined();
+        const db = await openAccountDb("user-a@example.com");
+        const data = await db.loadAll();
+        db.close();
+        expect(data.songs).toEqual([]);
+    });
 });
 
 describe("disconnect vs forget", () => {
