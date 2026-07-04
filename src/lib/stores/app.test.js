@@ -3,6 +3,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { accountSlot } from "../accounts.js";
+import { openAccountDb } from "../local-db.js";
 import { migrator } from "../migrations.js";
 import { createAppStore, normalizeAuthToken } from "./app.svelte.js";
 
@@ -399,6 +400,11 @@ describe("incremental remote sync", () => {
     });
 
     it("cascades a band-member rename into song overrides and generation constraints", async () => {
+        // Renames refuse to run until the catalog is settled (the cascade
+        // must see every song) — mark this account's initial sync done.
+        const db = await openAccountDb("user@example.com");
+        await db.putKv("sync-meta", { initialSyncDone: true });
+        db.close();
         const repo = buildRepo();
         repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
         repo.deleteMember = vi.fn(async () => {});
@@ -407,6 +413,7 @@ describe("incremental remote sync", () => {
         const teardown = store.init();
         repo.fire("connected");
         await settle();
+        expect(store.initialSyncDone).toBe(true);
 
         repo.fireChange({
             relativePath: "members/Nick",
@@ -434,6 +441,48 @@ describe("incremental remote sync", () => {
         expect(song.members.Nick).toBeUndefined();
         expect(store.generationOptions.show.members.Nicholas).toBeDefined();
         expect(store.generationOptions.show.members.Nick).toBeUndefined();
+        teardown();
+    });
+
+    it("an older config save resolving late cannot roll back a newer edit", async () => {
+        const repo = buildRepo();
+        const puts = [];
+        repo.putConfig = vi.fn(
+            (config) =>
+                new Promise((resolve) => {
+                    puts.push({ config, resolve });
+                }),
+        );
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "One", schemaVersion: 2 },
+        });
+
+        // First save starts and hangs on a slow network...
+        const first = store.saveConfig();
+        await flush();
+        expect(puts).toHaveLength(1);
+
+        // ...the user edits again and a second save starts and FINISHES.
+        store.updateConfigField("bandName", "Two");
+        const second = store.saveConfig();
+        await flush();
+        expect(puts).toHaveLength(2);
+        puts[1].resolve({ ...puts[1].config });
+        await second;
+        expect(store.appConfig.bandName).toBe("Two");
+
+        // Now the slow first save lands with the stale payload — it must
+        // not roll the config back.
+        puts[0].resolve({ ...puts[0].config });
+        await first;
+        await settle();
+        expect(store.appConfig.bandName).toBe("Two");
         teardown();
     });
 

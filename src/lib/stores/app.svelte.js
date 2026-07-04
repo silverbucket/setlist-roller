@@ -1849,33 +1849,31 @@ export function createAppStore(repo) {
 
     async function saveConfig() {
         if (!appConfig) return;
-        const sessionAlive = sessionGuard();
         try {
             busyMessage = "Saving config...";
-            const nextConfig = normalizeAppConfig({ ...clone(appConfig), updatedAt: nowIso() });
-            const saved = await withSync("Saving settings", () => repo.putConfig(nextConfig));
-            if (!sessionAlive()) return;
-            setConfigLocal(saved);
-            persistGenerationOptions();
-            if (currentUserAddress && appConfig?.bandName) {
-                saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
-                knownAccounts = getKnownAccounts();
-            }
-            toastInfo("Settings saved.");
-        } catch (error) {
-            toastError(error?.message || "Could not save config.");
+            if (await persistConfigEdit(appConfig)) toastInfo("Settings saved.");
         } finally {
             busyMessage = "";
         }
     }
 
+    // Monotonic token serializing config saves: rapid edits can overlap
+    // (debounced autosave + blur save, or two slow writes), and applying an
+    // OLDER save's response would roll the UI and known-accounts registry
+    // back to stale data. Only the newest in-flight save applies its result.
+    let configSaveRevision = 0;
+
     async function persistConfigEdit(nextConfig, errorMessage = "Could not save config.") {
         const normalized = normalizeAppConfig({ ...clone(nextConfig), updatedAt: nowIso() });
         const sessionAlive = sessionGuard();
+        const revision = ++configSaveRevision;
         appConfig = normalized;
         try {
             const saved = await withSync("Saving settings", () => repo.putConfig(normalized));
             if (!sessionAlive()) return false;
+            // Superseded by a newer save: the write itself succeeded, but
+            // the newer save's response owns the local state.
+            if (revision !== configSaveRevision) return true;
             setConfigLocal(saved);
             persistGenerationOptions();
             if (currentUserAddress && appConfig?.bandName) {
@@ -1931,6 +1929,14 @@ export function createAppStore(repo) {
     async function renameBandMember(oldName, newName) {
         const clean = newName.trim();
         if (!clean || clean === oldName || bandMemberEntries.some(([n]) => n === clean)) return;
+        // The rename cascades through every song referencing the member.
+        // Until the account's first sync has settled, the in-memory catalog
+        // may be partial and the cascade would miss documents — refuse
+        // rather than rename half the catalog.
+        if (!catalogSettled) {
+            toastWarn("Still syncing your catalog — try the rename again in a moment.");
+            return;
+        }
         const data = bandMembers[oldName] || { instruments: [] };
 
         const sessionAlive = sessionGuard();
@@ -2552,6 +2558,7 @@ export function createAppStore(repo) {
             if (syncStateTimer) clearTimeout(syncStateTimer);
             cancelSettleTimer();
             cancelConnectingWatchdog();
+            cancelConfigSave();
             detachConnecting();
             detachAuthing();
             detachStandaloneRedirect();

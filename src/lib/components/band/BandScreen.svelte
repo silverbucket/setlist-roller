@@ -6,7 +6,6 @@
 
     // Local drafts for the inline add inputs. Purely per-screen UI state —
     // these used to live in the global store and leaked between screens.
-    let bandNameDraft = $state(store.appConfig?.bandName ?? "");
     let newMemberDraft = $state("");
     let newInstrumentDraft = $state("");
     let tuningDrafts = $state({});
@@ -352,12 +351,17 @@
         <div class="card">
             <label class="field-group">
                 <span class="field-label">Band name</span>
+                <!-- Single source of truth: the config renders the value and
+                     the input element holds the in-progress text; commit on
+                     blur (Enter blurs). No parallel draft state to drift. -->
                 <input
                     class="text-input band-name-input"
                     type="text"
                     value={store.appConfig?.bandName ?? ""}
-                    oninput={(e) => { bandNameDraft = e.currentTarget.value; }}
-                    onblur={() => { if (bandNameDraft.trim() && bandNameDraft !== store.appConfig?.bandName) store.updateConfigField("bandName", bandNameDraft.trim()); }}
+                    onblur={(e) => {
+                        const next = e.currentTarget.value.trim();
+                        if (next && next !== store.appConfig?.bandName) store.updateConfigField("bandName", next);
+                    }}
                     onkeydown={handleBandNameKeydown}
                 />
             </label>

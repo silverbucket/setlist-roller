@@ -79,6 +79,28 @@ test.describe("Song editor — basics", () => {
         await songs.expectSongHidden("Changed In Memory");
     });
 
+    test("dismissing the discard confirm keeps the editor open with edits intact", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: { x: makeSong({ id: "x", name: "Stable" }) },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSongs();
+
+        const songs = new SongsPage(page);
+        const editor = new SongEditorPage(page);
+        await songs.openSong("Stable");
+        await editor.waitForVisible();
+        await editor.fillName("Changed In Memory");
+
+        // Cancel the discard confirm — nothing is lost.
+        page.once("dialog", (d) => d.dismiss());
+        await editor.backButton.click();
+        await expect(editor.overlay).toBeVisible();
+        await expect(editor.nameInput).toHaveValue("Changed In Memory");
+    });
+
     test("toggling Cover and Instrumental chips updates the song flags", async ({ page, app }) => {
         await app.seed(
             buildSeed({

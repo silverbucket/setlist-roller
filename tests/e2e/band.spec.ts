@@ -97,6 +97,9 @@ test.describe("Band screen — members", () => {
             }),
         );
         await app.goto();
+        // Renames cascade through the whole catalog, so the store refuses
+        // them until the initial sync has settled.
+        await app.waitForSynced();
         await new AppShell(page).gotoBand();
 
         const band = new BandPage(page);
