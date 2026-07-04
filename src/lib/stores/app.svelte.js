@@ -1600,17 +1600,6 @@ export function createAppStore(repo) {
         updateEditor((s) => { s[key] = value; });
     }
 
-    function renameMember(prev, next) {
-        const clean = next.trim();
-        if (!clean || clean === prev) return;
-        updateEditor((song) => {
-            const entries = Object.entries(song.members || {});
-            const rebuilt = {};
-            entries.forEach(([name, val]) => { rebuilt[name === prev ? clean : name] = val; });
-            song.members = rebuilt;
-        });
-    }
-
     /**
      * Create a per-song override for a band member, prefilled from their
      * default rig so the user edits from a working starting point.
@@ -2651,7 +2640,6 @@ export function createAppStore(repo) {
         get editReturnView() { return editReturnView; },
         set editReturnView(v) { editReturnView = v; },
         updateSongField,
-        renameMember,
         addMember,
         removeMember,
         addInstrumentOption,
