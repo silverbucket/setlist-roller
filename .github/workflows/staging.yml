@@ -41,6 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history: 5apps' git server rejects pushes from shallow
+          # clones ("shallow update not allowed"), and checkout's default
+          # is a depth-1 clone. Same reason release.yml fetches full depth.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v4
