@@ -50,6 +50,11 @@ test.describe("Band screen — members", () => {
 
         const band = new BandPage(page);
         await band.addMember("Alice");
+        // Adding a member drops straight into their edit view (the next
+        // step is always "add their instruments")...
+        await expect(band.memberEditTitle).toBeVisible();
+        // ...and Back shows them in the members list.
+        await band.memberBackButton.click();
         await band.expectMemberPresent("Alice");
     });
 
