@@ -11,7 +11,7 @@
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
     import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
-    import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb, hexToRgba } from "./lib/utils.js";
+    import { DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
 
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
@@ -54,7 +54,6 @@
     });
 
     let dieColor = $derived(store.appConfig?.ui?.dieColor || DEFAULT_DIE_COLOR);
-    let dieColorRgb = $derived(hexToRgb(dieColor));
 
     let faviconHref = $derived(
         `data:image/svg+xml,${encodeURIComponent(generateDieSvgString(dieColor))}`
@@ -82,7 +81,36 @@
          inject it; duplicating it here just causes two tags in the DOM. -->
 </svelte:head>
 
-{#if store.connectionStatus === "disconnected"}
+{#if store.currentUserAddress || store.connectionStatus === "connected"}
+    <!-- Offline-first: as soon as an account is active, the full app renders
+         from its local mirror. The remote session connects in the background
+         and the TopBar dot reports its state. -->
+    <div class="app-shell">
+        <TopBar />
+
+        <main class="main-content">
+            <div class="content-column">
+                {#if store.activeView === "roll"}
+                    <RollScreen />
+                {:else if store.activeView === "saved"}
+                    <SavedScreen />
+                {:else if store.activeView === "songs"}
+                    <SongsScreen />
+                {:else if store.activeView === "band"}
+                    <BandScreen />
+                {:else if store.activeView === "help"}
+                    <HelpScreen />
+                {/if}
+            </div>
+        </main>
+
+        <BottomNav />
+    </div>
+{:else if store.connectionStatus === "pending"}
+    <!-- Boot instant with no restorable account: rs.js resolves to
+         connected or not-connected almost immediately; render nothing
+         rather than flashing the login form. -->
+{:else}
     <main class="connect-shell">
         <section class="connect-card">
             <p class="eyebrow">Setlist Roller</p>
@@ -126,63 +154,6 @@
             {/if}
         </section>
     </main>
-{:else if !store.initialSyncComplete}
-    <main class="sync-shell">
-        <div class="sync-content">
-            <div class="sync-die-face" style="--die-rgb: {dieColorRgb};">
-                <span class="sync-pip" style="left:25%;top:25%"></span>
-                <span class="sync-pip" style="left:75%;top:25%"></span>
-                <span class="sync-pip" style="left:50%;top:50%"></span>
-                <span class="sync-pip" style="left:25%;top:75%"></span>
-                <span class="sync-pip" style="left:75%;top:75%"></span>
-            </div>
-            <div class="sync-label">
-                <span class="spinner"></span>
-                {store.syncStatusLabel}
-            </div>
-            {#if store.syncLogEntries.length > 0}
-                <div class="sync-console" role="log" aria-live="polite">
-                    {#each store.syncLogEntries as entry (entry.id)}
-                        <div class="sync-console-line">
-                            <span class="sync-console-time">{entry.time}</span>
-                            <span>{entry.message}</span>
-                        </div>
-                    {/each}
-                </div>
-            {/if}
-            {#if store.syncStalled}
-                <div class="sync-recovery" role="alert">
-                    <p class="sync-recovery-text">This is taking longer than usual. The remote storage may be slow or unreachable.</p>
-                    <div class="sync-recovery-actions">
-                        <button type="button" class="btn primary" onclick={() => store.retrySync()}>Retry</button>
-                        <button type="button" class="btn" onclick={() => store.disconnectStorage()}>Disconnect</button>
-                    </div>
-                </div>
-            {/if}
-        </div>
-    </main>
-{:else}
-    <div class="app-shell">
-        <TopBar />
-
-        <main class="main-content">
-            <div class="content-column">
-                {#if store.activeView === "roll"}
-                    <RollScreen />
-                {:else if store.activeView === "saved"}
-                    <SavedScreen />
-                {:else if store.activeView === "songs"}
-                    <SongsScreen />
-                {:else if store.activeView === "band"}
-                    <BandScreen />
-                {:else if store.activeView === "help"}
-                    <HelpScreen />
-                {/if}
-            </div>
-        </main>
-
-        <BottomNav />
-    </div>
 {/if}
 
 {#if store.showFirstRunPrompt}
@@ -270,110 +241,6 @@
 
     .lede {
         color: var(--muted);
-    }
-
-    /* ---- Sync screen ---- */
-    .sync-shell {
-        height: 100%;
-        display: grid;
-        place-items: center;
-        overflow-y: auto;
-        padding: var(--space-4);
-    }
-
-    .sync-content {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: var(--space-4);
-        width: min(100%, 34rem);
-    }
-
-    .sync-die-face {
-        position: relative;
-        width: 72px;
-        height: 72px;
-        border-radius: 14px;
-        background: var(--accent-soft);
-        border: 2px solid var(--accent-line);
-        animation: pulse-fade 2s ease-in-out infinite;
-    }
-
-    .sync-pip {
-        position: absolute;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: var(--accent-line);
-        transform: translate(-50%, -50%);
-    }
-
-    .sync-label {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-2);
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: var(--muted);
-    }
-
-    .sync-console {
-        width: 100%;
-        max-height: min(34vh, 18rem);
-        overflow: auto;
-        padding: 0.85rem 1rem;
-        border-radius: var(--radius-lg);
-        background: rgba(10, 14, 18, 0.72);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: var(--shadow);
-        color: rgba(244, 241, 234, 0.88);
-        font-family: "SFMono-Regular", "SF Mono", ui-monospace, monospace;
-        font-size: 0.78rem;
-        line-height: 1.5;
-    }
-
-    .sync-console-line {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.7rem;
-    }
-
-    .sync-console-line + .sync-console-line {
-        margin-top: 0.3rem;
-    }
-
-    .sync-console-time {
-        color: rgba(244, 241, 234, 0.5);
-        white-space: nowrap;
-    }
-
-    .sync-recovery {
-        width: 100%;
-        display: grid;
-        gap: var(--space-3);
-        padding: var(--space-3);
-        border-radius: var(--radius-lg);
-        background: var(--paper-strong);
-        border: 1px solid var(--line);
-        text-align: center;
-    }
-
-    .sync-recovery-text {
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--muted);
-    }
-
-    .sync-recovery-actions {
-        display: flex;
-        gap: var(--space-2);
-        justify-content: center;
-        flex-wrap: wrap;
-    }
-
-    @keyframes pulse-fade {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.06); }
     }
 
     /* ---- App shell ----

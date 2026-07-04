@@ -1,24 +1,26 @@
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { accountSlot, saveKnownAccount } from "../accounts.js";
+import { saveKnownAccount } from "../accounts.js";
+import { openAccountDb } from "../local-db.js";
 import { createAppStore } from "./app.svelte.js";
 
 /**
- * Lifecycle coverage for `connectToAccount`. Before this file landed, the
- * function had no direct tests — the e2e suite only exercised the connect
- * screen and Add Account, never the actual swap or Recent-click. Each test
- * builds a stub repo whose `on` collector lets the test fire `connected` /
- * `disconnected` / `error` events deterministically, decoupling the
- * connectToAccount state machine from rs.js's real timing.
+ * Lifecycle coverage for the v3 account model: per-account IndexedDB
+ * mirrors, instant local switching, disconnect-keeps-data, and
+ * forget-wipes-data. Each test builds a stub repo whose `on` collector
+ * lets the test fire `connected` / `disconnected` / `error` events
+ * deterministically, decoupling the store from rs.js's real timing.
  *
  * We deliberately stay in vitest's default node environment (no jsdom).
- * The store relies on three browser globals (`localStorage`, `window` for
- * hashchange routing, and `setTimeout`) — we polyfill exactly those rather
- * than pulling in a full DOM. Loading jsdom would activate Svelte's
- * top-level-`$effect` validation and the store's reactive setup would
- * throw `effect_orphan` because the effects aren't running inside a
- * component initializer.
+ * The store relies on `localStorage`, `window` (hashchange routing), and
+ * IndexedDB — we polyfill exactly those (IndexedDB via fake-indexeddb).
+ * Loading jsdom would activate Svelte's top-level-`$effect` validation and
+ * the store's reactive setup would throw `effect_orphan`.
  */
+
+const ACTIVE_ACCOUNT_KEY = "setlist-roller-active-account";
 
 // Minimal localStorage shim — Map-backed, throws nothing.
 class MemStorage {
@@ -51,10 +53,8 @@ let _origWindow;
 beforeEach(() => {
     _origLocalStorage = globalThis.localStorage;
     _origWindow = globalThis.window;
-    // Fresh per-test storage so saved tokens / snapshots don't leak.
     globalThis.localStorage = new MemStorage();
-    // Minimum window surface the store touches: location.hash for routing
-    // and addEventListener for hashchange. We're in node, so no real DOM.
+    globalThis.indexedDB = new IDBFactory();
     globalThis.window = {
         location: { hash: "" },
         addEventListener: () => {},
@@ -69,6 +69,23 @@ afterEach(() => {
     if (typeof _origWindow === "undefined") delete globalThis.window;
     else globalThis.window = _origWindow;
 });
+
+function flush() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function settle(times = 10) {
+    for (let i = 0; i < times; i += 1) await flush();
+}
+
+/** Pre-populate an account's mirror as if it had synced before. */
+async function seedMirror(address, { songs = [], config = null, initialSyncDone = true } = {}) {
+    const db = await openAccountDb(address);
+    for (const song of songs) await db.putSong(song);
+    if (config) await db.putKv("config", config);
+    if (initialSyncDone) await db.putKv("sync-meta", { initialSyncDone: true });
+    db.close();
+}
 
 /**
  * Build a stub repo with controllable event emission.
@@ -119,7 +136,6 @@ function buildStubRepo({ initiallyConnected = false, getToken = () => "stub-toke
             void token;
         }),
         sync: vi.fn(async () => {}),
-        syncAndWait: vi.fn(() => Promise.resolve()),
         getSyncInterval: () => 10000,
         setSyncInterval: vi.fn(),
         loadAll: vi.fn(async () => ({
@@ -137,6 +153,61 @@ function buildStubRepo({ initiallyConnected = false, getToken = () => "stub-toke
         putBootstrapMeta: vi.fn(async () => ({})),
     };
 }
+
+describe("local-first boot", () => {
+    it("hydrates the last active account's mirror before any remote event", async () => {
+        await seedMirror("user-a@example.com", {
+            songs: [{ id: "s1", name: "Local Song" }],
+            config: { bandName: "Band A", schemaVersion: 2 },
+        });
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, "user-a@example.com");
+
+        const repo = buildStubRepo();
+        const store = createAppStore(repo);
+        store.init();
+        await settle();
+
+        // No connected/not-connected event has fired — data is local.
+        expect(store.currentUserAddress).toBe("user-a@example.com");
+        expect(store.hydrated).toBe(true);
+        expect(store.songs.map((s) => s.name)).toEqual(["Local Song"]);
+        expect(store.appConfig?.bandName).toBe("Band A");
+        expect(store.initialSyncDone).toBe(true);
+    });
+
+    it("reconnects with the saved token when rs.js lost its session", async () => {
+        await seedMirror("user-a@example.com", { config: { bandName: "Band A", schemaVersion: 2 } });
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, "user-a@example.com");
+        saveKnownAccount("user-a@example.com", { bandName: "Band A" }, "saved-token-a");
+
+        const repo = buildStubRepo();
+        const store = createAppStore(repo);
+        store.init();
+        await settle();
+
+        repo.fire("not-connected");
+        expect(repo.connect).toHaveBeenCalledTimes(1);
+        expect(repo.connect.mock.calls[0]).toEqual(["user-a@example.com", "saved-token-a"]);
+        expect(store.connectionStatus).toBe("connecting");
+    });
+
+    it("stays on local data (no login bounce) when no token is saved", async () => {
+        await seedMirror("user-a@example.com", { config: { bandName: "Band A", schemaVersion: 2 } });
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, "user-a@example.com");
+
+        const repo = buildStubRepo();
+        const store = createAppStore(repo);
+        store.init();
+        await settle();
+
+        repo.fire("not-connected");
+        expect(repo.connect).not.toHaveBeenCalled();
+        expect(store.connectionStatus).toBe("disconnected");
+        // The account (and its data) are still active locally.
+        expect(store.currentUserAddress).toBe("user-a@example.com");
+        expect(store.appConfig?.bandName).toBe("Band A");
+    });
+});
 
 describe("connectToAccount — re-entry guard", () => {
     it("toasts and bails when connectionStatus is already connecting", async () => {
@@ -179,7 +250,7 @@ describe("connectToAccount — cold path (not currently connected)", () => {
         expect(token).toBe("saved-token-a");
     });
 
-    it("releases the swap guard when the connected event fires", async () => {
+    it("finishes in connected state when the connected event fires", async () => {
         saveKnownAccount("user-a@example.com", { bandName: "A" }, "saved-token-a");
         const repo = buildStubRepo({ initiallyConnected: false });
         repo.setUserAddress("user-a@example.com");
@@ -188,19 +259,19 @@ describe("connectToAccount — cold path (not currently connected)", () => {
         repo.fire("not-connected");
 
         const inFlight = store.connectToAccount("user-a@example.com");
+        await inFlight;
         expect(store.connectionStatus).toBe("connecting");
 
         repo.fire("connected");
-        await inFlight;
-        // Drain any awaited work the connected handler may still have queued.
-        await new Promise((r) => setTimeout(r, 0));
+        await settle();
 
         expect(store.connectionStatus).toBe("connected");
+        expect(store.currentUserAddress).toBe("user-a@example.com");
     });
 });
 
 describe("connectToAccount — swap path (currently connected)", () => {
-    it("calls repo.swap when already connected to a different account", async () => {
+    it("calls repo.swap with the target's saved token", async () => {
         saveKnownAccount("user-a@example.com", { bandName: "A" }, "token-a");
         saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
         const repo = buildStubRepo({ initiallyConnected: true });
@@ -208,37 +279,82 @@ describe("connectToAccount — swap path (currently connected)", () => {
         const store = createAppStore(repo);
         store.init();
         repo.fire("connected");
-        await new Promise((r) => setTimeout(r, 0));
+        await settle();
 
         const inFlight = store.connectToAccount("user-b@example.com");
+        await inFlight;
         expect(repo.swap).toHaveBeenCalledTimes(1);
         const [addr, token] = repo.swap.mock.calls[0];
         expect(addr).toBe("user-b@example.com");
         expect(token).toBe("token-b");
 
         repo.fire("connected");
-        await inFlight;
+        await settle();
+        expect(store.connectionStatus).toBe("connected");
     });
 
-    it("watchdog releases the guard after 15s if connected never fires", async () => {
-        vi.useFakeTimers();
-        saveKnownAccount("user-a@example.com", { bandName: "A" }, "token-a");
+    it("hydrates the target's mirror instantly, before the remote session lands", async () => {
+        await seedMirror("user-b@example.com", {
+            songs: [{ id: "sb", name: "B Side" }],
+            config: { bandName: "Band B", schemaVersion: 2 },
+        });
         saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
         const repo = buildStubRepo({ initiallyConnected: true });
         repo.setUserAddress("user-a@example.com");
         const store = createAppStore(repo);
         store.init();
         repo.fire("connected");
-        await vi.advanceTimersByTimeAsync(0);
+        await settle();
 
-        store.connectToAccount("user-b@example.com");
-        expect(store.connectionStatus).toBe("connecting");
+        await store.connectToAccount("user-b@example.com");
 
-        await vi.advanceTimersByTimeAsync(15000);
-        expect(store.connectionStatus).toBe("disconnected");
+        // No connected event for B has fired yet — this is pure local data.
+        expect(store.songs.map((s) => s.name)).toEqual(["B Side"]);
+        expect(store.appConfig?.bandName).toBe("Band B");
+        expect(store.initialSyncDone).toBe(true);
+        expect(store.showFirstRunPrompt).toBe(false);
+
+        repo.fire("connected");
+        await settle();
+        // Local data survives the connection — there's no cache reload that
+        // could blank a config the remote hasn't streamed yet.
+        expect(store.appConfig?.bandName).toBe("Band B");
+        expect(store.showFirstRunPrompt).toBe(false);
     });
 
-    it("releases the swap guard when fatal Unauthorized fires during swap", async () => {
+    it("watchdog resets a swap that never connects, without losing local data", async () => {
+        await seedMirror("user-b@example.com", { config: { bandName: "Band B", schemaVersion: 2 } });
+        saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
+        const repo = buildStubRepo({ initiallyConnected: true });
+        // Make swap "succeed" without ever firing connected, and report
+        // not-connected afterwards.
+        repo.swap = vi.fn(async () => {});
+        const origIsConnected = repo.isConnected;
+        let swapCalled = false;
+        repo.swap.mockImplementation(async () => {
+            swapCalled = true;
+        });
+        repo.isConnected = () => (swapCalled ? false : origIsConnected());
+        repo.setUserAddress("user-a@example.com");
+        const store = createAppStore(repo);
+        store.init();
+        repo.fire("connected");
+        await settle();
+
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        const inFlight = store.connectToAccount("user-b@example.com");
+        await inFlight;
+        expect(store.connectionStatus).toBe("connecting");
+
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(store.connectionStatus).toBe("disconnected");
+        // Local data for the target account is still there and usable.
+        expect(store.currentUserAddress).toBe("user-b@example.com");
+        expect(store.appConfig?.bandName).toBe("Band B");
+    });
+
+    it("keeps local data when a fatal Unauthorized fires during swap", async () => {
+        await seedMirror("user-b@example.com", { config: { bandName: "Band B", schemaVersion: 2 } });
         saveKnownAccount("user-a@example.com", { bandName: "A" }, "token-a");
         saveKnownAccount("user-b@example.com", { bandName: "B" }, "stale-token");
         const repo = buildStubRepo({ initiallyConnected: true });
@@ -246,17 +362,22 @@ describe("connectToAccount — swap path (currently connected)", () => {
         const store = createAppStore(repo);
         store.init();
         repo.fire("connected");
-        await new Promise((r) => setTimeout(r, 0));
+        await settle();
 
         const inFlight = store.connectToAccount("user-b@example.com");
+        await inFlight;
 
         const err = new Error("token expired");
         err.name = "Unauthorized";
         repo.fire("error", err);
         repo.fire("disconnected");
-        await inFlight;
+        await settle();
 
         expect(store.connectionStatus).toBe("disconnected");
+        // The account's local data is kept — the user only needs to re-auth.
+        expect(store.currentUserAddress).toBe("user-b@example.com");
+        expect(store.appConfig?.bandName).toBe("Band B");
+
         // Subsequent connect attempt must not be blocked by a stuck guard.
         const before = repo.connect.mock.calls.length;
         store.connectAddress = "user-a@example.com";
@@ -265,88 +386,57 @@ describe("connectToAccount — swap path (currently connected)", () => {
     });
 });
 
-describe("connectToAccount — snapshot path", () => {
-    it("paints the new account's data instantly when a snapshot exists", async () => {
-        saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
-        localStorage.setItem(
-            accountSlot("user-b@example.com").key("snapshot"),
-            JSON.stringify({
-                songs: [{ id: "s1", name: "Snapshot Song" }],
-                config: { bandName: "Band B (snapshot)", schemaVersion: 2 },
-                setlists: [],
-                members: {},
-            }),
-        );
-
+describe("disconnect vs forget", () => {
+    it("disconnectStorage keeps the mirror so returning is instant", async () => {
+        await seedMirror("user-a@example.com", {
+            songs: [{ id: "s1", name: "Keeper" }],
+            config: { bandName: "Band A", schemaVersion: 2 },
+        });
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, "user-a@example.com");
         const repo = buildStubRepo({ initiallyConnected: true });
         repo.setUserAddress("user-a@example.com");
         const store = createAppStore(repo);
         store.init();
-        repo.fire("connected");
-        await new Promise((r) => setTimeout(r, 0));
+        await settle();
+        expect(store.songs).toHaveLength(1);
 
-        const inFlight = store.connectToAccount("user-b@example.com");
-        expect(store.initialSyncComplete).toBe(true);
-        expect(store.appConfig?.bandName).toBe("Band B (snapshot)");
+        store.disconnectStorage();
+        repo.fire("disconnected");
+        await settle();
 
-        repo.fire("connected");
-        await inFlight;
+        // In-memory state is blanked and the session is gone...
+        expect(store.currentUserAddress).toBe("");
+        expect(store.songs).toEqual([]);
+        expect(store.connectionStatus).toBe("disconnected");
+        expect(localStorage.getItem(ACTIVE_ACCOUNT_KEY)).toBeNull();
+
+        // ...but the mirror still holds the account's data.
+        const db = await openAccountDb("user-a@example.com");
+        const data = await db.loadAll();
+        db.close();
+        expect(data.songs.map((s) => s.name)).toEqual(["Keeper"]);
+        expect(data.config?.bandName).toBe("Band A");
     });
 
-    it("snapshot config survives a reloadAll that returns no remote config yet", async () => {
-        // Regression guard for the swap → onChange → reloadAll race. After
-        // a snapshot-path swap, rs.js streams the new account's data into
-        // the cache. While bodies are still arriving, reloadAll can read
-        // the cache and find data.config === null (folder listing only,
-        // no config body). PR 89's slice-by-slice apply still blanks
-        // appConfig in that case (`data.config ? ... : null`), which then
-        // tips `showFirstRunPrompt` true and bounces the user into the
-        // band-name modal even though they have a perfectly good config
-        // both in the snapshot and on the server. This test pins the
-        // intended behavior: a snapshot-restored config must not be
-        // overwritten by an empty cache read on the same account.
-        saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
-        localStorage.setItem(
-            accountSlot("user-b@example.com").key("snapshot"),
-            JSON.stringify({
-                songs: [],
-                config: { bandName: "Band B (snapshot)", schemaVersion: 2 },
-                setlists: [],
-                members: {},
-            }),
-        );
-
-        const repo = buildStubRepo({ initiallyConnected: true });
-        repo.setUserAddress("user-a@example.com");
-        // First reloadAll (during the connected handler in the legacy non-
-        // snapshot path) won't run because initialSyncComplete is set true
-        // by the snapshot. But onChange-triggered reloadAll runs against
-        // the empty new-account cache.
-        repo.loadAll = vi.fn(async () => ({
-            songs: [],
-            config: null,
-            bootstrap: null,
-            setlists: [],
-            members: {},
-            pendingBodies: 1,
-            errors: {},
-        }));
+    it("forgetAccount wipes the mirror and the registry entry", async () => {
+        await seedMirror("user-a@example.com", {
+            songs: [{ id: "s1", name: "Gone" }],
+            config: { bandName: "Band A", schemaVersion: 2 },
+        });
+        saveKnownAccount("user-a@example.com", { bandName: "Band A" }, "token-a");
+        const repo = buildStubRepo();
         const store = createAppStore(repo);
         store.init();
-        repo.fire("connected");
-        await new Promise((r) => setTimeout(r, 0));
+        await settle();
 
-        const inFlight = store.connectToAccount("user-b@example.com");
-        expect(store.appConfig?.bandName).toBe("Band B (snapshot)");
-        repo.fire("connected");
-        await inFlight;
-        // Simulate the onChange-driven reloadAll burst that follows a swap.
-        await store.retrySync();
+        store.forgetAccount("user-a@example.com");
+        await settle();
 
-        // The snapshot config must still be present — and the first-run
-        // modal must not be open against an account that already has a
-        // config locally.
-        expect(store.appConfig?.bandName).toBe("Band B (snapshot)");
-        expect(store.showFirstRunPrompt).toBe(false);
+        expect(store.knownAccounts.find((a) => a.address === "user-a@example.com")).toBeUndefined();
+        const db = await openAccountDb("user-a@example.com");
+        const data = await db.loadAll();
+        db.close();
+        expect(data.songs).toEqual([]);
+        expect(data.config).toBeNull();
     });
 });

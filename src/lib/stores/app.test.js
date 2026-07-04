@@ -1,6 +1,7 @@
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_APP_CONFIG } from "../defaults.js";
 import { migrator } from "../migrations.js";
 import { createAppStore, normalizeAuthToken } from "./app.svelte.js";
 
@@ -17,39 +18,6 @@ describe("normalizeAuthToken", () => {
         expect(normalizeAuthToken({ type: "click" })).toBeUndefined();
         expect(normalizeAuthToken("")).toBeUndefined();
         expect(normalizeAuthToken(null)).toBeUndefined();
-    });
-});
-
-describe("retrySync", () => {
-    it("recovers from a stalled reload even if the original load never resolves", async () => {
-        vi.useFakeTimers();
-        let calls = 0;
-        const repo = {
-            loadAll: vi.fn(() => {
-                calls += 1;
-                if (calls === 1) return new Promise(() => {});
-                return Promise.resolve({
-                    songs: [],
-                    pendingBodies: 0,
-                    bootstrap: null,
-                    config: DEFAULT_APP_CONFIG,
-                    setlists: [],
-                    members: {},
-                });
-            }),
-        };
-        const store = createAppStore(repo);
-
-        store.retrySync();
-        await vi.advanceTimersByTimeAsync(15000);
-        expect(store.syncStalled).toBe(true);
-
-        await store.retrySync();
-        expect(store.syncStalled).toBe(false);
-        expect(store.initialSyncComplete).toBe(true);
-
-        await vi.advanceTimersByTimeAsync(15000);
-        expect(store.syncStalled).toBe(false);
     });
 });
 
@@ -186,13 +154,14 @@ describe("sticky action toasts", () => {
     });
 });
 
-describe("change-driven reload coalescing", () => {
+describe("incremental remote sync", () => {
     // The store's init() needs window + localStorage; we're in node, so
-    // polyfill exactly those (same approach as account-switching.test.js —
-    // jsdom would trip Svelte's top-level-$effect validation).
+    // polyfill exactly those. (jsdom would trip Svelte's top-level-$effect
+    // validation.) IndexedDB comes from fake-indexeddb, fresh per test.
     let _origLocalStorage;
     let _origWindow;
     beforeEach(() => {
+        globalThis.indexedDB = new IDBFactory();
         _origLocalStorage = globalThis.localStorage;
         _origWindow = globalThis.window;
         const map = new Map();
@@ -215,6 +184,15 @@ describe("change-driven reload coalescing", () => {
         if (typeof _origWindow === "undefined") delete globalThis.window;
         else globalThis.window = _origWindow;
     });
+
+    function flush() {
+        // Drain microtasks + fake-indexeddb's setImmediate-driven work.
+        return new Promise((resolve) => setImmediate(resolve));
+    }
+
+    async function settle(times = 10) {
+        for (let i = 0; i < times; i += 1) await flush();
+    }
 
     function buildRepo() {
         const listeners = new Map();
@@ -239,14 +217,16 @@ describe("change-driven reload coalescing", () => {
             },
             loadAll: vi.fn(async () => ({
                 songs: [],
-                pendingBodies: 0,
+                config: null,
                 bootstrap: null,
-                config: DEFAULT_APP_CONFIG,
                 setlists: [],
                 members: {},
+                pendingBodies: 0,
                 errors: {},
             })),
             getRawConfig: vi.fn(async () => null),
+            getSyncInterval: () => 10000,
+            setSyncInterval: vi.fn(),
             isConnected: () => true,
             getUserAddress: () => "user@example.com",
             getToken: () => "stub-token",
@@ -255,62 +235,95 @@ describe("change-driven reload coalescing", () => {
         };
     }
 
-    it("collapses a burst of change events into a single reload", async () => {
-        vi.useFakeTimers();
+    it("applies remote changes one document at a time — no full reloads", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
         const teardown = store.init();
 
         repo.fire("connected");
-        // Let the connected handler's own reloadAll settle.
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
+        await settle();
+        expect(store.currentUserAddress).toBe("user@example.com");
+        expect(store.hydrated).toBe(true);
+        // Exactly one cache read: the one-time seed pass for a first sync.
+        expect(repo.loadAll.mock.calls.length).toBe(1);
 
-        // Simulate rs.js streaming a 150-song catalog: one remote-origin
-        // change event per document body.
-        for (let i = 0; i < 150; i += 1) {
-            repo.fireChange({ relativePath: `songs/id-${i}`, origin: "remote", newValue: {} });
-        }
-        expect(repo.loadAll.mock.calls.length).toBe(baseline);
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Alpha" } });
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: { id: "s2", name: "Beta" } });
+        expect(store.songs.map((s) => s.name)).toEqual(["Alpha", "Beta"]);
 
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+        // Update in place.
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Zulu" } });
+        expect(store.songs.map((s) => s.name)).toEqual(["Beta", "Zulu"]);
+
+        // Remote deletion arrives as a change with no newValue.
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: undefined });
+        expect(store.songs.map((s) => s.name)).toEqual(["Zulu"]);
+
+        // Still no extra full reloads.
+        expect(repo.loadAll.mock.calls.length).toBe(1);
+        teardown();
+    });
+
+    it("applies remote config and clears it on remote deletion", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "The Remotes", schemaVersion: 2 },
+        });
+        expect(store.appConfig?.bandName).toBe("The Remotes");
+
+        repo.fireChange({ relativePath: "settings/app-config", origin: "remote", newValue: undefined });
+        expect(store.appConfig).toBeNull();
+        teardown();
+    });
+
+    it("ignores window- and local-origin events (local writes are already applied)", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({ relativePath: "songs/w1", origin: "window", newValue: { id: "w1", name: "W" } });
+        repo.fireChange({ relativePath: "songs/l1", origin: "local", newValue: { id: "l1", name: "L" } });
         expect(store.songs).toEqual([]);
-
         teardown();
     });
 
-    it("still reloads promptly after a lone remote change", async () => {
-        vi.useFakeTimers();
+    it("flips to synced after a quiet settle window and persists initialSyncDone", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
         const teardown = store.init();
-
         repo.fire("connected");
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
+        await settle();
+        expect(store.syncState).toBe("syncing");
+        expect(store.initialSyncDone).toBe(false);
 
-        repo.fireChange({ relativePath: "songs/id-1", origin: "remote", newValue: {} });
-        await vi.advanceTimersByTimeAsync(300);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+        // Only fake the timer APIs the settle logic uses; fake-indexeddb
+        // needs the real setImmediate to keep processing transactions.
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
-        teardown();
-    });
+        repo.fire("sync-done", { completed: true });
+        // An incoming change cancels the pending settle...
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "A" } });
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(store.syncState).toBe("syncing");
 
-    it("ignores window-origin events and does not schedule a reload", async () => {
-        vi.useFakeTimers();
-        const repo = buildRepo();
-        const store = createAppStore(repo);
-        const teardown = store.init();
+        // ...and the next completed round re-arms it. Quiet window → synced.
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("synced");
+        expect(store.initialSyncDone).toBe(true);
 
-        repo.fire("connected");
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
-
-        repo.fireChange({ relativePath: "songs/id-1", origin: "window", newValue: {} });
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline);
-
+        // The transient confirmation fades back to idle.
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("idle");
         teardown();
     });
 });
