@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_APP_CONFIG } from "../defaults.js";
 import { migrator } from "../migrations.js";
@@ -156,5 +156,134 @@ describe("setlist v2 migration", () => {
         expect(twice.songs).toEqual([{ songId: "song-9", performance: {} }]);
         expect(twice.summary).toBeUndefined();
         expect(twice.minimumsRelaxed).toBe(false);
+    });
+});
+
+describe("change-driven reload coalescing", () => {
+    // The store's init() needs window + localStorage; we're in node, so
+    // polyfill exactly those (same approach as account-switching.test.js —
+    // jsdom would trip Svelte's top-level-$effect validation).
+    let _origLocalStorage;
+    let _origWindow;
+    beforeEach(() => {
+        _origLocalStorage = globalThis.localStorage;
+        _origWindow = globalThis.window;
+        const map = new Map();
+        globalThis.localStorage = {
+            getItem: (k) => (map.has(k) ? map.get(k) : null),
+            setItem: (k, v) => map.set(k, String(v)),
+            removeItem: (k) => map.delete(k),
+            clear: () => map.clear(),
+        };
+        globalThis.window = {
+            location: { hash: "" },
+            addEventListener: () => {},
+            removeEventListener: () => {},
+        };
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        if (typeof _origLocalStorage === "undefined") delete globalThis.localStorage;
+        else globalThis.localStorage = _origLocalStorage;
+        if (typeof _origWindow === "undefined") delete globalThis.window;
+        else globalThis.window = _origWindow;
+    });
+
+    function buildRepo() {
+        const listeners = new Map();
+        let changeHandler = null;
+        return {
+            on(eventName, handler) {
+                if (!listeners.has(eventName)) listeners.set(eventName, new Set());
+                listeners.get(eventName).add(handler);
+                return () => listeners.get(eventName)?.delete(handler);
+            },
+            fire(eventName, payload) {
+                for (const handler of [...(listeners.get(eventName) || [])]) handler(payload);
+            },
+            onChange(handler) {
+                changeHandler = handler;
+                return () => {
+                    changeHandler = null;
+                };
+            },
+            fireChange(event) {
+                changeHandler?.(event);
+            },
+            loadAll: vi.fn(async () => ({
+                songs: [],
+                pendingBodies: 0,
+                bootstrap: null,
+                config: DEFAULT_APP_CONFIG,
+                setlists: [],
+                members: {},
+                errors: {},
+            })),
+            getRawConfig: vi.fn(async () => null),
+            isConnected: () => true,
+            getUserAddress: () => "user@example.com",
+            getToken: () => "stub-token",
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+        };
+    }
+
+    it("collapses a burst of change events into a single reload", async () => {
+        vi.useFakeTimers();
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+
+        repo.fire("connected");
+        // Let the connected handler's own reloadAll settle.
+        await vi.runOnlyPendingTimersAsync();
+        const baseline = repo.loadAll.mock.calls.length;
+
+        // Simulate rs.js streaming a 150-song catalog: one remote-origin
+        // change event per document body.
+        for (let i = 0; i < 150; i += 1) {
+            repo.fireChange({ relativePath: `songs/id-${i}`, origin: "remote", newValue: {} });
+        }
+        expect(repo.loadAll.mock.calls.length).toBe(baseline);
+
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+        expect(store.songs).toEqual([]);
+
+        teardown();
+    });
+
+    it("still reloads promptly after a lone remote change", async () => {
+        vi.useFakeTimers();
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+
+        repo.fire("connected");
+        await vi.runOnlyPendingTimersAsync();
+        const baseline = repo.loadAll.mock.calls.length;
+
+        repo.fireChange({ relativePath: "songs/id-1", origin: "remote", newValue: {} });
+        await vi.advanceTimersByTimeAsync(300);
+        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+
+        teardown();
+    });
+
+    it("ignores window-origin events and does not schedule a reload", async () => {
+        vi.useFakeTimers();
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+
+        repo.fire("connected");
+        await vi.runOnlyPendingTimersAsync();
+        const baseline = repo.loadAll.mock.calls.length;
+
+        repo.fireChange({ relativePath: "songs/id-1", origin: "window", newValue: {} });
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(repo.loadAll.mock.calls.length).toBe(baseline);
+
+        teardown();
     });
 });
