@@ -212,6 +212,9 @@ export function createAppStore(repo) {
     // up near-instantly; long enough to swallow rs.js's per-document
     // event bursts during sync rounds.
     const CHANGE_RELOAD_DEBOUNCE_MS = 250;
+    // True while a debounced change-reload timer is pending. Exposed to
+    // maybeMarkSynced so it doesn't flip to "synced" before that reload runs.
+    let changeReloadPending = false;
     let syncStalled = $state(false);
     let syncStalledTimer = null;
 
@@ -800,9 +803,10 @@ export function createAppStore(repo) {
             reloadInFlight > 0 ? `reloadInFlight=${reloadInFlight}` :
             pendingBodies > 0 ? `pendingBodies=${pendingBodies}` :
             !syncRoundCompleted ? "syncRoundCompleted=false" :
+            changeReloadPending ? "changeReloadPending" :
             loadError ? "loadError" :
             null;
-        dbg(`maybeMarkSynced: ${reason ? `blocked by ${reason}` : "scheduling flip"} (state=${syncState} reload=${reloadInFlight} pending=${pendingBodies} round=${syncRoundCompleted})`);
+        dbg(`maybeMarkSynced: ${reason ? `blocked by ${reason}` : "scheduling flip"} (state=${syncState} reload=${reloadInFlight} pending=${pendingBodies} round=${syncRoundCompleted} changeReloadPending=${changeReloadPending})`);
         if (reason) return;
         // Already scheduled — let the existing timer run; nothing has changed
         // that would justify resetting it.
@@ -816,6 +820,7 @@ export function createAppStore(repo) {
                 reloadInFlight > 0 ? `reloadInFlight=${reloadInFlight}` :
                 pendingBodies > 0 ? `pendingBodies=${pendingBodies}` :
                 !syncRoundCompleted ? "syncRoundCompleted=false" :
+                changeReloadPending ? "changeReloadPending" :
                 loadError ? "loadError" :
                 null;
             if (blocker) {
@@ -2547,6 +2552,7 @@ export function createAppStore(repo) {
             syncRoundCompleted = false;
             pendingBodies = 0;
             initialSyncSettled = false;
+            if (changeReloadTimer) { clearTimeout(changeReloadTimer); changeReloadTimer = null; changeReloadPending = false; }
             bumpSyncActivity("connected");
             // Cold connect / OAuth path: ensure rs.js is in bootstrap-pace
             // polling. (connectToAccount already does this for swaps.)
@@ -2708,8 +2714,10 @@ export function createAppStore(repo) {
             }
             changeBurstSession = activeSession;
             if (changeReloadTimer) clearTimeout(changeReloadTimer);
+            changeReloadPending = true;
             changeReloadTimer = setTimeout(async () => {
                 changeReloadTimer = null;
+                changeReloadPending = false;
                 const hadRemote = changeBurstHadRemote;
                 changeBurstHadRemote = false;
                 const session = changeBurstSession;
@@ -2728,7 +2736,7 @@ export function createAppStore(repo) {
             if (syncStalledTimer) clearTimeout(syncStalledTimer);
             if (switchingWatchdog) clearTimeout(switchingWatchdog);
             if (pendingSwapDisconnectTimer) clearTimeout(pendingSwapDisconnectTimer);
-            if (changeReloadTimer) clearTimeout(changeReloadTimer);
+            if (changeReloadTimer) { clearTimeout(changeReloadTimer); changeReloadPending = false; }
             detachConnecting();
             detachAuthing();
             detachStandaloneRedirect();
