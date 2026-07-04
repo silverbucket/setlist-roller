@@ -23,15 +23,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="theme-color" content="#e15b37" />
-    <!-- SYNC: key + resolution logic duplicated from src/lib/theme.svelte.js to avoid FOITC -->
-    <script>
-      try {
-        var p = localStorage.getItem("setlist-roller-theme") || "system";
-        var e = p === "dark" ? "dark" : p === "light" ? "light"
-          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.dataset.theme = e;
-      } catch(x) {}
-    </script>
+    <!-- Blocking theme init (external, not inline, so the CSP can stay
+         script-src 'self' — see the csp plugin in vite.config.js). Runs
+         before first paint to avoid a flash of the wrong theme. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>

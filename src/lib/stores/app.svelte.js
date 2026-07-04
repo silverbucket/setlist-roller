@@ -534,6 +534,43 @@ export function createAppStore(repo) {
     function dismissToast(id) {
         toastMessages = toastMessages.filter((t) => t.id !== id);
     }
+
+    // ---- destructive confirm ----
+    // In-app replacement for window.confirm (#60): native dialogs look
+    // foreign in the installed PWA and the chained deleteAllData confirms
+    // were easy to misclick through. One request at a time; App.svelte
+    // renders the modal and calls resolveConfirm.
+    let confirmRequest = $state(null);
+
+    /**
+     * Ask the user to confirm a destructive action. Resolves true/false.
+     * options: { title, message?, confirmLabel?, cancelLabel?, requireText? }
+     * — requireText demands the user type the given string (e.g. the band
+     * name) before the confirm button enables.
+     */
+    function requestConfirm(options) {
+        return new Promise((resolve) => {
+            // A newer request supersedes a pending one, which resolves as
+            // cancelled — never leave a caller hanging.
+            if (confirmRequest) confirmRequest.resolve(false);
+            confirmRequest = {
+                title: "Are you sure?",
+                message: "",
+                confirmLabel: "Confirm",
+                cancelLabel: "Cancel",
+                requireText: "",
+                ...options,
+                resolve,
+            };
+        });
+    }
+
+    function resolveConfirm(result) {
+        const request = confirmRequest;
+        confirmRequest = null;
+        request?.resolve(Boolean(result));
+    }
+
     /**
      * Run a toast's action button and dismiss it. Lives here (not inline in
      * the template) because the template's {@const toast} re-evaluates the
@@ -1702,7 +1739,12 @@ export function createAppStore(repo) {
     }
 
     async function deleteSong(song) {
-        if (!window.confirm(`Delete "${song.name}"?`)) return;
+        const confirmed = await requestConfirm({
+            title: `Delete "${song.name}"?`,
+            message: "This cannot be undone.",
+            confirmLabel: "Delete",
+        });
+        if (!confirmed) return;
         const sessionAlive = sessionGuard();
         try {
             busyMessage = `Deleting "${song.name}"...`;
@@ -1719,8 +1761,17 @@ export function createAppStore(repo) {
     }
 
     async function deleteAllData() {
-        if (!window.confirm("This will delete ALL songs, band config, and saved setlists. This cannot be undone.\n\nAre you sure?")) return;
-        if (!window.confirm("Really? Everything will be gone forever.")) return;
+        // Typed-name verification instead of the old chained double
+        // window.confirm (near-identical wording made it easy to click
+        // through both without reading).
+        const confirmed = await requestConfirm({
+            title: "Delete ALL data?",
+            message:
+                "Every song, saved setlist, band member, and setting will be permanently deleted — locally and from your remoteStorage. This cannot be undone.",
+            confirmLabel: "Delete everything",
+            requireText: appConfig?.bandName || "",
+        });
+        if (!confirmed) return;
         const sessionAlive = sessionGuard();
         // Bail out cleanly if the user switches accounts mid-wipe: any
         // further deletes would run against the NEW account's storage paths.
@@ -2029,15 +2080,17 @@ export function createAppStore(repo) {
 
     async function removeBandMember(memberName) {
         const usedIn = songsUsingMember(memberName);
-        if (usedIn.length > 0) {
-            const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
-            const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
-            if (!window.confirm(
-                `"${memberName}" is referenced in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"}: ${names}${extra}.\n\nRemoving this member from the band config won't change existing songs, but new setlists won't account for their setup.\n\nAre you sure?`
-            )) return;
-        } else {
-            if (!window.confirm(`Remove "${memberName}" from the band?`)) return;
-        }
+        const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
+        const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
+        const confirmed = await requestConfirm({
+            title: `Remove "${memberName}" from the band?`,
+            message:
+                usedIn.length > 0
+                    ? `${memberName} is referenced in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"} (${names}${extra}). Existing songs keep their setups, but new setlists won't account for ${memberName}.`
+                    : "",
+            confirmLabel: "Remove",
+        });
+        if (!confirmed) return;
         const sessionAlive = sessionGuard();
         try {
             await withSync("Removing member", () => repo.deleteMember(memberName));
@@ -2066,15 +2119,17 @@ export function createAppStore(repo) {
 
     async function removeBandMemberInstrument(memberName, instrumentName) {
         const usedIn = songsUsingInstrument(memberName, instrumentName);
-        if (usedIn.length > 0) {
-            const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
-            const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
-            if (!window.confirm(
-                `"${instrumentName}" for ${memberName} is used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"}: ${names}${extra}.\n\nRemoving it from the band config won't change existing songs, but the instrument won't appear as a choice for new songs.\n\nAre you sure?`
-            )) return;
-        } else {
-            if (!window.confirm(`Remove "${instrumentName}" from ${memberName}?`)) return;
-        }
+        const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
+        const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
+        const confirmed = await requestConfirm({
+            title: `Remove "${instrumentName}" from ${memberName}?`,
+            message:
+                usedIn.length > 0
+                    ? `It's used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"} (${names}${extra}). Existing songs keep it, but it won't be offered for new songs.`
+                    : "",
+            confirmLabel: "Remove",
+        });
+        if (!confirmed) return;
         const member = bandMembers[memberName] || { instruments: [] };
         const updated = { ...member, instruments: (member.instruments || []).filter((i) => i.name !== instrumentName) };
         if (await persistMemberEdit(memberName, updated)) toastInfo(`Removed ${instrumentName} from ${memberName}.`);
@@ -2118,9 +2173,12 @@ export function createAppStore(repo) {
         if (usedIn.length > 0) {
             const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
             const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
-            if (!window.confirm(
-                `"${tuning}" tuning for ${memberName}'s ${instrumentName} is used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"}: ${names}${extra}.\n\nRemoving it won't change existing songs, but the tuning won't appear as a choice for new songs.\n\nAre you sure?`
-            )) return;
+            const confirmed = await requestConfirm({
+                title: `Remove "${tuning}" from ${instrumentName}?`,
+                message: `It's used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"} (${names}${extra}). Existing songs keep it, but it won't be offered for new songs.`,
+                confirmLabel: "Remove",
+            });
+            if (!confirmed) return;
         }
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
@@ -2170,9 +2228,12 @@ export function createAppStore(repo) {
         if (usedIn.length > 0) {
             const names = usedIn.slice(0, 5).map((s) => s.name).join(", ");
             const extra = usedIn.length > 5 ? ` and ${usedIn.length - 5} more` : "";
-            if (!window.confirm(
-                `"${technique}" technique for ${memberName}'s ${instrumentName} is used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"}: ${names}${extra}.\n\nRemoving it won't change existing songs, but the technique won't appear as a choice for new songs.\n\nAre you sure?`
-            )) return;
+            const confirmed = await requestConfirm({
+                title: `Remove "${technique}" from ${instrumentName}?`,
+                message: `It's used in ${usedIn.length} song${usedIn.length === 1 ? "" : "s"} (${names}${extra}). Existing songs keep it, but it won't be offered for new songs.`,
+                confirmLabel: "Remove",
+            });
+            if (!confirmed) return;
         }
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
@@ -2724,6 +2785,9 @@ export function createAppStore(repo) {
         toastAction,
         dismissToast,
         runToastAction,
+        get confirmRequest() { return confirmRequest; },
+        requestConfirm,
+        resolveConfirm,
         songsUsingMember,
         songsUsingInstrument,
         songsUsingTuning,

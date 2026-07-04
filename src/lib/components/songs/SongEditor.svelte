@@ -17,7 +17,6 @@
     );
 
     let expandedMember = $state("");
-    let confirmingDelete = $state(false);
     // Per-instrument-row "New instrument" naming state, keyed member::index.
     let namingInstrument = $state({});
     // Local drafts for the tuning/technique quick-add inputs (staged into
@@ -34,8 +33,16 @@
         return `${memberName}::${index}`;
     }
 
-    function handleBack() {
-        if (isDirty && !window.confirm("Discard unsaved changes to this song?")) return;
+    async function handleBack() {
+        if (isDirty) {
+            const confirmed = await store.requestConfirm({
+                title: "Discard changes?",
+                message: "Your edits to this song will be lost.",
+                confirmLabel: "Discard",
+                cancelLabel: "Keep editing",
+            });
+            if (!confirmed) return;
+        }
         store.closeEditor();
     }
 
@@ -187,16 +194,9 @@
     }
 
     function handleDelete() {
-        if (confirmingDelete) {
-            store.deleteSong(store.editorSong);
-            confirmingDelete = false;
-        } else {
-            confirmingDelete = true;
-        }
-    }
-
-    function cancelDelete() {
-        confirmingDelete = false;
+        // store.deleteSong shows the app-wide destructive-confirm modal —
+        // no inline second step needed here anymore.
+        store.deleteSong(store.editorSong);
     }
 </script>
 
@@ -498,15 +498,7 @@
         <div class="bottom-actions">
             <button type="button" class="secondary-btn full-width" onclick={() => store.duplicateSong(store.editorSong)}>Duplicate song</button>
 
-            {#if confirmingDelete}
-                <div class="delete-confirm">
-                    <span class="delete-warn">Are you sure? This cannot be undone.</span>
-                    <div class="delete-confirm-btns">
-                        <button type="button" class="danger-btn" onclick={handleDelete}>Yes, delete</button>
-                        <button type="button" class="secondary-btn" onclick={cancelDelete}>Cancel</button>
-                    </div>
-                </div>
-            {:else if !isNewSong}
+            {#if !isNewSong}
                 <button type="button" class="danger-text-btn full-width" onclick={handleDelete}>Delete song</button>
             {/if}
         </div>
@@ -954,23 +946,6 @@
         background: rgba(200, 40, 40, 0.06);
     }
 
-    .danger-btn {
-        min-height: 2.8rem;
-        padding: 0.55rem 1rem;
-        border: none;
-        border-radius: var(--radius-md, 12px);
-        background: var(--danger, #d33);
-        color: var(--on-accent);
-        font-weight: 700;
-        font-size: 0.88rem;
-        cursor: pointer;
-        touch-action: manipulation;
-    }
-
-    .danger-btn:active {
-        opacity: 0.85;
-    }
-
     .full-width {
         width: 100%;
     }
@@ -979,25 +954,5 @@
         display: grid;
         gap: 0.6rem;
         padding-top: 0.5rem;
-    }
-
-    .delete-confirm {
-        display: grid;
-        gap: 0.5rem;
-        padding: 1rem;
-        border-radius: var(--radius-md, 12px);
-        background: rgba(200, 40, 40, 0.05);
-        border: 1px solid rgba(200, 40, 40, 0.15);
-    }
-
-    .delete-warn {
-        font-weight: 600;
-        font-size: 0.88rem;
-        color: var(--danger, #d33);
-    }
-
-    .delete-confirm-btns {
-        display: flex;
-        gap: 0.5rem;
     }
 </style>

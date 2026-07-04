@@ -174,6 +174,40 @@ describe("sticky action toasts", () => {
     });
 });
 
+describe("destructive confirm", () => {
+    it("resolves with the user's choice and supersedes pending requests", async () => {
+        const store = createAppStore({});
+        const first = store.requestConfirm({ title: "First?" });
+        expect(store.confirmRequest.title).toBe("First?");
+
+        // A newer request supersedes the pending one, which resolves as
+        // cancelled — callers are never left hanging.
+        const second = store.requestConfirm({ title: "Second?" });
+        await expect(first).resolves.toBe(false);
+        expect(store.confirmRequest.title).toBe("Second?");
+
+        store.resolveConfirm(true);
+        await expect(second).resolves.toBe(true);
+        expect(store.confirmRequest).toBeNull();
+    });
+
+    it("deleteSong runs only after the confirm resolves true", async () => {
+        const repo = { deleteSong: vi.fn(async () => {}) };
+        const store = createAppStore(repo);
+
+        const cancelled = store.deleteSong({ id: "s1", name: "Doomed" });
+        expect(store.confirmRequest.title).toContain("Doomed");
+        store.resolveConfirm(false);
+        await cancelled;
+        expect(repo.deleteSong).not.toHaveBeenCalled();
+
+        const confirmed = store.deleteSong({ id: "s1", name: "Doomed" });
+        store.resolveConfirm(true);
+        await confirmed;
+        expect(repo.deleteSong).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe("incremental remote sync", () => {
     // The store's init() needs window + localStorage; we're in node, so
     // polyfill exactly those. (jsdom would trip Svelte's top-level-$effect

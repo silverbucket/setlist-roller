@@ -66,5 +66,9 @@ export class ConnectPage {
 
     async forgetAccount(address: string) {
         await this.recentAccountByAddress(address).getByRole("button", { name: "Forget account" }).click();
+        // Forgetting now asks via the in-app confirm modal (#67).
+        const modal = this.page.locator(".confirm-backdrop .modal");
+        await modal.getByRole("button", { name: "Forget" }).click();
+        await modal.waitFor({ state: "hidden" });
     }
 }

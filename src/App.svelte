@@ -21,6 +21,34 @@
     // TopBar carries the in-app badge.
     const isStaging = import.meta.env.MODE === "staging";
 
+    // ---- destructive-confirm modal ----
+    let confirmTypedText = $state("");
+    // Reset the typed-verification text whenever a new request opens.
+    $effect(() => {
+        void store.confirmRequest;
+        confirmTypedText = "";
+    });
+
+    function handleConfirmKeydown(e) {
+        if (store.confirmRequest && e.key === "Escape") {
+            e.preventDefault();
+            store.resolveConfirm(false);
+        }
+    }
+
+    async function confirmForget(account) {
+        const label = account.metadata?.bandName
+            ? `${account.metadata.bandName} (${account.address})`
+            : account.address;
+        const confirmed = await store.requestConfirm({
+            title: `Forget ${label}?`,
+            message:
+                "Removes this account's saved songs, setlists, and sign-in from this device. Data on the remoteStorage server is untouched.",
+            confirmLabel: "Forget",
+        });
+        if (confirmed) store.forgetAccount(account.address);
+    }
+
     // Prompt-style service-worker updates. autoUpdate reloaded the page the
     // moment a new deploy activated — mid-gig, that could eat an unsaved
     // setlist. Instead we surface a persistent toast and let the user pick
@@ -154,7 +182,7 @@
                                 <span class="recent-band">{account.metadata?.bandName || "Unnamed"}</span>
                                 <span class="recent-address">{account.address}</span>
                             </button>
-                            <button type="button" class="recent-forget" onclick={() => store.forgetAccount(account.address)} aria-label="Forget account">&times;</button>
+                            <button type="button" class="recent-forget" onclick={() => confirmForget(account)} aria-label="Forget account">&times;</button>
                         </div>
                     {/each}
                 </div>
@@ -179,6 +207,48 @@
                 />
             </label>
             <button type="button" class="btn primary" onclick={store.finishFirstRun}>Save</button>
+        </div>
+    </div>
+{/if}
+
+<svelte:window onkeydown={handleConfirmKeydown} />
+
+{#if store.confirmRequest}
+    {@const confirm = store.confirmRequest}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal-backdrop confirm-backdrop" onclick={() => store.resolveConfirm(false)}>
+        <div
+            class="modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={confirm.title}
+            onclick={(e) => e.stopPropagation()}
+        >
+            <h3>{confirm.title}</h3>
+            {#if confirm.message}
+                <p class="modal-desc">{confirm.message}</p>
+            {/if}
+            {#if confirm.requireText}
+                <label class="field">
+                    <span>Type <strong>{confirm.requireText}</strong> to confirm</span>
+                    <input
+                        value={confirmTypedText}
+                        oninput={(e) => { confirmTypedText = e.currentTarget.value; }}
+                        placeholder={confirm.requireText}
+                        autocomplete="off"
+                    />
+                </label>
+            {/if}
+            <div class="confirm-actions">
+                <button type="button" class="btn" onclick={() => store.resolveConfirm(false)}>{confirm.cancelLabel}</button>
+                <button
+                    type="button"
+                    class="btn danger"
+                    disabled={!!confirm.requireText && confirmTypedText.trim() !== confirm.requireText}
+                    onclick={() => store.resolveConfirm(true)}
+                >{confirm.confirmLabel}</button>
+            </div>
         </div>
     </div>
 {/if}
@@ -475,6 +545,32 @@
     .modal-desc {
         color: var(--muted);
         font-size: 0.9rem;
+    }
+
+    /* Destructive-confirm modal sits above everything, including the
+       song-editor overlay (z-index 300). */
+    .confirm-backdrop {
+        z-index: 400;
+    }
+
+    .confirm-actions {
+        display: flex;
+        gap: var(--space-2);
+        justify-content: flex-end;
+    }
+
+    .confirm-actions .btn {
+        flex: 1;
+    }
+
+    .btn.danger {
+        color: var(--on-accent);
+        background: var(--danger);
+        border-color: transparent;
+    }
+
+    .btn.danger:disabled {
+        opacity: 0.4;
     }
 
     /* ---- Busy overlay ---- */

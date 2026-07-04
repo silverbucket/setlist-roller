@@ -5,6 +5,48 @@ import { VitePWA } from "vite-plugin-pwa";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 
+// Content-Security-Policy (#79). remoteStorage tokens live in localStorage
+// (the standard unhosted-app pattern); the app loads no third-party JS, and
+// this policy makes that a guarantee — any injected inline/external script
+// is refused by the browser. Notes:
+// - script-src 'self': no inline scripts anywhere (theme init is an
+//   external file in /public for exactly this reason).
+// - style-src 'unsafe-inline': Svelte sets style attributes (e.g. dynamic
+//   accent colors); component CSS itself is an external file.
+// - connect-src https: http:: rs.js talks to whatever storage host the
+//   user's WebFinger points at, including plain-HTTP LAN servers.
+// - Injected at build time only, so the dev server (HMR websockets,
+//   plugin injections) stays unrestricted.
+const CSP_POLICY = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self' https: http:",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+].join("; ");
+
+function cspPlugin() {
+    return {
+        name: "inject-csp",
+        apply: "build",
+        transformIndexHtml() {
+            return [
+                {
+                    tag: "meta",
+                    attrs: { "http-equiv": "Content-Security-Policy", content: CSP_POLICY },
+                    injectTo: "head-prepend",
+                },
+            ];
+        },
+    };
+}
+
 // Staging builds (vite build --mode staging, via npm run build:staging and
 // .github/workflows/staging.yml) trade a few bytes for debuggability:
 // sourcemaps, preserved function/class names in stack traces, a "-staging"
@@ -16,6 +58,7 @@ export default defineConfig(({ mode }) => {
     return {
         plugins: [
             svelte(),
+            cspPlugin(),
             VitePWA({
                 // Update flow: "prompt" means a new deploy waits until the user
                 // taps Refresh (see registerSW in App.svelte) instead of
