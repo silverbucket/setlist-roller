@@ -201,7 +201,7 @@
                 <button
                     type="button"
                     class="toast-action"
-                    onclick={() => { store.dismissToast(toast.id); toast.action.onClick(); }}
+                    onclick={() => store.runToastAction(toast.id)}
                 >{toast.action.label}</button>
             {/if}
             {#if toast.sticky}
@@ -549,13 +549,17 @@
     }
 
     /* Sticky toasts (e.g. the update prompt) carry buttons — switch from
-       centered ellipsized text to an inline flex row. */
+       centered ellipsized text to an inline flex row. They must also
+       restore hit-testing: the stack is pointer-events:none so passive
+       toasts never block taps on content underneath, but a toast with
+       actions has to be clickable. */
     .toast-pill.sticky {
         display: inline-flex;
         align-items: center;
         gap: 10px;
         white-space: normal;
         text-overflow: clip;
+        pointer-events: auto;
     }
 
     .toast-action {

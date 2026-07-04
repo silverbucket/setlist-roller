@@ -153,6 +153,24 @@ describe("sticky action toasts", () => {
         store.dismissToast(store.toastMessages[0].id);
         expect(store.toastMessages).toHaveLength(0);
     });
+
+    it("runToastAction fires the handler and dismisses, in a mutation-safe order", () => {
+        const store = createAppStore({});
+        const onAction = vi.fn();
+        store.toastAction("Update ready", "Refresh", onAction);
+        const id = store.toastMessages[0].id;
+
+        // Regression: the old inline handler dismissed first and then read
+        // the template's {@const toast}, which had already re-evaluated to
+        // undefined — the action never ran.
+        store.runToastAction(id);
+        expect(onAction).toHaveBeenCalledTimes(1);
+        expect(store.toastMessages).toHaveLength(0);
+
+        // Unknown ids are a no-op.
+        store.runToastAction("toast-nope");
+        expect(onAction).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe("incremental remote sync", () => {

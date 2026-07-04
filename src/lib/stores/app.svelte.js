@@ -534,6 +534,19 @@ export function createAppStore(repo) {
     function dismissToast(id) {
         toastMessages = toastMessages.filter((t) => t.id !== id);
     }
+    /**
+     * Run a toast's action button and dismiss it. Lives here (not inline in
+     * the template) because the template's {@const toast} re-evaluates the
+     * moment the dismiss empties toastMessages — an inline
+     * `dismiss(); toast.action.onClick()` reads `toast` as undefined and
+     * the action never fires. Capture first, then mutate.
+     */
+    function runToastAction(id) {
+        const toast = toastMessages.find((t) => t.id === id);
+        const onClick = toast?.action?.onClick;
+        dismissToast(id);
+        if (typeof onClick === "function") onClick();
+    }
     function toastInfo(message)  { addToast(message, TOAST_TONE.INFO); }
     function toastWarn(message)  { addToast(message, TOAST_TONE.WARN); }
     function toastError(message) { addToast(message, TOAST_TONE.DANGER); }
@@ -2703,6 +2716,7 @@ export function createAppStore(repo) {
         toastError,
         toastAction,
         dismissToast,
+        runToastAction,
         songsUsingMember,
         songsUsingInstrument,
         songsUsingTuning,
