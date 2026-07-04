@@ -10,12 +10,51 @@ export default defineConfig({
         svelte(),
         VitePWA({
             registerType: "autoUpdate",
-            manifest: false,
+            // The plugin precaches manifest icons by default, which would
+            // shadow the dynamic-icon runtime route below — the precache
+            // handler wins for an exact URL match, pinning icons to the
+            // default color forever.
+            includeManifestIcons: false,
+            // Static manifest so installability doesn't depend on JS having
+            // run (the previous runtime blob-URL manifest broke Chromium's
+            // install checks — relative start_url can't resolve against a
+            // blob: base — and data-URL icons can't be minted into Android
+            // WebAPKs). Icon URLs point at real files in /public; the SW
+            // route below lets the page overlay them with die-colored
+            // renders via Cache Storage (see src/lib/pwa-icon.js).
+            manifest: {
+                name: "Setlist Roller",
+                short_name: "Setlist Roller",
+                description: "A dice-powered setlist generator for bands who like to live dangerously.",
+                start_url: "/",
+                scope: "/",
+                display: "standalone",
+                background_color: "#1a1a1e",
+                theme_color: "#e15b37",
+                icons: [
+                    { src: "/app-icon-192.png", sizes: "192x192", type: "image/png" },
+                    { src: "/app-icon-512.png", sizes: "512x512", type: "image/png" },
+                    { src: "/app-icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+                ],
+            },
             workbox: {
                 globPatterns: ["**/*.{js,css,html,svg,png,woff,woff2}"],
-                globIgnores: ["**/auth-relay.html"],
+                // app-icon-*.png must NOT be precached: the precache route
+                // would win over the runtime route below and pin the icons
+                // to the default color forever.
+                globIgnores: ["**/auth-relay.html", "**/app-icon-*.png", "app-icon-*.png"],
                 navigateFallback: "index.html",
                 navigateFallbackDenylist: [/^\/auth-relay\.html/],
+                runtimeCaching: [
+                    {
+                        // Serve icons from the cache the page writes colored
+                        // renders into; fall through to the network (the
+                        // default-orange /public files) when absent.
+                        urlPattern: /\/app-icon-[\w-]+\.png$/,
+                        handler: "CacheFirst",
+                        options: { cacheName: "sr-dynamic-icons" },
+                    },
+                ],
             },
         }),
     ],
