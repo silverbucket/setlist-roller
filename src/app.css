@@ -122,7 +122,12 @@ html,
 body,
 #app {
     margin: 0;
-    min-height: 100%;
+    /* The document itself never scrolls: the app shell is a fixed-height
+       flex column and only .main-content scrolls. Keeping the document at
+       exactly the viewport height (and non-scrollable) is what stops iOS
+       from rubber-banding the whole shell or leaving position:fixed chrome
+       stranded mid-screen after keyboard dismissal. */
+    height: 100%;
     /* Prevent iOS Safari from auto-inflating text (which can interact with the
        16px input-zoom threshold below). Keep text sizing deterministic. */
     -webkit-text-size-adjust: 100%;
@@ -131,6 +136,8 @@ body,
 
 body {
     min-width: 320px;
+    overflow: hidden;
+    overscroll-behavior: none;
     color: var(--ink);
     /* iOS standalone can expose a non-DOM strip outside the reported viewport.
        Paint the browser canvas from body as well as :root so that strip does
@@ -203,6 +210,15 @@ h3 {
 @media print {
     @page {
         margin: 0.5cm;
+    }
+
+    /* Undo the app-shell scroll containment: printed pages need the full
+       document height, not a viewport-clipped scroll container. */
+    html,
+    body,
+    #app {
+        height: auto;
+        overflow: visible;
     }
 
     body {

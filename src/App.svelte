@@ -5,12 +5,11 @@
     import HelpScreen from "./lib/components/help/HelpScreen.svelte";
     import BottomNav from "./lib/components/layout/BottomNav.svelte";
     import TopBar from "./lib/components/layout/TopBar.svelte";
-    import ViewportDiagnostics from "./lib/components/layout/ViewportDiagnostics.svelte";
     import RollScreen from "./lib/components/roll/RollScreen.svelte";
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
-    import { createRemoteStorageRepository, isIosStandaloneAuthContext } from "./lib/remotestorage.js";
+    import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
     import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb, hexToRgba } from "./lib/utils.js";
 
@@ -37,12 +36,6 @@
             }, 60 * 60 * 1000);
         },
     });
-
-    // TEMP(iOS diagnostics): remove after the installed-PWA viewport gap is fixed.
-    const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
-        window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
-    ));
-    let diagnosticsOpen = $state(false);
 
     if (typeof window !== "undefined" && window.__SR_TEST__) {
         // Test-mode escape hatch: expose the store + repo on window so
@@ -79,75 +72,6 @@
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
-    function nextFrame() {
-        return new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-
-    function wait(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    async function nudgeIosStandaloneViewport() {
-        const status = {
-            startedAt: new Date().toISOString(),
-            attempts: 0,
-            maxScrollY: 0,
-            finishedAt: null,
-        };
-        window.__SR_IOS_VIEWPORT_NUDGE__ = status;
-
-        await nextFrame();
-        await nextFrame();
-
-        const existing = document.getElementById("sr-ios-viewport-spacer");
-        existing?.remove();
-
-        const spacer = document.createElement("div");
-        spacer.id = "sr-ios-viewport-spacer";
-        spacer.setAttribute("aria-hidden", "true");
-        spacer.style.cssText = [
-            `height:${Math.max(window.innerHeight, screen.height, 1200)}px`,
-            "width:1px",
-            "opacity:0",
-            "pointer-events:none",
-            "contain:layout",
-        ].join(";");
-        document.body.appendChild(spacer);
-
-        try {
-            await nextFrame();
-            await nextFrame();
-
-            for (let attempt = 1; attempt <= 3; attempt += 1) {
-                status.attempts = attempt;
-                const scrollRange = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-                const targetY = Math.min(160, scrollRange);
-
-                window.scrollTo(0, targetY);
-                await nextFrame();
-                await nextFrame();
-                status.maxScrollY = Math.max(status.maxScrollY, window.scrollY);
-
-                window.scrollTo(0, 0);
-                await nextFrame();
-                await wait(120);
-            }
-        } finally {
-            spacer.remove();
-            window.scrollTo(0, 0);
-            status.finishedAt = new Date().toISOString();
-        }
-    }
-
-    let iosViewportNudged = false;
-    $effect(() => {
-        if (iosViewportNudged) return;
-        if (!store.initialSyncComplete || !isIosStandaloneAuthContext()) return;
-
-        iosViewportNudged = true;
-        void nudgeIosStandaloneViewport();
-    });
-
 </script>
 
 <svelte:head>
@@ -166,12 +90,6 @@
             <p class="lede">
                 Connect to remoteStorage so your songs survive the tour bus.
             </p>
-
-            {#if viewportDiagnosticsEnabled}
-                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                    Viewport Diagnostics
-                </button>
-            {/if}
 
             <label class="field">
                 <span>remoteStorage address</span>
@@ -222,11 +140,6 @@
                 <span class="spinner"></span>
                 {store.syncStatusLabel}
             </div>
-            {#if viewportDiagnosticsEnabled}
-                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                    Viewport Diagnostics
-                </button>
-            {/if}
             {#if store.syncLogEntries.length > 0}
                 <div class="sync-console" role="log" aria-live="polite">
                     {#each store.syncLogEntries as entry (entry.id)}
@@ -253,25 +166,23 @@
         <TopBar />
 
         <main class="main-content">
-            {#if store.activeView === "roll"}
-                <RollScreen />
-            {:else if store.activeView === "saved"}
-                <SavedScreen />
-            {:else if store.activeView === "songs"}
-                <SongsScreen />
-            {:else if store.activeView === "band"}
-                <BandScreen />
-            {:else if store.activeView === "help"}
-                <HelpScreen />
-            {/if}
+            <div class="content-column">
+                {#if store.activeView === "roll"}
+                    <RollScreen />
+                {:else if store.activeView === "saved"}
+                    <SavedScreen />
+                {:else if store.activeView === "songs"}
+                    <SongsScreen />
+                {:else if store.activeView === "band"}
+                    <BandScreen />
+                {:else if store.activeView === "help"}
+                    <HelpScreen />
+                {/if}
+            </div>
         </main>
 
         <BottomNav />
     </div>
-{/if}
-
-{#if viewportDiagnosticsEnabled && diagnosticsOpen}
-    <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
 {/if}
 
 {#if store.showFirstRunPrompt}
@@ -359,18 +270,6 @@
 
     .lede {
         color: var(--muted);
-    }
-
-    .debug-link {
-        justify-self: start;
-        min-height: 44px;
-        padding: 0.6rem 0.85rem;
-        border: 1px dashed var(--accent-line);
-        border-radius: var(--radius-md);
-        background: var(--accent-soft);
-        color: var(--accent-strong);
-        font-size: 16px;
-        font-weight: 800;
     }
 
     /* ---- Sync screen ---- */
@@ -477,23 +376,46 @@
         50% { transform: scale(1.06); }
     }
 
-    /* ---- App shell ---- */
+    /* ---- App shell ----
+       A fixed-height flex column: TopBar and BottomNav sit in normal flow
+       and only .main-content scrolls. No position:fixed chrome — that's
+       what caused the iOS bug where the nav drifted mid-screen after the
+       keyboard dismissed and never recovered. 100dvh tracks the dynamic
+       viewport (keyboard, browser chrome) natively, no JS required. */
     .app-shell {
-        min-height: 100dvh;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
     }
 
     .main-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
         padding: var(--space-3);
-        padding-top: calc(var(--top-bar-height) + var(--space-3));
-        padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
+    }
+
+    .content-column {
         max-width: 640px;
         width: 100%;
         margin: 0 auto;
     }
 
     @media (min-width: 960px) {
-        .main-content {
+        .content-column {
             max-width: 720px;
+        }
+    }
+
+    @media print {
+        .app-shell {
+            height: auto;
+            display: block;
+        }
+
+        .main-content {
+            overflow: visible;
         }
     }
 
