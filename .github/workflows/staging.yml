@@ -1,0 +1,79 @@
+name: Deploy to Staging
+
+# Publish a branch to the staging site (setlist-staging.5apps.com)
+# without touching the production site, the version number, tags, or
+# the GitHub release flow. Dispatch it from master to stage the current
+# mainline, or from any feature branch to try that branch on staging
+# before merging.
+#
+# Prerequisites (one-time, outside this repo):
+#   - The "setlist-roller-staging" app exists on the 5apps account,
+#     served at setlist-staging.5apps.com, with the same asset-root
+#     configuration as the production app.
+#   - The FIVEAPPS_DEPLOY_KEY secret's public key is authorized on the
+#     5apps account (account-level keys cover both apps; nothing new to
+#     add if production deploys already work).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    name: Build & deploy to setlist-staging.5apps.com
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Setup SSH for 5apps
+        env:
+          FIVEAPPS_DEPLOY_KEY: ${{ secrets.FIVEAPPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$FIVEAPPS_DEPLOY_KEY" > ~/.ssh/5apps_key
+          chmod 600 ~/.ssh/5apps_key
+          ssh-keyscan -H 5apps.com >> ~/.ssh/known_hosts
+          echo -e "Host 5apps.com\n  IdentityFile ~/.ssh/5apps_key" >> ~/.ssh/config
+
+      - name: Deploy to 5apps staging
+        # Same mechanics as the production deploy in release.yml, but
+        # pushed to the staging app's repository and with no version
+        # bump — the deployed commit records the source ref + SHA.
+        env:
+          SOURCE_REF: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add 5apps git@5apps.com:silverbucket_setlist-roller-staging.git 2>/dev/null || git remote set-url 5apps git@5apps.com:silverbucket_setlist-roller-staging.git
+          git switch -c "staging-deploy-${GITHUB_SHA::7}"
+          git add dist -f
+          git commit -m "staging deploy of ${SOURCE_REF} @ ${GITHUB_SHA::7}"
+          git push 5apps HEAD:refs/heads/master --force
