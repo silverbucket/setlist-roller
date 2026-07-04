@@ -1,6 +1,9 @@
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_APP_CONFIG } from "../defaults.js";
+import { accountSlot } from "../accounts.js";
+import { openAccountDb } from "../local-db.js";
 import { migrator } from "../migrations.js";
 import { createAppStore, normalizeAuthToken } from "./app.svelte.js";
 
@@ -17,39 +20,6 @@ describe("normalizeAuthToken", () => {
         expect(normalizeAuthToken({ type: "click" })).toBeUndefined();
         expect(normalizeAuthToken("")).toBeUndefined();
         expect(normalizeAuthToken(null)).toBeUndefined();
-    });
-});
-
-describe("retrySync", () => {
-    it("recovers from a stalled reload even if the original load never resolves", async () => {
-        vi.useFakeTimers();
-        let calls = 0;
-        const repo = {
-            loadAll: vi.fn(() => {
-                calls += 1;
-                if (calls === 1) return new Promise(() => {});
-                return Promise.resolve({
-                    songs: [],
-                    pendingBodies: 0,
-                    bootstrap: null,
-                    config: DEFAULT_APP_CONFIG,
-                    setlists: [],
-                    members: {},
-                });
-            }),
-        };
-        const store = createAppStore(repo);
-
-        store.retrySync();
-        await vi.advanceTimersByTimeAsync(15000);
-        expect(store.syncStalled).toBe(true);
-
-        await store.retrySync();
-        expect(store.syncStalled).toBe(false);
-        expect(store.initialSyncComplete).toBe(true);
-
-        await vi.advanceTimersByTimeAsync(15000);
-        expect(store.syncStalled).toBe(false);
     });
 });
 
@@ -184,15 +154,34 @@ describe("sticky action toasts", () => {
         store.dismissToast(store.toastMessages[0].id);
         expect(store.toastMessages).toHaveLength(0);
     });
+
+    it("runToastAction fires the handler and dismisses, in a mutation-safe order", () => {
+        const store = createAppStore({});
+        const onAction = vi.fn();
+        store.toastAction("Update ready", "Refresh", onAction);
+        const id = store.toastMessages[0].id;
+
+        // Regression: the old inline handler dismissed first and then read
+        // the template's {@const toast}, which had already re-evaluated to
+        // undefined — the action never ran.
+        store.runToastAction(id);
+        expect(onAction).toHaveBeenCalledTimes(1);
+        expect(store.toastMessages).toHaveLength(0);
+
+        // Unknown ids are a no-op.
+        store.runToastAction("toast-nope");
+        expect(onAction).toHaveBeenCalledTimes(1);
+    });
 });
 
-describe("change-driven reload coalescing", () => {
+describe("incremental remote sync", () => {
     // The store's init() needs window + localStorage; we're in node, so
-    // polyfill exactly those (same approach as account-switching.test.js —
-    // jsdom would trip Svelte's top-level-$effect validation).
+    // polyfill exactly those. (jsdom would trip Svelte's top-level-$effect
+    // validation.) IndexedDB comes from fake-indexeddb, fresh per test.
     let _origLocalStorage;
     let _origWindow;
     beforeEach(() => {
+        globalThis.indexedDB = new IDBFactory();
         _origLocalStorage = globalThis.localStorage;
         _origWindow = globalThis.window;
         const map = new Map();
@@ -215,6 +204,15 @@ describe("change-driven reload coalescing", () => {
         if (typeof _origWindow === "undefined") delete globalThis.window;
         else globalThis.window = _origWindow;
     });
+
+    function flush() {
+        // Drain microtasks + fake-indexeddb's setImmediate-driven work.
+        return new Promise((resolve) => setImmediate(resolve));
+    }
+
+    async function settle(times = 10) {
+        for (let i = 0; i < times; i += 1) await flush();
+    }
 
     function buildRepo() {
         const listeners = new Map();
@@ -239,14 +237,16 @@ describe("change-driven reload coalescing", () => {
             },
             loadAll: vi.fn(async () => ({
                 songs: [],
-                pendingBodies: 0,
+                config: null,
                 bootstrap: null,
-                config: DEFAULT_APP_CONFIG,
                 setlists: [],
                 members: {},
+                pendingBodies: 0,
                 errors: {},
             })),
             getRawConfig: vi.fn(async () => null),
+            getSyncInterval: () => 10000,
+            setSyncInterval: vi.fn(),
             isConnected: () => true,
             getUserAddress: () => "user@example.com",
             getToken: () => "stub-token",
@@ -255,62 +255,344 @@ describe("change-driven reload coalescing", () => {
         };
     }
 
-    it("collapses a burst of change events into a single reload", async () => {
-        vi.useFakeTimers();
+    it("applies remote changes one document at a time — no full reloads", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
         const teardown = store.init();
 
         repo.fire("connected");
-        // Let the connected handler's own reloadAll settle.
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
+        await settle();
+        expect(store.currentUserAddress).toBe("user@example.com");
+        expect(store.hydrated).toBe(true);
+        // Exactly one cache read: the one-time seed pass for a first sync.
+        expect(repo.loadAll.mock.calls.length).toBe(1);
 
-        // Simulate rs.js streaming a 150-song catalog: one remote-origin
-        // change event per document body.
-        for (let i = 0; i < 150; i += 1) {
-            repo.fireChange({ relativePath: `songs/id-${i}`, origin: "remote", newValue: {} });
-        }
-        expect(repo.loadAll.mock.calls.length).toBe(baseline);
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Alpha" } });
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: { id: "s2", name: "Beta" } });
+        expect(store.songs.map((s) => s.name)).toEqual(["Alpha", "Beta"]);
 
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+        // Update in place.
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Zulu" } });
+        expect(store.songs.map((s) => s.name)).toEqual(["Beta", "Zulu"]);
+
+        // Remote deletion arrives as a change with no newValue.
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: undefined });
+        expect(store.songs.map((s) => s.name)).toEqual(["Zulu"]);
+
+        // Still no extra full reloads.
+        expect(repo.loadAll.mock.calls.length).toBe(1);
+        teardown();
+    });
+
+    it("applies remote config and clears it on remote deletion", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "The Remotes", schemaVersion: 2 },
+        });
+        expect(store.appConfig?.bandName).toBe("The Remotes");
+
+        repo.fireChange({ relativePath: "settings/app-config", origin: "remote", newValue: undefined });
+        expect(store.appConfig).toBeNull();
+        teardown();
+    });
+
+    it("ignores window- and local-origin events (local writes are already applied)", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({ relativePath: "songs/w1", origin: "window", newValue: { id: "w1", name: "W" } });
+        repo.fireChange({ relativePath: "songs/l1", origin: "local", newValue: { id: "l1", name: "L" } });
         expect(store.songs).toEqual([]);
-
         teardown();
     });
 
-    it("still reloads promptly after a lone remote change", async () => {
-        vi.useFakeTimers();
+    it("propagates a remote note edit into the displayed setlist", async () => {
+        // Regression for the band report: a note edited on another device
+        // showed up in the Songs catalog but not in the rolled setlist.
+        // Displayed setlists hydrate from the live catalog, so an
+        // incremental remote change must flow through.
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("current-set"),
+            JSON.stringify({ seed: 1, songs: [{ songId: "s1", performance: {} }] }),
+        );
         const repo = buildRepo();
         const store = createAppStore(repo);
         const teardown = store.init();
-
         repo.fire("connected");
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
+        await settle();
 
-        repo.fireChange({ relativePath: "songs/id-1", origin: "remote", newValue: {} });
-        await vi.advanceTimersByTimeAsync(300);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline + 1);
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Alpha", notes: "old note" },
+        });
+        expect(store.displayedSetlist?.songs?.[0]?.notes).toBe("old note");
 
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Alpha", notes: "new note" },
+        });
+        expect(store.displayedSetlist?.songs?.[0]?.notes).toBe("new note");
         teardown();
     });
 
-    it("ignores window-origin events and does not schedule a reload", async () => {
-        vi.useFakeTimers();
+    it("squashes overrides equal to the default rig at save time and stages vocabulary adds", async () => {
+        const repo = buildRepo();
+        repo.putSong = vi.fn(async (s) => s);
+        repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        // Band config arrives: Nick's default rig is Guitar / Standard.
+        repo.fireChange({
+            relativePath: "members/Nick",
+            origin: "remote",
+            newValue: {
+                name: "Nick",
+                instruments: [
+                    {
+                        name: "Guitar",
+                        tunings: ["Standard"],
+                        defaultTuning: "Standard",
+                        techniques: [],
+                        defaultTechnique: "",
+                    },
+                ],
+                defaultInstrument: "Guitar",
+            },
+        });
+
+        store.openNewSong();
+        store.updateSongField("name", "Riff City");
+        // Override prefilled from the default rig, left unchanged — must be
+        // squashed out of the stored song.
+        store.addMember("Nick");
+        // Stage a brand-new tuning for the override; applied to the band
+        // config only at save.
+        store.stageVocabAdd("Nick", "Guitar", "tuning", "Open G");
+        expect(repo.putMember).not.toHaveBeenCalled();
+
+        await store.saveSong();
+
+        // The stored song carries no members — the untouched override
+        // matched the default rig.
+        expect(repo.putSong).toHaveBeenCalledTimes(1);
+        expect(repo.putSong.mock.calls[0][0].members).toEqual({});
+        // The staged tuning landed in the band config exactly once, at save.
+        expect(repo.putMember).toHaveBeenCalledTimes(1);
+        const savedMember = repo.putMember.mock.calls[0][1];
+        expect(savedMember.instruments[0].tunings).toContain("Open G");
+        expect(store.bandMembers.Nick.instruments[0].tunings).toContain("Open G");
+        teardown();
+    });
+
+    it("cascades a band-member rename into song overrides and generation constraints", async () => {
+        // Renames refuse to run until the catalog is settled (the cascade
+        // must see every song) — mark this account's initial sync done.
+        const db = await openAccountDb("user@example.com");
+        await db.putKv("sync-meta", { initialSyncDone: true });
+        db.close();
+        const repo = buildRepo();
+        repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
+        repo.deleteMember = vi.fn(async () => {});
+        repo.putSong = vi.fn(async (s) => s);
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        expect(store.initialSyncDone).toBe(true);
+
+        repo.fireChange({
+            relativePath: "members/Nick",
+            origin: "remote",
+            newValue: { name: "Nick", instruments: [{ name: "Guitar", tunings: [], defaultTuning: "" }] },
+        });
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: {
+                id: "s1",
+                name: "Override Song",
+                members: { Nick: { instruments: [{ name: "Guitar", tuning: ["Drop D"], capo: 0, picking: [] }] } },
+            },
+        });
+        store.ensureMemberShowConfig("Nick");
+
+        await store.renameBandMember("Nick", "Nicholas");
+        await settle();
+
+        expect(store.bandMembers.Nicholas).toBeDefined();
+        expect(store.bandMembers.Nick).toBeUndefined();
+        const song = store.songs.find((s) => s.id === "s1");
+        expect(song.members.Nicholas).toBeDefined();
+        expect(song.members.Nick).toBeUndefined();
+        expect(store.generationOptions.show.members.Nicholas).toBeDefined();
+        expect(store.generationOptions.show.members.Nick).toBeUndefined();
+        teardown();
+    });
+
+    it("an older config save resolving late cannot roll back a newer edit", async () => {
+        const repo = buildRepo();
+        const puts = [];
+        repo.putConfig = vi.fn(
+            (config) =>
+                new Promise((resolve) => {
+                    puts.push({ config, resolve });
+                }),
+        );
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "One", schemaVersion: 2 },
+        });
+
+        // First save starts and hangs on a slow network...
+        const first = store.saveConfig();
+        await flush();
+        expect(puts).toHaveLength(1);
+
+        // ...the user edits again and a second save starts and FINISHES.
+        store.updateConfigField("bandName", "Two");
+        const second = store.saveConfig();
+        await flush();
+        expect(puts).toHaveLength(2);
+        puts[1].resolve({ ...puts[1].config });
+        await second;
+        expect(store.appConfig.bandName).toBe("Two");
+
+        // Now the slow first save lands with the stale payload — it must
+        // not roll the config back.
+        puts[0].resolve({ ...puts[0].config });
+        await first;
+        await settle();
+        expect(store.appConfig.bandName).toBe("Two");
+        teardown();
+    });
+
+    it("keeps unpracticed songs addable to the current setlist", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
         const teardown = store.init();
-
         repo.fire("connected");
-        await vi.runOnlyPendingTimersAsync();
-        const baseline = repo.loadAll.mock.calls.length;
+        await settle();
 
-        repo.fireChange({ relativePath: "songs/id-1", origin: "window", newValue: {} });
-        await vi.advanceTimersByTimeAsync(1000);
-        expect(repo.loadAll.mock.calls.length).toBe(baseline);
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Rusty", unpracticed: true },
+        });
+        expect(store.songsNotInSetlist.map((s) => s.id)).toContain("s1");
+        teardown();
+    });
 
+    it("flips to synced after a quiet settle window and persists initialSyncDone", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        expect(store.syncState).toBe("syncing");
+        expect(store.initialSyncDone).toBe(false);
+
+        // Only fake the timer APIs the settle logic uses; fake-indexeddb
+        // needs the real setImmediate to keep processing transactions.
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+        repo.fire("sync-done", { completed: true });
+        // An incoming change cancels the pending settle...
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "A" } });
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(store.syncState).toBe("syncing");
+
+        // ...and the next completed round re-arms it. The settle pass
+        // verifies against the rs.js cache, so the stub must now report
+        // the document the change event delivered.
+        repo.loadAll.mockResolvedValue({
+            songs: [{ id: "s1", name: "A" }],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("synced");
+        expect(store.initialSyncDone).toBe(true);
+        expect(store.songs.map((s) => s.name)).toEqual(["A"]);
+
+        // The transient confirmation fades back to idle.
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("idle");
+        teardown();
+    });
+
+    it("does not settle while the cache is still skeletal, and prunes stale local docs once it is coherent", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        // Local catalog holds two songs (e.g. hydrated from the mirror)...
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Keep" } });
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: { id: "s2", name: "Stale" } });
+        expect(store.songs).toHaveLength(2);
+
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+        // ...but the rs.js cache reads completely empty (fresh cache after
+        // a swap, folder listings not pulled yet). The settle pass must
+        // NOT flip to synced or prune anything.
+        repo.loadAll.mockResolvedValue({
+            songs: [],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("syncing");
+        expect(store.songs).toHaveLength(2);
+        expect(store.initialSyncDone).toBe(false);
+
+        // Once the cache is coherent but only contains s1, the settle
+        // pass reconciles: s2 was deleted remotely while we were away.
+        repo.loadAll.mockResolvedValue({
+            songs: [{ id: "s1", name: "Keep" }],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("synced");
+        expect(store.songs.map((s) => s.name)).toEqual(["Keep"]);
+        expect(store.initialSyncDone).toBe(true);
         teardown();
     });
 });

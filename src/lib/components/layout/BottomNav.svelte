@@ -27,10 +27,10 @@
 
 <style>
   .bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    /* In normal flow at the bottom of the flex app shell — no
+       position:fixed. The old fixed positioning is what let iOS strand the
+       bar mid-screen after keyboard dismissal (stale visual viewport). */
+    flex: none;
     height: var(--bottom-nav-height);
     display: flex;
     align-items: stretch;
@@ -39,7 +39,12 @@
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     padding-bottom: var(--bottom-nav-safe-padding);
-    z-index: 100;
+  }
+
+  @media print {
+    .bottom-nav {
+      display: none;
+    }
   }
 
   .tab {

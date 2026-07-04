@@ -132,9 +132,13 @@ test.describe("Top bar visibility", () => {
         await expect(shell.rollTab).not.toHaveClass(/active/);
     });
 
-    test("fixed chrome anchors the bottom nav to the viewport bottom", async ({ page, app }) => {
-        // Chromium cannot reproduce installed iOS PWA rubber-band/safe-area bugs;
-        // this guards the static CSS invariant before real-device verification.
+    test("flex app shell anchors chrome at the viewport edges with an inner scroll area", async ({ page, app }) => {
+        // v3 layout contract: NO position:fixed chrome. The app shell is a
+        // viewport-height flex column — TopBar at the top edge, BottomNav
+        // flush with the bottom edge, and .main-content the only scroll
+        // container. Chromium cannot reproduce installed iOS PWA
+        // rubber-band/safe-area bugs; this guards the static CSS invariant
+        // before real-device verification.
         await page.setViewportSize({ width: 390, height: 600 });
         await app.seed(buildSeed());
         await app.goto();
@@ -149,25 +153,27 @@ test.describe("Top bar visibility", () => {
             const topStyles = top ? getComputedStyle(top) : null;
             const navStyles = nav ? getComputedStyle(nav) : null;
             const mainStyles = main ? getComputedStyle(main) : null;
+            const bodyStyles = getComputedStyle(document.body);
 
             return {
                 topPosition: topStyles?.position,
-                topTopStyle: topStyles?.top,
                 topTop: topRect?.top ?? -1,
                 navPosition: navStyles?.position,
-                navBottomStyle: navStyles?.bottom,
                 mainOverflowY: mainStyles?.overflowY,
+                bodyOverflow: bodyStyles.overflow,
                 navBottom: navRect?.bottom ?? 0,
                 viewportHeight: window.innerHeight,
             };
         });
 
-        expect(chrome.topPosition).toBe("fixed");
-        expect(chrome.topTopStyle).toBe("0px");
+        // In-flow chrome — the class of iOS stuck-nav bugs needs fixed
+        // positioning to exist at all.
+        expect(chrome.topPosition).not.toBe("fixed");
+        expect(chrome.navPosition).not.toBe("fixed");
         expect(Math.abs(chrome.topTop)).toBeLessThanOrEqual(1);
-        expect(chrome.navPosition).toBe("fixed");
-        expect(chrome.navBottomStyle).toBe("0px");
-        expect(chrome.mainOverflowY).toBe("visible");
         expect(Math.abs(chrome.viewportHeight - chrome.navBottom)).toBeLessThanOrEqual(1);
+        // Only the content area scrolls; the document never does.
+        expect(chrome.mainOverflowY).toBe("auto");
+        expect(chrome.bodyOverflow).toBe("hidden");
     });
 });

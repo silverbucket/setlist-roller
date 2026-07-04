@@ -17,8 +17,11 @@
   let setlistSongIds = $derived(
     new Set((store.displayedSetlist?.songs || []).map((s) => s.id))
   );
+  // Unpracticed songs stay listed — adding one to a set is a deliberate
+  // band decision (the roller itself won't pick them unless allowed in
+  // the options). They're badged so it's a knowing choice.
   let filteredPickerSongs = $derived.by(() => {
-    const eligible = store.songs?.filter((s) => !s.unpracticed) || [];
+    const eligible = store.songs || [];
     if (!addSongSearch) return eligible;
     const q = addSongSearch.toLowerCase();
     return eligible.filter((s) => s.name.toLowerCase().includes(q));
@@ -81,21 +84,26 @@
     store.saveCurrentSetlist();
   }
 
-  // Determine which members have multiple instrument/tuning options worth toggling
+  // Constraints only make sense for members whose configured rig actually
+  // has options — multiple instruments, or an instrument with multiple
+  // tunings. Members with a single fixed setup have nothing to constrain.
   function memberHasChoices(memberName) {
-    const instruments = store.memberInstrumentChoicesByMember?.[memberName];
-    if (instruments && instruments.length > 1) return true;
-    const tunings = store.memberTuningChoicesByMember?.[memberName];
-    if (tunings) {
-      for (const inst of Object.keys(tunings)) {
-        if (tunings[inst].length > 1) return true;
-      }
-    }
-    return false;
+    const config = store.bandMembers?.[memberName];
+    const instruments = config?.instruments || [];
+    if (instruments.length > 1) return true;
+    return instruments.some((i) => (i.tunings || []).length > 1);
   }
 
   function membersWithChoices() {
-    return (store.availableMemberNames || []).filter(memberHasChoices);
+    return (store.bandMemberEntries || []).map(([name]) => name).filter(memberHasChoices);
+  }
+
+  function memberInstrumentNames(memberName) {
+    return (store.bandMembers?.[memberName]?.instruments || []).map((i) => i.name);
+  }
+
+  function memberInstrumentTunings(memberName) {
+    return (store.bandMembers?.[memberName]?.instruments || []).map((i) => [i.name, i.tunings || []]);
   }
 
   function selectedInstrumentCount(memberName) {
@@ -419,6 +427,10 @@
             checked={store.generationOptions.keyFlow}
             onchange={(e) => store.updateGenerationField("keyFlow", e.currentTarget.checked)}
           >Smooth key flow</ChipToggle>
+          <ChipToggle
+            checked={store.generationOptions.includeUnpracticed}
+            onchange={(e) => store.updateGenerationField("includeUnpracticed", e.currentTarget.checked)}
+          >Allow unpracticed</ChipToggle>
         </div>
 
         <label class="adv-field">
@@ -436,9 +448,9 @@
           <div class="constraint-member">
             <span class="constraint-member-name">{memberName}</span>
 
-            {#if (store.memberInstrumentChoicesByMember?.[memberName] || []).length > 1}
+            {#if memberInstrumentNames(memberName).length > 1}
               <div class="chip-row">
-                {#each store.memberInstrumentChoicesByMember[memberName] as instrument}
+                {#each memberInstrumentNames(memberName) as instrument}
                   <ChipToggle
                     checked={(store.generationOptions.show?.members?.[memberName]?.allowedInstruments || []).includes(instrument)}
                     onchange={() => {
@@ -464,8 +476,8 @@
               {/if}
             {/if}
 
-            {#if store.memberTuningChoicesByMember?.[memberName]}
-              {#each Object.entries(store.memberTuningChoicesByMember[memberName]) as [instName, tunings]}
+            {#if memberInstrumentTunings(memberName).length > 0}
+              {#each memberInstrumentTunings(memberName) as [instName, tunings]}
                 {#if tunings.length > 1}
                   <div class="tuning-group">
                     <span class="tuning-label">{instName} tunings</span>
@@ -644,6 +656,7 @@
               onclick={() => { store.addSetlistSong(song.id); showAddSongPicker = false; addSongSearch = ""; }}
             >
               {song.name}
+              {#if song.unpracticed}<span class="unpracticed-tag">unpracticed</span>{/if}
               {#if inSetlist}<span class="in-setlist-tag">added</span>{/if}
             </button>
           {:else}
@@ -1518,6 +1531,14 @@
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--muted, #8a95a5);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .unpracticed-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--toast-warning, #7a5c10);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }

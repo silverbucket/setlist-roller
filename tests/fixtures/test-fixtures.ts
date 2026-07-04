@@ -51,6 +51,8 @@ export type AppStateSnapshot = {
     connectionStatus: string;
     activeView: string;
     syncState: string;
+    initialSyncDone: boolean;
+    currentUserAddress: string;
     songs: { id: string; name: string; [key: string]: unknown }[];
     savedSetlists: unknown[];
     bandMembers: Record<string, unknown>;
@@ -124,10 +126,12 @@ export type AppContext = {
      */
     waitForReady: () => Promise<void>;
     /**
-     * Wait for syncState === "synced" — the public store flag that
-     * flips after the first sync round completes with no pending body
-     * fetches. Use before asserting catalog contents so the test
-     * doesn't race the post-connect onChange burst.
+     * Wait until sync has settled: either the transient "synced"
+     * confirmation is showing, or the account's initial sync has
+     * completed and the state has already faded back to "idle" (a
+     * background re-sync with no changes never re-flips to "synced").
+     * Use before asserting catalog contents so the test doesn't race
+     * the post-connect change-event burst.
      */
     waitForSynced: (timeoutMs?: number) => Promise<void>;
     /** Read the current store state out of the running app. */
@@ -285,8 +289,10 @@ export const test = base.extend<{ app: AppContext }>({
             async waitForSynced(timeoutMs = 30_000) {
                 await page.waitForFunction(
                     () => {
-                        const s = (window as unknown as { __SR_STORE__?: { syncState?: string } }).__SR_STORE__;
-                        return s?.syncState === "synced";
+                        const s = (
+                            window as unknown as { __SR_STORE__?: { syncState?: string; initialSyncDone?: boolean } }
+                        ).__SR_STORE__;
+                        return s?.syncState === "synced" || (s?.initialSyncDone === true && s?.syncState === "idle");
                     },
                     null,
                     { timeout: timeoutMs },
@@ -300,6 +306,8 @@ export const test = base.extend<{ app: AppContext }>({
                         connectionStatus: s.connectionStatus as string,
                         activeView: s.activeView as string,
                         syncState: s.syncState as string,
+                        initialSyncDone: s.initialSyncDone as boolean,
+                        currentUserAddress: s.currentUserAddress as string,
                         songs: JSON.parse(JSON.stringify(s.songs)),
                         savedSetlists: JSON.parse(JSON.stringify(s.savedSetlists)),
                         bandMembers: JSON.parse(JSON.stringify(s.bandMembers)),

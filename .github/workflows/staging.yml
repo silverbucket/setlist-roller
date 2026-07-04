@@ -26,6 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No pushes from this job — don't leave the workflow token in
+          # the local git config (same hardening as the deploy job).
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -54,8 +58,12 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (staging mode)
+        # --mode staging turns on sourcemaps, keeps function names in the
+        # minified output, suffixes the app version with "-staging",
+        # renames the PWA manifest, and lights up the in-app STAGING badge.
+        # See the mode handling in vite.config.js.
+        run: npm run build:staging
 
       - name: Setup SSH for 5apps
         env:

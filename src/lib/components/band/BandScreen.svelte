@@ -4,13 +4,12 @@
 
     const store = getContext("app");
 
-    let bandNameDraft = $state(store.appConfig?.bandName ?? "");
-    let renameDraft = $state("");
-
-    function _saveBandName() {
-        store.updateConfigField("bandName", bandNameDraft);
-        store.saveConfig();
-    }
+    // Local drafts for the inline add inputs. Purely per-screen UI state —
+    // these used to live in the global store and leaked between screens.
+    let newMemberDraft = $state("");
+    let newInstrumentDraft = $state("");
+    let tuningDrafts = $state({});
+    let techniqueDrafts = $state({});
 
     function handleBandNameKeydown(e) {
         if (e.key === "Enter") {
@@ -21,6 +20,9 @@
     function openMemberEdit(memberName) {
         store.editingMemberName = memberName;
         store.bandSubView = "member-edit";
+        newInstrumentDraft = "";
+        tuningDrafts = {};
+        techniqueDrafts = {};
     }
 
     function handleBackToMain() {
@@ -35,9 +37,14 @@
         }
     }
 
-    function handleAddMember() {
-        if (store.newMemberName?.trim()) {
-            store.addBandMember();
+    async function handleAddMember() {
+        if (!newMemberDraft.trim()) return;
+        if (await store.addBandMember(newMemberDraft)) {
+            const added = newMemberDraft.trim();
+            newMemberDraft = "";
+            // Take the user straight into the member they just created —
+            // the next step is always "add their instruments".
+            openMemberEdit(added);
         }
     }
 
@@ -45,9 +52,10 @@
         if (e.key === "Enter") handleAddMember();
     }
 
-    function handleAddInstrument(memberName) {
-        if (store.newInstrumentByMember?.[memberName]?.trim()) {
-            store.addBandMemberInstrument(memberName);
+    async function handleAddInstrument(memberName) {
+        if (!newInstrumentDraft.trim()) return;
+        if (await store.addBandMemberInstrument(memberName, newInstrumentDraft)) {
+            newInstrumentDraft = "";
         }
     }
 
@@ -55,10 +63,11 @@
         if (e.key === "Enter") handleAddInstrument(memberName);
     }
 
-    function handleAddTuning(memberName, instrumentName) {
-        const key = store.tuningDraftKey(memberName, instrumentName);
-        if (store.newTuningByInstrument?.[key]?.trim()) {
-            store.addTuningChoice(memberName, instrumentName);
+    async function handleAddTuning(memberName, instrumentName) {
+        const draft = tuningDrafts[instrumentName] || "";
+        if (!draft.trim()) return;
+        if (await store.addTuningChoice(memberName, instrumentName, draft)) {
+            tuningDrafts = { ...tuningDrafts, [instrumentName]: "" };
         }
     }
 
@@ -66,10 +75,11 @@
         if (e.key === "Enter") handleAddTuning(memberName, instrumentName);
     }
 
-    function handleAddTechnique(memberName, instrumentName) {
-        const key = store.techniqueDraftKey(memberName, instrumentName);
-        if (store.newTechniqueByInstrument?.[key]?.trim()) {
-            store.addTechniqueChoice(memberName, instrumentName);
+    async function handleAddTechnique(memberName, instrumentName) {
+        const draft = techniqueDrafts[instrumentName] || "";
+        if (!draft.trim()) return;
+        if (await store.addTechniqueChoice(memberName, instrumentName, draft)) {
+            techniqueDrafts = { ...techniqueDrafts, [instrumentName]: "" };
         }
     }
 
@@ -91,12 +101,8 @@
     let persistedDieColor = $derived(store.appConfig?.ui?.dieColor ?? null);
 
     function setDieColor(color) {
+        // updateConfigField autosaves (debounced) — no explicit save needed.
         store.updateConfigField("ui.dieColor", color);
-        store.saveConfig();
-    }
-
-    function _renderConfigField(field) {
-        return field;
     }
 </script>
 
@@ -196,8 +202,8 @@
                                         class="text-input small"
                                         type="text"
                                         placeholder="New tuning..."
-                                        value={store.newTuningByInstrument?.[store.tuningDraftKey(memberName, instrument.name)] || ""}
-                                        oninput={(e) => { store.newTuningByInstrument = { ...store.newTuningByInstrument, [store.tuningDraftKey(memberName, instrument.name)]: e.currentTarget.value }; }}
+                                        value={tuningDrafts[instrument.name] || ""}
+                                        oninput={(e) => { tuningDrafts = { ...tuningDrafts, [instrument.name]: e.currentTarget.value }; }}
                                         onkeydown={(e) => handleAddTuningKeydown(e, memberName, instrument.name)}
                                     />
                                     <button type="button" class="add-sm-btn" onclick={() => handleAddTuning(memberName, instrument.name)}>Add</button>
@@ -241,8 +247,8 @@
                                         class="text-input small"
                                         type="text"
                                         placeholder="New technique..."
-                                        value={store.newTechniqueByInstrument?.[store.techniqueDraftKey(memberName, instrument.name)] || ""}
-                                        oninput={(e) => { store.newTechniqueByInstrument = { ...store.newTechniqueByInstrument, [store.techniqueDraftKey(memberName, instrument.name)]: e.currentTarget.value }; }}
+                                        value={techniqueDrafts[instrument.name] || ""}
+                                        oninput={(e) => { techniqueDrafts = { ...techniqueDrafts, [instrument.name]: e.currentTarget.value }; }}
                                         onkeydown={(e) => handleAddTechniqueKeydown(e, memberName, instrument.name)}
                                     />
                                     <button type="button" class="add-sm-btn" onclick={() => handleAddTechnique(memberName, instrument.name)}>Add</button>
@@ -262,8 +268,8 @@
                         class="text-input"
                         type="text"
                         placeholder="New instrument..."
-                        value={store.newInstrumentByMember?.[memberName] || ""}
-                        oninput={(e) => { store.newInstrumentByMember = { ...store.newInstrumentByMember, [memberName]: e.currentTarget.value }; }}
+                        value={newInstrumentDraft}
+                        oninput={(e) => { newInstrumentDraft = e.currentTarget.value; }}
                         onkeydown={(e) => handleAddInstrumentKeydown(e, memberName)}
                     />
                     <button type="button" class="add-sm-btn" onclick={() => handleAddInstrument(memberName)}>Add</button>
@@ -277,6 +283,8 @@
             <button type="button" class="back-btn" onclick={handleBackToMain}>&larr; Back</button>
             <h2 class="sub-title">Advanced Config</h2>
         </div>
+
+        <p class="autosave-hint">Changes save automatically.</p>
 
         {#each store.CONFIG_SECTIONS.filter((s) => s.id !== "identity") as section}
             <details class="section-details">
@@ -333,10 +341,6 @@
             </details>
         {/each}
 
-        <div class="sticky-footer">
-            <button type="button" class="primary-btn" onclick={() => store.saveConfig()}>Save Settings</button>
-        </div>
-
     {:else}
         <!-- MAIN VIEW -->
         <header class="screen-header">
@@ -347,12 +351,17 @@
         <div class="card">
             <label class="field-group">
                 <span class="field-label">Band name</span>
+                <!-- Single source of truth: the config renders the value and
+                     the input element holds the in-progress text; commit on
+                     blur (Enter blurs). No parallel draft state to drift. -->
                 <input
                     class="text-input band-name-input"
                     type="text"
                     value={store.appConfig?.bandName ?? ""}
-                    oninput={(e) => { bandNameDraft = e.currentTarget.value; }}
-                    onblur={() => { store.updateConfigField("bandName", bandNameDraft); store.saveConfig(); }}
+                    onblur={(e) => {
+                        const next = e.currentTarget.value.trim();
+                        if (next && next !== store.appConfig?.bandName) store.updateConfigField("bandName", next);
+                    }}
                     onkeydown={handleBandNameKeydown}
                 />
             </label>
@@ -429,8 +438,8 @@
                     class="text-input"
                     type="text"
                     placeholder="New member name..."
-                    value={store.newMemberName || ""}
-                    oninput={(e) => { store.newMemberName = e.currentTarget.value; }}
+                    value={newMemberDraft}
+                    oninput={(e) => { newMemberDraft = e.currentTarget.value; }}
                     onkeydown={handleAddMemberKeydown}
                 />
                 <button type="button" class="add-sm-btn" onclick={handleAddMember}>Add</button>
@@ -804,29 +813,6 @@
     }
 
     /* Buttons */
-    .primary-btn {
-        width: 100%;
-        min-height: 2.8rem;
-        padding: 0.6rem 1.2rem;
-        border-radius: var(--radius-md, 16px);
-        border: none;
-        background: var(--accent, #e15b37);
-        color: var(--on-accent);
-        font-size: 1rem;
-        font-weight: 800;
-        cursor: pointer;
-        touch-action: manipulation;
-        transition: background 140ms ease;
-    }
-
-    .primary-btn:hover {
-        background: var(--accent-strong, #c64724);
-    }
-
-    .primary-btn:active {
-        opacity: 0.9;
-    }
-
     .secondary-btn {
         width: 100%;
         min-height: 2.6rem;
@@ -1072,14 +1058,10 @@
         color: var(--ink, #182230);
     }
 
-    /* Sticky footer — positioned above the (now in-flow) BottomNav.
-       --bottom-nav-height already includes env(safe-area-inset-bottom),
-       so do not add it again here. */
-    .sticky-footer {
-        position: sticky;
-        bottom: calc(var(--bottom-nav-height, 56px) + 0.5rem);
-        padding: 0.75rem 0;
-        z-index: 10;
+    .autosave-hint {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--muted, #617086);
     }
 
     /* Empty state */

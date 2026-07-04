@@ -35,7 +35,7 @@ export class BandPage {
 
     // Advanced subview
     readonly advancedTitle: Locator;
-    readonly saveSettingsButton: Locator;
+    readonly autosaveHint: Locator;
 
     constructor(page: Page) {
         this.page = page;
@@ -76,7 +76,7 @@ export class BandPage {
 
         // Advanced subview
         this.advancedTitle = this.screen.getByRole("heading", { name: "Advanced Config" });
-        this.saveSettingsButton = this.screen.getByRole("button", { name: "Save Settings" });
+        this.autosaveHint = this.screen.locator(".autosave-hint");
     }
 
     async setBandName(name: string) {

@@ -50,6 +50,11 @@ test.describe("Band screen — members", () => {
 
         const band = new BandPage(page);
         await band.addMember("Alice");
+        // Adding a member drops straight into their edit view (the next
+        // step is always "add their instruments")...
+        await expect(band.memberEditTitle).toBeVisible();
+        // ...and Back shows them in the members list.
+        await band.memberBackButton.click();
         await band.expectMemberPresent("Alice");
     });
 
@@ -92,6 +97,9 @@ test.describe("Band screen — members", () => {
             }),
         );
         await app.goto();
+        // Renames cascade through the whole catalog, so the store refuses
+        // them until the initial sync has settled.
+        await app.waitForSynced();
         await new AppShell(page).gotoBand();
 
         const band = new BandPage(page);
@@ -206,7 +214,8 @@ test.describe("Band screen — advanced config", () => {
         const band = new BandPage(page);
         await band.openAdvancedConfig();
         await expect(band.advancedTitle).toBeVisible();
-        await expect(band.saveSettingsButton).toBeVisible();
+        // No explicit save button anymore — edits autosave (debounced).
+        await expect(band.autosaveHint).toBeVisible();
     });
 
     test("Back button from advanced returns to main view", async ({ page, app }) => {

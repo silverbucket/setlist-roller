@@ -9,33 +9,6 @@ if ("scrollRestoration" in history) {
     history.scrollRestoration = "manual";
 }
 
-function setAppHeight() {
-    document.documentElement.style.setProperty("--real-vh", `${window.innerHeight}px`);
-}
-
-// Keep the shell height tied to the layout viewport. In standalone mode, the
-// status bar must not be translucent; otherwise iOS lays the viewport out at
-// physical y=0 but reports only screen-height - safe-top, leaving that missing
-// safe-top-sized region at the bottom of the webview.
-let appHeightRaf = 0;
-function syncAppHeight() {
-    if (appHeightRaf) return;
-    appHeightRaf = requestAnimationFrame(() => {
-        appHeightRaf = 0;
-        setAppHeight();
-    });
-}
-
-setAppHeight();
-window.addEventListener("resize", syncAppHeight);
-// Rotation should also re-sync even on iOS builds that coalesce or delay resize.
-window.addEventListener("orientationchange", syncAppHeight);
-// Re-sync on bfcache restore: iOS may change orientation while backgrounded.
-window.addEventListener("pageshow", syncAppHeight);
-if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", syncAppHeight);
-}
-
 // Service-worker registration lives in App.svelte: with prompt-style
 // updates (vite.config.js registerType: "prompt"), onNeedRefresh must
 // surface a toast, and the toast system belongs to the app store.

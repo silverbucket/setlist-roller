@@ -13,7 +13,6 @@ export class SongEditorPage {
     readonly nameInput: Locator;
     readonly keySelect: Locator;
     readonly notesInput: Locator;
-    readonly addNewMemberButton: Locator;
     readonly duplicateButton: Locator;
     readonly deleteButton: Locator;
 
@@ -27,7 +26,6 @@ export class SongEditorPage {
         this.nameInput = this.overlay.getByPlaceholder("Song title");
         this.keySelect = this.overlay.locator("select").first();
         this.notesInput = this.overlay.getByPlaceholder("Anything to remember on stage...");
-        this.addNewMemberButton = this.overlay.getByRole("button", { name: "+ New member" });
         this.duplicateButton = this.overlay.getByRole("button", { name: "Duplicate song" });
         this.deleteButton = this.overlay.getByRole("button", { name: "Delete song" });
     }
@@ -64,6 +62,13 @@ export class SongEditorPage {
         await expect(this.overlay).toBeHidden();
     }
 
+    /** Close a dirty editor, accepting the discard-changes confirm. */
+    async closeDiscarding() {
+        this.page.once("dialog", (d) => d.accept());
+        await this.backButton.click();
+        await expect(this.overlay).toBeHidden();
+    }
+
     async confirmDelete() {
         // First click reveals the confirm; second commits.
         await this.deleteButton.click();
@@ -82,17 +87,17 @@ export class SongEditorPage {
         await this.duplicateButton.click();
     }
 
-    /** Add an existing band member to this song via the per-row chip */
+    /** The usual-setup row for a member with no per-song override. */
+    usualSetupRow(memberName: string): Locator {
+        return this.overlay.locator(".member-default-row").filter({ hasText: memberName });
+    }
+
+    /** Create a per-song override for a band member (was "add member"). */
     async addMemberByName(name: string) {
-        await this.overlay.getByRole("button", { name: `+ ${name}` }).click();
+        await this.usualSetupRow(name).getByRole("button", { name: "Change for this song" }).click();
     }
 
-    /** Add a brand new member via the new-member button */
-    async addNewMember() {
-        await this.addNewMemberButton.click();
-    }
-
-    /** Returns the locator for a member section within the editor */
+    /** Returns the locator for a member override card within the editor */
     memberSection(memberName: string): Locator {
         return this.overlay.locator(".member-card").filter({ hasText: memberName });
     }
@@ -101,9 +106,17 @@ export class SongEditorPage {
         await this.memberSection(memberName).locator(".member-header").click();
     }
 
+    /** Pick or create an instrument on the (expanded) member's first setup row. */
     async setInstrumentName(memberName: string, value: string) {
         const sec = this.memberSection(memberName);
-        const input = sec.getByPlaceholder("e.g. Guitar, Bass, Keys").first();
+        const select = sec.locator("select").first();
+        const hasOption = (await select.locator(`option[value="${value}"]`).count()) > 0;
+        if (hasOption) {
+            await select.selectOption(value);
+            return;
+        }
+        await select.selectOption("__new__");
+        const input = sec.getByPlaceholder("Name the new instrument");
         await input.fill(value);
         await input.press("Enter");
     }

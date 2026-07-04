@@ -5,18 +5,21 @@
     import HelpScreen from "./lib/components/help/HelpScreen.svelte";
     import BottomNav from "./lib/components/layout/BottomNav.svelte";
     import TopBar from "./lib/components/layout/TopBar.svelte";
-    import ViewportDiagnostics from "./lib/components/layout/ViewportDiagnostics.svelte";
     import RollScreen from "./lib/components/roll/RollScreen.svelte";
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
-    import { createRemoteStorageRepository, isIosStandaloneAuthContext } from "./lib/remotestorage.js";
+    import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
-    import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb, hexToRgba } from "./lib/utils.js";
+    import { DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
 
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
     setContext("app", store);
+
+    // Staging builds (vite build --mode staging) mark the connect screen;
+    // TopBar carries the in-app badge.
+    const isStaging = import.meta.env.MODE === "staging";
 
     // Prompt-style service-worker updates. autoUpdate reloaded the page the
     // moment a new deploy activated — mid-gig, that could eat an unsaved
@@ -38,12 +41,6 @@
         },
     });
 
-    // TEMP(iOS diagnostics): remove after the installed-PWA viewport gap is fixed.
-    const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
-        window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true
-    ));
-    let diagnosticsOpen = $state(false);
-
     if (typeof window !== "undefined" && window.__SR_TEST__) {
         // Test-mode escape hatch: expose the store + repo on window so
         // e2e tests can read state directly (`__SR_STORE__.songs`, etc.)
@@ -61,7 +58,6 @@
     });
 
     let dieColor = $derived(store.appConfig?.ui?.dieColor || DEFAULT_DIE_COLOR);
-    let dieColorRgb = $derived(hexToRgb(dieColor));
 
     let faviconHref = $derived(
         `data:image/svg+xml,${encodeURIComponent(generateDieSvgString(dieColor))}`
@@ -79,75 +75,6 @@
         root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
     });
 
-    function nextFrame() {
-        return new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-
-    function wait(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    async function nudgeIosStandaloneViewport() {
-        const status = {
-            startedAt: new Date().toISOString(),
-            attempts: 0,
-            maxScrollY: 0,
-            finishedAt: null,
-        };
-        window.__SR_IOS_VIEWPORT_NUDGE__ = status;
-
-        await nextFrame();
-        await nextFrame();
-
-        const existing = document.getElementById("sr-ios-viewport-spacer");
-        existing?.remove();
-
-        const spacer = document.createElement("div");
-        spacer.id = "sr-ios-viewport-spacer";
-        spacer.setAttribute("aria-hidden", "true");
-        spacer.style.cssText = [
-            `height:${Math.max(window.innerHeight, screen.height, 1200)}px`,
-            "width:1px",
-            "opacity:0",
-            "pointer-events:none",
-            "contain:layout",
-        ].join(";");
-        document.body.appendChild(spacer);
-
-        try {
-            await nextFrame();
-            await nextFrame();
-
-            for (let attempt = 1; attempt <= 3; attempt += 1) {
-                status.attempts = attempt;
-                const scrollRange = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-                const targetY = Math.min(160, scrollRange);
-
-                window.scrollTo(0, targetY);
-                await nextFrame();
-                await nextFrame();
-                status.maxScrollY = Math.max(status.maxScrollY, window.scrollY);
-
-                window.scrollTo(0, 0);
-                await nextFrame();
-                await wait(120);
-            }
-        } finally {
-            spacer.remove();
-            window.scrollTo(0, 0);
-            status.finishedAt = new Date().toISOString();
-        }
-    }
-
-    let iosViewportNudged = false;
-    $effect(() => {
-        if (iosViewportNudged) return;
-        if (!store.initialSyncComplete || !isIosStandaloneAuthContext()) return;
-
-        iosViewportNudged = true;
-        void nudgeIosStandaloneViewport();
-    });
-
 </script>
 
 <svelte:head>
@@ -158,20 +85,46 @@
          inject it; duplicating it here just causes two tags in the DOM. -->
 </svelte:head>
 
-{#if store.connectionStatus === "disconnected"}
+{#if store.currentUserAddress || store.connectionStatus === "connected"}
+    <!-- Offline-first: as soon as an account is active, the full app renders
+         from its local mirror. The remote session connects in the background
+         and the TopBar dot reports its state. -->
+    <div class="app-shell">
+        <TopBar />
+
+        <main class="main-content">
+            <div class="content-column">
+                {#if store.activeView === "roll"}
+                    <RollScreen />
+                {:else if store.activeView === "saved"}
+                    <SavedScreen />
+                {:else if store.activeView === "songs"}
+                    <SongsScreen />
+                {:else if store.activeView === "band"}
+                    <BandScreen />
+                {:else if store.activeView === "help"}
+                    <HelpScreen />
+                {/if}
+            </div>
+        </main>
+
+        <BottomNav />
+    </div>
+{:else if store.connectionStatus === "pending"}
+    <!-- Boot instant with no restorable account: rs.js resolves to
+         connected or not-connected almost immediately; render nothing
+         rather than flashing the login form. -->
+{:else}
     <main class="connect-shell">
         <section class="connect-card">
-            <p class="eyebrow">Setlist Roller</p>
+            <p class="eyebrow">
+                Setlist Roller
+                {#if isStaging}<span class="eyebrow-staging">· Staging</span>{/if}
+            </p>
             <h1>{store.appTitle}</h1>
             <p class="lede">
                 Connect to remoteStorage so your songs survive the tour bus.
             </p>
-
-            {#if viewportDiagnosticsEnabled}
-                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                    Viewport Diagnostics
-                </button>
-            {/if}
 
             <label class="field">
                 <span>remoteStorage address</span>
@@ -208,70 +161,6 @@
             {/if}
         </section>
     </main>
-{:else if !store.initialSyncComplete}
-    <main class="sync-shell">
-        <div class="sync-content">
-            <div class="sync-die-face" style="--die-rgb: {dieColorRgb};">
-                <span class="sync-pip" style="left:25%;top:25%"></span>
-                <span class="sync-pip" style="left:75%;top:25%"></span>
-                <span class="sync-pip" style="left:50%;top:50%"></span>
-                <span class="sync-pip" style="left:25%;top:75%"></span>
-                <span class="sync-pip" style="left:75%;top:75%"></span>
-            </div>
-            <div class="sync-label">
-                <span class="spinner"></span>
-                {store.syncStatusLabel}
-            </div>
-            {#if viewportDiagnosticsEnabled}
-                <button type="button" class="debug-link" onclick={() => { diagnosticsOpen = true; }}>
-                    Viewport Diagnostics
-                </button>
-            {/if}
-            {#if store.syncLogEntries.length > 0}
-                <div class="sync-console" role="log" aria-live="polite">
-                    {#each store.syncLogEntries as entry (entry.id)}
-                        <div class="sync-console-line">
-                            <span class="sync-console-time">{entry.time}</span>
-                            <span>{entry.message}</span>
-                        </div>
-                    {/each}
-                </div>
-            {/if}
-            {#if store.syncStalled}
-                <div class="sync-recovery" role="alert">
-                    <p class="sync-recovery-text">This is taking longer than usual. The remote storage may be slow or unreachable.</p>
-                    <div class="sync-recovery-actions">
-                        <button type="button" class="btn primary" onclick={() => store.retrySync()}>Retry</button>
-                        <button type="button" class="btn" onclick={() => store.disconnectStorage()}>Disconnect</button>
-                    </div>
-                </div>
-            {/if}
-        </div>
-    </main>
-{:else}
-    <div class="app-shell">
-        <TopBar />
-
-        <main class="main-content">
-            {#if store.activeView === "roll"}
-                <RollScreen />
-            {:else if store.activeView === "saved"}
-                <SavedScreen />
-            {:else if store.activeView === "songs"}
-                <SongsScreen />
-            {:else if store.activeView === "band"}
-                <BandScreen />
-            {:else if store.activeView === "help"}
-                <HelpScreen />
-            {/if}
-        </main>
-
-        <BottomNav />
-    </div>
-{/if}
-
-{#if viewportDiagnosticsEnabled && diagnosticsOpen}
-    <ViewportDiagnostics onClose={() => { diagnosticsOpen = false; }} />
 {/if}
 
 {#if store.showFirstRunPrompt}
@@ -312,7 +201,7 @@
                 <button
                     type="button"
                     class="toast-action"
-                    onclick={() => { store.dismissToast(toast.id); toast.action.onClick(); }}
+                    onclick={() => store.runToastAction(toast.id)}
                 >{toast.action.label}</button>
             {/if}
             {#if toast.sticky}
@@ -353,6 +242,10 @@
         text-transform: uppercase;
     }
 
+    .eyebrow-staging {
+        color: var(--toast-warning);
+    }
+
     h1 {
         font-size: clamp(1.6rem, 4vw, 2.4rem);
     }
@@ -361,139 +254,46 @@
         color: var(--muted);
     }
 
-    .debug-link {
-        justify-self: start;
-        min-height: 44px;
-        padding: 0.6rem 0.85rem;
-        border: 1px dashed var(--accent-line);
-        border-radius: var(--radius-md);
-        background: var(--accent-soft);
-        color: var(--accent-strong);
-        font-size: 16px;
-        font-weight: 800;
-    }
-
-    /* ---- Sync screen ---- */
-    .sync-shell {
-        height: 100%;
-        display: grid;
-        place-items: center;
-        overflow-y: auto;
-        padding: var(--space-4);
-    }
-
-    .sync-content {
+    /* ---- App shell ----
+       A fixed-height flex column: TopBar and BottomNav sit in normal flow
+       and only .main-content scrolls. No position:fixed chrome — that's
+       what caused the iOS bug where the nav drifted mid-screen after the
+       keyboard dismissed and never recovered. 100dvh tracks the dynamic
+       viewport (keyboard, browser chrome) natively, no JS required. */
+    .app-shell {
+        height: 100dvh;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: var(--space-4);
-        width: min(100%, 34rem);
-    }
-
-    .sync-die-face {
-        position: relative;
-        width: 72px;
-        height: 72px;
-        border-radius: 14px;
-        background: var(--accent-soft);
-        border: 2px solid var(--accent-line);
-        animation: pulse-fade 2s ease-in-out infinite;
-    }
-
-    .sync-pip {
-        position: absolute;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: var(--accent-line);
-        transform: translate(-50%, -50%);
-    }
-
-    .sync-label {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-2);
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: var(--muted);
-    }
-
-    .sync-console {
-        width: 100%;
-        max-height: min(34vh, 18rem);
-        overflow: auto;
-        padding: 0.85rem 1rem;
-        border-radius: var(--radius-lg);
-        background: rgba(10, 14, 18, 0.72);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: var(--shadow);
-        color: rgba(244, 241, 234, 0.88);
-        font-family: "SFMono-Regular", "SF Mono", ui-monospace, monospace;
-        font-size: 0.78rem;
-        line-height: 1.5;
-    }
-
-    .sync-console-line {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.7rem;
-    }
-
-    .sync-console-line + .sync-console-line {
-        margin-top: 0.3rem;
-    }
-
-    .sync-console-time {
-        color: rgba(244, 241, 234, 0.5);
-        white-space: nowrap;
-    }
-
-    .sync-recovery {
-        width: 100%;
-        display: grid;
-        gap: var(--space-3);
-        padding: var(--space-3);
-        border-radius: var(--radius-lg);
-        background: var(--paper-strong);
-        border: 1px solid var(--line);
-        text-align: center;
-    }
-
-    .sync-recovery-text {
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--muted);
-    }
-
-    .sync-recovery-actions {
-        display: flex;
-        gap: var(--space-2);
-        justify-content: center;
-        flex-wrap: wrap;
-    }
-
-    @keyframes pulse-fade {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.06); }
-    }
-
-    /* ---- App shell ---- */
-    .app-shell {
-        min-height: 100dvh;
     }
 
     .main-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
         padding: var(--space-3);
-        padding-top: calc(var(--top-bar-height) + var(--space-3));
-        padding-bottom: calc(var(--bottom-nav-height) + var(--space-3));
+    }
+
+    .content-column {
         max-width: 640px;
         width: 100%;
         margin: 0 auto;
     }
 
     @media (min-width: 960px) {
-        .main-content {
+        .content-column {
             max-width: 720px;
+        }
+    }
+
+    @media print {
+        .app-shell {
+            height: auto;
+            display: block;
+        }
+
+        .main-content {
+            overflow: visible;
         }
     }
 
@@ -749,13 +549,17 @@
     }
 
     /* Sticky toasts (e.g. the update prompt) carry buttons — switch from
-       centered ellipsized text to an inline flex row. */
+       centered ellipsized text to an inline flex row. They must also
+       restore hit-testing: the stack is pointer-events:none so passive
+       toasts never block taps on content underneath, but a toast with
+       actions has to be clickable. */
     .toast-pill.sticky {
         display: inline-flex;
         align-items: center;
         gap: 10px;
         white-space: normal;
         text-overflow: clip;
+        pointer-events: auto;
     }
 
     .toast-action {

@@ -1,13 +1,20 @@
 import { accountSlot, consumeKnownAccountsCorrupted, getAccountToken, getKnownAccounts, removeKnownAccountEntry, saveKnownAccount } from "../accounts.js";
 import { CONFIG_SECTIONS } from "../config-meta.js";
-import { blankSong, DEFAULT_APP_CONFIG, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord } from "../defaults.js";
+import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, sortSongs } from "../defaults.js";
 import { buildDefaultPerformance, scoreFixedOrder } from "../generator.js";
 import GeneratorWorker from "../generator.worker.js?worker";
 import { pruneStaleKeys, sortKeys } from "../keys.js";
+import { deleteAccountDb, openAccountDb } from "../local-db.js";
 import { migrator } from "../migrations.js";
 import { clone, deepMerge, formatDelimitedList, getByPath, nowIso, parseDelimitedList, randomFrom, setByPath, titleForBand, tryParseJson, uid } from "../utils.js";
 
 const STORAGE_PREFIX = "setlist-roller";
+
+// localStorage key remembering which account was active when the app was
+// last open. Lets a cold boot hydrate that account's local mirror and show
+// the full UI immediately — before (and regardless of whether) remoteStorage
+// re-establishes its session.
+const ACTIVE_ACCOUNT_KEY = `${STORAGE_PREFIX}-active-account`;
 
 // Toast tone vocabulary. Values are the CSS class names that style the pill;
 // callers go through the typed toastInfo/toastWarn/toastError helpers so a
@@ -20,9 +27,6 @@ const TOAST_TONE = Object.freeze({
 const VALID_TOAST_TONES = new Set(Object.values(TOAST_TONE));
 // Danger gets a longer dwell so more severe messages remain visible longer.
 const TOAST_DURATION_MS = { default: 6000, danger: 12000 };
-// Cap on the in-memory sync log surfaced in the diagnostic panel. Old entries
-// roll off so the list doesn't grow unbounded across a long session.
-const MAX_SYNC_LOG = 12;
 
 // ---- underscore-prefix property convention ----
 // Properties prefixed with `_` are ephemeral, internal-only flags that ride
@@ -49,65 +53,29 @@ export function normalizeAuthToken(token) {
 
 export function createAppStore(repo) {
     // ---- per-user localStorage scoping ----
-    let currentUserAddress = "";
+    // $state is load-bearing: App.svelte's top-level render gate reads this
+    // first in a short-circuiting condition. If it were a plain variable,
+    // the {#if} would capture no reactive dependencies while it's truthy
+    // and never re-evaluate — the app shell would survive a sign-out.
+    let currentUserAddress = $state("");
     function storageKey(base) { return accountSlot(currentUserAddress).key(base); }
 
     // Monotonic session id — bumped on every connect/swap. Async work that
     // started under one session is discarded if the session has moved on.
     let activeSession = 0;
 
-    // True while orchestrating an account swap; tells the global disconnected
-    // handler to skip its full state-wipe (we want the snapshot to stay).
-    // Held from `connectToAccount` entry until the new account's `connected`
-    // event fires (or a fatal error / watchdog releases it). Holding past
-    // `repo.swap()` resolution is critical: the swap promise can resolve via
-    // its 3 s timeout before rs.js actually emits the old account's
-    // `disconnected` event, and that late event would otherwise take the
-    // wipe path against the new account.
+    // True while orchestrating an account swap. Tells the `disconnected`
+    // handler that the mid-swap disconnect of the old account is an
+    // intermediate step, not a real sign-out. Nothing destructive hangs off
+    // the disconnect path anymore (data wipes are explicit, see
+    // forgetAccount), so a stale flag can no longer eat anyone's data.
     let isSwitching = false;
-    // Backstop in case neither `connected` nor a fatal error fires after a
-    // swap (e.g. token rejected silently, OAuth tab closed). Without this,
-    // a single failed swap would lock out future swap attempts via the
-    // `isSwitching` re-entry guard.
-    let switchingWatchdog = null;
-    // Post-swap "straggler" guard. Even after `connected` fires for the new
-    // account and we release `isSwitching`, rs.js can still emit the OLD
-    // account's `disconnected` event a moment later — it was queued behind
-    // repo.swap()'s 3 s safety timeout, which sometimes lets the swap
-    // promise resolve before the underlying disconnect actually finishes.
-    // Without this flag, the late event takes the wipe path against the
-    // newly-connected account. We arm it at swap entry, leave it set across
-    // the `connected` boundary, and let either the late disconnect itself
-    // or a 5 s timeout consume it (5 s is generous vs swap()'s 3 s, but
-    // small enough that a real user-initiated disconnect right after a
-    // swap isn't accidentally swallowed).
-    let pendingSwapDisconnect = false;
-    let pendingSwapDisconnectTimer = null;
-    function expectSwapDisconnect() {
-        pendingSwapDisconnect = true;
-        if (pendingSwapDisconnectTimer) clearTimeout(pendingSwapDisconnectTimer);
-        pendingSwapDisconnectTimer = setTimeout(() => {
-            pendingSwapDisconnectTimer = null;
-            pendingSwapDisconnect = false;
-        }, 5000);
-    }
-    function consumePendingSwapDisconnect() {
-        if (!pendingSwapDisconnect && !pendingSwapDisconnectTimer) return;
-        pendingSwapDisconnect = false;
-        if (pendingSwapDisconnectTimer) {
-            clearTimeout(pendingSwapDisconnectTimer);
-            pendingSwapDisconnectTimer = null;
-        }
-    }
-    function releaseSwitching(reason) {
-        if (!isSwitching && !switchingWatchdog) return;
-        isSwitching = false;
-        if (switchingWatchdog) {
-            clearTimeout(switchingWatchdog);
-            switchingWatchdog = null;
-        }
-        if (reason) pushSyncLog(`Swap guard released (${reason})`);
-    }
+
+    // Per-account IndexedDB mirror — the local source of truth the UI
+    // hydrates from at boot and every accepted change is written back to.
+    // Null when no account is active or IndexedDB is unavailable (private
+    // browsing); the app then runs memory-only like the pre-v3 builds.
+    let mirror = null;
 
     // ---- core state ----
     let songs = $state([]);
@@ -136,87 +104,45 @@ export function createAppStore(repo) {
     let loadError = $state("");
     let busyMessage = $state("");
     let toastMessages = $state([]);
-    let initialSyncComplete = $state(false);
+    // True once the active account's local mirror has been read into memory.
+    // The UI renders as soon as an account is active; this only guards the
+    // brief (<50 ms) window before local data lands, so empty-state CTAs
+    // don't flash.
+    let hydrated = $state(false);
     let firstRunBandName = $state("");
 
     // ---- sync ----
-    let syncIndicatorVisible = $state(false);
-    let syncStatusLabel = $state("Preparing connection");
-    let syncActiveCount = 0;
-    let syncIndicatorTimer = null;
-    let syncLogEntries = $state([]);
-    // High-level reload state for the in-app pill / skeletons. Distinct from
-    // syncActiveCount (which tracks per-write bursts) and from
-    // initialSyncComplete (which gates the full-screen sync-shell). This drives
-    // the post-swap experience where the user sees instant snapshot UI but a
-    // background reload is still in flight.
-    let syncState = $state("idle"); // "idle" | "syncing" | "synced" | "error"
+    // Transient label for the TopBar dot tooltip while a write burst or the
+    // connection handshake is in flight. Purely cosmetic.
+    let syncStatusLabel = $state("");
+    let syncActiveCount = $state(0);
+    // High-level sync state for the TopBar dot / RollScreen skeletons:
+    // "idle" | "syncing" | "synced" | "error". "synced" is a transient
+    // confirmation that fades back to idle.
+    let syncState = $state("idle");
     let syncStateTimer = null;
-    // Count of in-flight reloadAll calls. We can't mark "synced" while any
-    // reload is mid-flight.
-    let reloadInFlight = 0;
-    // Bumped when manual recovery abandons a stalled reload. Late completions
-    // from older epochs are still stale via reloadGen, and should not touch
-    // in-flight accounting for the fresh retry.
-    let reloadEpoch = 0;
-    // Monotonic counter incremented on every reloadAll START. After a reload
-    // completes, it only applies its results if its captured generation is
-    // still the latest — older concurrent reloads (which captured an emptier
-    // cache snapshot) get discarded so their stale results don't clobber a
-    // newer reload's fresh data. Without this, a fast burst of onChange
-    // events during bootstrap can race in completion order and the UI lands
-    // on whichever reload happens to finish last, regardless of how recent
-    // the cache state it captured was.
-    let reloadGen = 0;
-    // Number of documents whose bodies rs.js has not yet pulled from remote.
-    // Read deterministically from the cache after each reloadAll: as long as
-    // any folder has stub entries (children present in the listing but with
-    // no body), the catalog is not actually hydrated — even if rs.js has
-    // already fired sync-done. The pill stays in "syncing" until this hits 0
-    // AND we've seen at least one sync round complete (so we don't false-
-    // resolve before rs.js has pulled the folder listings themselves).
-    let pendingBodies = $state(0);
-    // Set true the first time rs.js fires sync-done {completed: true} since
-    // the last (re)connect. Without this, an empty cache (no listing yet)
-    // would read pendingBodies=0 and resolve immediately.
-    let syncRoundCompleted = false;
-    // rs.js does its work in multiple back-to-back "rounds" — sync-done
-    // {completed:true} fires after each round's queue drains, not when the
-    // whole tree is in. After each round, rs.js waits `syncInterval` ms
-    // (configured in src/lib/remotestorage.js) before starting the next
-    // round; round 1 typically pulls only the root + a few small docs,
-    // round 2 pulls the folder listings, round 3 pulls the bodies. The
-    // only deterministic "all rounds drained" signal is "rs.js's next
-    // polling tick had no new work" — i.e. quiescence for at least one
-    // full sync interval. The settle is therefore matched to rs.js's
-    // bootstrap polling cadence, plus a small buffer for tasks to drain.
-    // Once the pill first flips to "synced", we relax rs.js's polling to
-    // STEADY_SYNC_INTERVAL_MS so the app doesn't hammer the server long-
-    // term — see `relaxSyncInterval()`.
+    // True once this account's first full sync has completed — persisted in
+    // the mirror ("sync-meta"), so it survives reloads and is per-account.
+    // Gates the first-run prompt (we must KNOW there's no remote config, not
+    // merely not-have-seen-it-yet) and saved-setlist pruning.
+    let initialSyncDone = $state(false);
+    // rs.js syncs in back-to-back rounds; sync-done {completed:true} fires
+    // after each round, not when the whole tree is in. The only reliable
+    // "everything arrived" signal is quiescence: a sync-done followed by one
+    // full polling interval with no incoming changes. A single settle timer
+    // (armed by sync-done, cancelled by every remote change) encodes that.
     const BOOTSTRAP_SYNC_INTERVAL_MS = 2000; // matches rs.js syncInterval set at construction
     const STEADY_SYNC_INTERVAL_MS = 10000;   // rs.js library default
     const SYNC_SETTLE_MS = BOOTSTRAP_SYNC_INTERVAL_MS + 500;
-    let syncFlipTimer = null;
-    // Tracks whether we've ever flipped to "synced" since the last
-    // (re)connect. Used to drive the one-time syncInterval relaxation.
-    let initialSyncSettled = false;
-    // Watchdog for stalled reloads. If reloadAll runs longer than
-    // SYNC_STALL_TIMEOUT_MS (15 s) — flaky network, rs.js stuck mid-pull —
-    // surface a Retry / Disconnect CTA in the sync-shell so the user
-    // isn't trapped on a spinner. The init flow already has its own 10 s
-    // pending → disconnected fallback (init() below); this covers the
-    // gap once the connection has succeeded but the data load hangs.
-    const SYNC_STALL_TIMEOUT_MS = 15000;
-    // Trailing debounce for change-driven reloads (see the onChange
-    // handler in init). Short enough that a lone remote edit still shows
-    // up near-instantly; long enough to swallow rs.js's per-document
-    // event bursts during sync rounds.
-    const CHANGE_RELOAD_DEBOUNCE_MS = 250;
-    // True while a debounced change-reload timer is pending. Exposed to
-    // maybeMarkSynced so it doesn't flip to "synced" before that reload runs.
-    let changeReloadPending = false;
-    let syncStalled = $state(false);
-    let syncStalledTimer = null;
+    let settleTimer = null;
+    // If a connect/swap silently never completes (token rejected without an
+    // error event, OAuth tab closed), connectionStatus would stay
+    // "connecting" and its re-entry guard would lock out retries. This
+    // watchdog resets it. The OAuth path gets a much longer window — the
+    // user may legitimately be typing a password in the popup.
+    const CONNECTING_TIMEOUT_MS = 20000;
+    const AUTHING_TIMEOUT_MS = 180000;
+    let connectingWatchdogTimer = null;
 
     // ---- generation options (loaded properly on connect via loadUserLocalData) ----
     let generationOptions = $state(defaultGenerationOptions(DEFAULT_APP_CONFIG));
@@ -231,10 +157,6 @@ export function createAppStore(repo) {
 
     // ---- band editing ----
     let expandedBandMember = $state("");
-    let newMemberName = $state("");
-    let newInstrumentByMember = $state({});
-    let newTuningByInstrument = $state({});
-    let newTechniqueByInstrument = $state({});
 
     // ---- import/export ----
     let importMode = $state("skip");
@@ -249,18 +171,22 @@ export function createAppStore(repo) {
     let appTitle = $derived(titleForBand(appConfig?.bandName));
     // First-run modal visibility is derived, not stored. Tying it to the
     // connection state (rather than scattering imperative `showFirstRunPrompt
-    // = true/false` writes across reloadAll, restoreSnapshot, deleteAllData,
+    // = true/false` writes across the sync, account, and deleteAllData paths,
     // finishFirstRun, and the disconnected handler) prevents a class of drift
     // bugs where a partial auth failure leaves the modal visible after
     // connectionStatus has already flipped back to "disconnected" — which
     // surfaced as the user seeing the band-name prompt instead of the login
     // page after a failed authorization. The modal only makes sense when
     // we're actually connected, the initial sync has landed, and there's no
-    // appConfig yet — so encode exactly that.
+    // appConfig yet — so encode exactly that. initialSyncDone (not merely
+    // hydrated) is the load-bearing gate: it proves the remote truly has no
+    // config, rather than us just not having pulled it yet.
     let showFirstRunPrompt = $derived(
-        connectionStatus === "connected" && initialSyncComplete && !appConfig,
+        connectionStatus === "connected" && initialSyncDone && hydrated && !appConfig,
     );
-    let emptyCatalog = $derived(connectionStatus === "connected" && songs.length === 0);
+    let emptyCatalog = $derived(
+        (connectionStatus === "connected" || hydrated) && songs.length === 0,
+    );
     let bandMemberEntries = $derived(
         Object.entries(bandMembers || {}).sort(([a], [b]) => a.localeCompare(b))
     );
@@ -278,20 +204,6 @@ export function createAppStore(repo) {
     $effect(() => {
         const pruned = pruneStaleKeys(songKeyFilters, usedKeys);
         if (pruned) songKeyFilters = pruned;
-    });
-
-    // Keep the per-account snapshot fresh: any direct edit (saveSong,
-    // persistMemberEdit, addSetlistSong, etc.) mutates these state slots,
-    // so a debounced scheduleSnapshot() here covers all of them. Without
-    // this, the snapshot only refreshed at the end of reloadAll, so a
-    // fast account swap right after editing showed last-synced data.
-    $effect(() => {
-        // Touch the state we want to snapshot.
-        void songs;
-        void appConfig;
-        void savedSetlists;
-        void bandMembers;
-        if (currentUserAddress) scheduleSnapshot();
     });
 
     // Once the catalog is fully settled, reconcile any stale song refs that
@@ -327,6 +239,7 @@ export function createAppStore(repo) {
             maxCovers: source.general?.limits?.covers ?? -1,
             maxInstrumentals: source.general?.limits?.instrumentals ?? -1,
             keyFlow: false,
+            includeUnpracticed: false,
             seed: "",
             randomness: {
                 temperature: source.general?.randomness?.temperature ?? 0.85,
@@ -395,22 +308,17 @@ export function createAppStore(repo) {
         return Array.from(names).sort();
     }
 
+    // A song is incomplete only when one of its explicit overrides is
+    // broken (an instrument row without a name). Members without an
+    // override simply inherit their default rig — absence is the normal,
+    // zero-effort state, not an error.
     function songIncompleteReasons(song) {
-        const members = bandMembers || {};
-        const memberNames = Object.keys(members);
-        if (memberNames.length === 0) return [];
-        const songMembers = song.members || {};
         const reasons = [];
-        for (const name of memberNames) {
-            const memberSetup = songMembers[name];
-            if (!memberSetup) { reasons.push(`${name}: not set up`); continue; }
-            const instruments = memberSetup.instruments || [];
-            if (instruments.length === 0) { reasons.push(`${name}: needs instrument`); continue; }
-            for (const inst of instruments) {
-                if (!inst.name) { reasons.push(`${name}: instrument not selected`); continue; }
-                const bandInst = (members[name].instruments || []).find((i) => i.name === inst.name);
-                if (bandInst && (bandInst.techniques || []).length > 0 && (!Array.isArray(inst.picking) || inst.picking.length === 0)) {
-                    reasons.push(`${name}: ${inst.name} needs technique`);
+        for (const [name, setup] of Object.entries(song.members || {})) {
+            for (const inst of setup?.instruments || []) {
+                if (!inst.name) {
+                    reasons.push(`${name}: pick an instrument`);
+                    break;
                 }
             }
         }
@@ -499,14 +407,11 @@ export function createAppStore(repo) {
     let displayedSetlist = $derived(hydrateSetlist(generatedSetlist));
     let displayedSavedSetlists = $derived((savedSetlists || []).map(hydrateSetlist));
 
-    // True only when the catalog is fully settled and safe to treat as
-    // authoritative. Excludes "syncing" (reload in flight) AND "error"
-    // (reload failed — catalog may be incomplete). Only "idle" (post-sync
-    // steady state) and "synced" (just completed) are considered settled.
-    // pendingBodies === 0 ensures all song bodies have arrived.
-    let catalogSettled = $derived(
-        (syncState === "idle" || syncState === "synced") && pendingBodies === 0,
-    );
+    // True only when the catalog is safe to treat as authoritative (for
+    // pruning setlist references against it). Once an account's initial
+    // sync has completed, the mirror-backed in-memory catalog is always
+    // complete — later changes arrive incrementally.
+    let catalogSettled = $derived(initialSyncDone);
 
     /**
      * Strip a generator/scoring result down to the lean persisted shape.
@@ -576,23 +481,14 @@ export function createAppStore(repo) {
     }
 
     // Remove any un-scoped legacy localStorage keys so they can't leak between
-    // accounts. Called only from the `disconnected` handler — that's the
-    // migration path for users coming from the pre-multi-account build, where
-    // these keys were written without the per-account hash. After one
-    // disconnect, the keys are gone; we don't re-run this on every connect.
+    // accounts. Called once per boot from init() — that's the migration path
+    // for users coming from the pre-multi-account build, where these keys
+    // were written without the per-account hash. Idempotent and cheap.
     function clearUnscopedLocalStorage() {
         if (typeof localStorage === "undefined") return;
         localStorage.removeItem("setlist-roller-ui-options");
         localStorage.removeItem("setlist-roller-saved-sets");
         localStorage.removeItem("setlist-roller-current-set");
-    }
-
-    // Clear the current user's scoped localStorage keys (called on disconnect)
-    function clearUserLocalStorage() {
-        if (typeof localStorage === "undefined" || !currentUserAddress) return;
-        localStorage.removeItem(storageKey("ui-options"));
-        localStorage.removeItem(storageKey("saved-sets"));
-        localStorage.removeItem(storageKey("current-set"));
     }
 
     // Load all per-user localStorage data (called on connect when we know the user)
@@ -638,6 +534,19 @@ export function createAppStore(repo) {
     function dismissToast(id) {
         toastMessages = toastMessages.filter((t) => t.id !== id);
     }
+    /**
+     * Run a toast's action button and dismiss it. Lives here (not inline in
+     * the template) because the template's {@const toast} re-evaluates the
+     * moment the dismiss empties toastMessages — an inline
+     * `dismiss(); toast.action.onClick()` reads `toast` as undefined and
+     * the action never fires. Capture first, then mutate.
+     */
+    function runToastAction(id) {
+        const toast = toastMessages.find((t) => t.id === id);
+        const onClick = toast?.action?.onClick;
+        dismissToast(id);
+        if (typeof onClick === "function") onClick();
+    }
     function toastInfo(message)  { addToast(message, TOAST_TONE.INFO); }
     function toastWarn(message)  { addToast(message, TOAST_TONE.WARN); }
     function toastError(message) { addToast(message, TOAST_TONE.DANGER); }
@@ -654,44 +563,15 @@ export function createAppStore(repo) {
         });
     }
 
-    function pushSyncLog(message) {
-        if (!message) return;
-        const time = new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-        });
-        syncLogEntries = [
-            ...syncLogEntries.slice(-(MAX_SYNC_LOG - 1)),
-            { id: uid("sync-log"), time, message },
-        ];
-    }
-
-    function clearSyncLog() {
-        syncLogEntries = [];
-    }
-
     // ---- sync indicators ----
     function beginSync(label = "Syncing") {
         syncActiveCount += 1;
         syncStatusLabel = label;
-        syncIndicatorVisible = true;
-        pushSyncLog(label);
-        if (syncIndicatorTimer) {
-            clearTimeout(syncIndicatorTimer);
-            syncIndicatorTimer = null;
-        }
     }
 
-    function endSync(nextLabel = "All changes saved") {
+    function endSync() {
         syncActiveCount = Math.max(0, syncActiveCount - 1);
-        if (syncActiveCount > 0) return;
-        syncStatusLabel = nextLabel;
-        if (syncIndicatorTimer) clearTimeout(syncIndicatorTimer);
-        syncIndicatorTimer = setTimeout(() => {
-            syncIndicatorVisible = false;
-            syncIndicatorTimer = null;
-        }, 1000);
+        if (syncActiveCount === 0) syncStatusLabel = "";
     }
 
     async function withSync(label, callback) {
@@ -703,38 +583,46 @@ export function createAppStore(repo) {
         }
     }
 
-    // [DEBUG SYNC] Tagged logger — flip on in the console with `DEBUG_SYNC=1`.
-    // Centralised so we can change format / silence in one place.
-    function dbg(...args) {
-        if (typeof window !== "undefined" && window.DEBUG_SYNC) {
-            console.log("[sync]", ...args);
+    function cancelSettleTimer() {
+        if (settleTimer) {
+            clearTimeout(settleTimer);
+            settleTimer = null;
         }
     }
 
+    function cancelConnectingWatchdog() {
+        if (connectingWatchdogTimer) {
+            clearTimeout(connectingWatchdogTimer);
+            connectingWatchdogTimer = null;
+        }
+    }
+
+    function armConnectingWatchdog(timeoutMs = CONNECTING_TIMEOUT_MS) {
+        cancelConnectingWatchdog();
+        connectingWatchdogTimer = setTimeout(() => {
+            connectingWatchdogTimer = null;
+            if (connectionStatus !== "connecting") return;
+            isSwitching = false;
+            if (repo.isConnected()) {
+                connectionStatus = "connected";
+            } else {
+                connectionStatus = "disconnected";
+                loadError = "Connection timed out. Try again.";
+                toastError(loadError);
+                setSyncState("error");
+            }
+        }, timeoutMs);
+    }
+
     function setSyncState(next) {
-        if (syncState !== next) dbg(`syncState: ${syncState} → ${next}`);
         if (syncStateTimer) {
             clearTimeout(syncStateTimer);
             syncStateTimer = null;
         }
-        // Any state transition cancels a pending flip — if we're going back
-        // to "syncing" the gates failed, and "error"/"idle" make the flip
-        // moot.
-        if (next !== "synced" && syncFlipTimer) {
-            clearTimeout(syncFlipTimer);
-            syncFlipTimer = null;
-        }
+        if (next !== "syncing") cancelSettleTimer();
         syncState = next;
-        // "synced" is a transient confirmation — fade back to idle so the pill
-        // doesn't linger forever after a successful background reload.
+        // "synced" is a transient confirmation — fade back to idle.
         if (next === "synced") {
-            // Bootstrap is over: relax rs.js's polling to its steady-state
-            // interval so we don't hammer the server every 2 s for the rest
-            // of the session. Only do this once per connect.
-            if (!initialSyncSettled) {
-                initialSyncSettled = true;
-                relaxSyncInterval();
-            }
             syncStateTimer = setTimeout(() => {
                 if (syncState === "synced") syncState = "idle";
                 syncStateTimer = null;
@@ -744,92 +632,197 @@ export function createAppStore(repo) {
 
     function relaxSyncInterval() {
         try {
-            const current = repo.getSyncInterval();
-            if (current < STEADY_SYNC_INTERVAL_MS) {
-                dbg(`relaxSyncInterval: ${current}ms → ${STEADY_SYNC_INTERVAL_MS}ms`);
+            if (repo.getSyncInterval() < STEADY_SYNC_INTERVAL_MS) {
                 repo.setSyncInterval(STEADY_SYNC_INTERVAL_MS);
             }
-        } catch (e) {
-            // Non-fatal: bootstrap interval keeps polling, just more
-            // frequently than ideal. Log and move on.
-            dbg(`relaxSyncInterval failed: ${e?.message || e}`);
+        } catch (_e) {
+            // Non-fatal: polling just stays at the bootstrap pace.
         }
     }
 
     function tightenSyncInterval() {
         try {
-            const current = repo.getSyncInterval();
-            if (current > BOOTSTRAP_SYNC_INTERVAL_MS) {
-                dbg(`tightenSyncInterval: ${current}ms → ${BOOTSTRAP_SYNC_INTERVAL_MS}ms`);
+            if (repo.getSyncInterval() > BOOTSTRAP_SYNC_INTERVAL_MS) {
                 repo.setSyncInterval(BOOTSTRAP_SYNC_INTERVAL_MS);
             }
-        } catch (e) {
-            dbg(`tightenSyncInterval failed: ${e?.message || e}`);
+        } catch (_e) {
+            // Non-fatal.
         }
     }
 
-    // Cancel any pending "synced" flip because rs.js just told us it's still
-    // working. Called from every signal that proves activity is ongoing:
-    // sync-started, sync-req-done, remote onChange, reloadAll start. The
-    // pending flip will be re-scheduled by the next maybeMarkSynced() call
-    // once the gates pass again.
-    function bumpSyncActivity(reason) {
-        if (syncFlipTimer) {
-            dbg(`bumpSyncActivity: cancelling pending flip (${reason})`);
-            clearTimeout(syncFlipTimer);
-            syncFlipTimer = null;
-        }
-    }
-
-    // Decide whether sync activity is genuinely settled. Three deterministic
-    // gates, all read from real state:
-    //   1. No reloadAll currently running.
-    //   2. The cache has zero pending document bodies.
-    //   3. rs.js has reported at least one completed sync round in this
-    //      session — guards against an empty cache (no folder listing yet)
-    //      reading as "0 pending" and false-resolving on connect.
-    // The gates can pass after round 1 with the cache still empty (rs.js
-    // hasn't yet pulled the catalog folders); rs.js then waits one full
-    // `syncInterval` before starting the next round. The only way to know
-    // "no more rounds are coming" is to observe one full polling interval
-    // of silence. SYNC_SETTLE_MS = syncInterval + small buffer encodes
-    // exactly that: any sync-started / sync-req-done / remote onChange /
-    // reloadAll bumpSyncActivity()s and re-arms the gate. Once a full poll
-    // cycle elapses without any of those, rs.js's next scheduled wake-up
-    // demonstrably found no new work — and only then do we flip "synced".
-    function maybeMarkSynced() {
-        const reason =
-            syncState !== "syncing" ? `not-syncing(${syncState})` :
-            reloadInFlight > 0 ? `reloadInFlight=${reloadInFlight}` :
-            pendingBodies > 0 ? `pendingBodies=${pendingBodies}` :
-            !syncRoundCompleted ? "syncRoundCompleted=false" :
-            changeReloadPending ? "changeReloadPending" :
-            loadError ? "loadError" :
-            null;
-        dbg(`maybeMarkSynced: ${reason ? `blocked by ${reason}` : "scheduling flip"} (state=${syncState} reload=${reloadInFlight} pending=${pendingBodies} round=${syncRoundCompleted} changeReloadPending=${changeReloadPending})`);
-        if (reason) return;
-        // Already scheduled — let the existing timer run; nothing has changed
-        // that would justify resetting it.
-        if (syncFlipTimer) return;
-        syncFlipTimer = setTimeout(() => {
-            syncFlipTimer = null;
-            // Re-check the gates: any of them may have flipped during the
-            // settle window (a new reload kicked off, a body event landed).
-            const blocker =
-                syncState !== "syncing" ? `not-syncing(${syncState})` :
-                reloadInFlight > 0 ? `reloadInFlight=${reloadInFlight}` :
-                pendingBodies > 0 ? `pendingBodies=${pendingBodies}` :
-                !syncRoundCompleted ? "syncRoundCompleted=false" :
-                changeReloadPending ? "changeReloadPending" :
-                loadError ? "loadError" :
-                null;
-            if (blocker) {
-                dbg(`syncFlipTimer fired but gates failed: ${blocker}`);
-                return;
+    // Quiescence detector: rs.js fired sync-done and one full polling
+    // interval passed with no incoming remote changes — the tree should be
+    // in. Every remote change cancels the timer (see onChange in init); the
+    // next sync-done re-arms it. Because rs.js syncs in rounds and the
+    // early rounds (root + folder listings) fire no change events, the
+    // quiet window alone can elapse while the cache is still skeletal — so
+    // before declaring the sync settled we verify the cache is coherent,
+    // and while we're at it reconcile the mirror against it (documents
+    // deleted remotely while this device was away, or while the account
+    // was switched out and rs.js's cache was reset, never fire deletion
+    // events — this sweep is what removes them locally).
+    function armSettleTimer() {
+        if (settleTimer || syncState !== "syncing") return;
+        const session = activeSession;
+        settleTimer = setTimeout(async () => {
+            settleTimer = null;
+            if (session !== activeSession || syncState !== "syncing") return;
+            let data = null;
+            try {
+                data = await repo.loadAll();
+            } catch (_e) {
+                return; // cache unreadable — a later sync-done retries
             }
-            dbg("syncFlipTimer fired — FLIPPING to synced");
+            if (session !== activeSession || syncState !== "syncing") return;
+            if ((data.pendingBodies || 0) > 0) return; // bodies still arriving
+            if (Object.keys(data.errors || {}).length > 0) return; // partial read — never prune on it
+            const cacheEmpty =
+                !data.songs?.length &&
+                !data.setlists?.length &&
+                !Object.keys(data.members || {}).length &&
+                !data.config;
+            const memoryHasData =
+                songs.length > 0 || savedSetlists.length > 0 || Object.keys(bandMembers).length > 0 || !!appConfig;
+            // An empty cache with local data on screen means rs.js hasn't
+            // pulled the folder listings yet (fresh cache after a swap) —
+            // not that the account is empty. Wait for a later round.
+            if (cacheEmpty && memoryHasData) return;
+
+            // The cache is authoritative now: drop anything local it no
+            // longer contains.
+            const songIds = new Set((data.songs || []).map((s) => s.id));
+            for (const song of songs.filter((s) => !songIds.has(s.id))) removeSongLocal(song.id);
+            const setlistIds = new Set((data.setlists || []).map((s) => s.id));
+            for (const setlist of savedSetlists.filter((s) => !setlistIds.has(s.id))) removeSetlistLocal(setlist.id);
+            const memberNames = new Set(Object.keys(data.members || {}));
+            for (const name of Object.keys(bandMembers).filter((n) => !memberNames.has(n))) removeMemberLocal(name);
+            if (!data.config && appConfig) setConfigLocal(null);
+
             setSyncState("synced");
+            if (!initialSyncDone) {
+                initialSyncDone = true;
+                relaxSyncInterval();
+                void mirror?.putKv("sync-meta", { initialSyncDone: true, completedAt: nowIso() }).catch(() => {});
+            }
         }, SYNC_SETTLE_MS);
+    }
+
+    // Async-write staleness guard. Capture at the start of any action that
+    // awaits repo I/O and check after each await: if the user switched (or
+    // signed out of) the account mid-flight, the result belongs to the OLD
+    // account and must not be applied to the newly active mirror/state.
+    function sessionGuard() {
+        const session = activeSession;
+        return () => session === activeSession;
+    }
+
+    // ---- local catalog mutation ----
+    // Single write path for every accepted document, whether it arrived from
+    // a remote sync event, the one-time cache seed, or a local edit: update
+    // the in-memory state and mirror it to the per-account IndexedDB. All
+    // helpers take plain (non-$state) objects.
+    function upsertSongLocal(doc) {
+        const song = normalizeSongRecord(doc);
+        void mirror?.putSong(song).catch(() => {});
+        songs = sortSongs(songs.filter((s) => s.id !== song.id).concat(song));
+    }
+
+    function removeSongLocal(id) {
+        void mirror?.deleteSong(id).catch(() => {});
+        songs = songs.filter((s) => s.id !== id);
+    }
+
+    function upsertSetlistLocal(doc) {
+        const setlist = migrator.migrateDocument("setlists", doc);
+        void mirror?.putSetlist(setlist).catch(() => {});
+        savedSetlists = savedSetlists
+            .filter((s) => s.id !== setlist.id)
+            .concat(setlist)
+            .sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+    }
+
+    function removeSetlistLocal(id) {
+        void mirror?.deleteSetlist(id).catch(() => {});
+        savedSetlists = savedSetlists.filter((s) => s.id !== id);
+        if (loadedSavedId === id) loadedSavedId = "";
+    }
+
+    function upsertMemberLocal(name, doc) {
+        const member = normalizeMemberRecord(doc);
+        void mirror?.putMember({ ...member, name }).catch(() => {});
+        bandMembers = { ...bandMembers, [name]: member };
+    }
+
+    function removeMemberLocal(name) {
+        void mirror?.deleteMember(name).catch(() => {});
+        const next = { ...bandMembers };
+        delete next[name];
+        bandMembers = next;
+    }
+
+    function setConfigLocal(config) {
+        if (config) {
+            const normalized = normalizeAppConfig(config);
+            void mirror?.putKv("config", normalized).catch(() => {});
+            appConfig = normalized;
+            generationOptions = deepMerge(defaultGenerationOptions(normalized), generationOptions || {});
+        } else {
+            void mirror?.deleteKv("config").catch(() => {});
+            appConfig = null;
+        }
+    }
+
+    function setBootstrapLocal(meta) {
+        if (meta) {
+            void mirror?.putKv("bootstrap", meta).catch(() => {});
+            bootstrapMeta = meta;
+        } else {
+            void mirror?.deleteKv("bootstrap").catch(() => {});
+            bootstrapMeta = null;
+        }
+    }
+
+    // Apply one rs.js change event (remote or conflict origin) to the local
+    // catalog. Conflicts take the remote value — same policy rs.js applies
+    // to its own cache.
+    function applyRemoteChange(event) {
+        const path = event?.relativePath || "";
+        const value = event?.newValue;
+        const hasValue = value && typeof value === "object";
+        if (path.startsWith("songs/")) {
+            if (hasValue) upsertSongLocal(value);
+            else removeSongLocal(path.slice("songs/".length));
+        } else if (path.startsWith("setlists/")) {
+            if (hasValue) upsertSetlistLocal(value);
+            else removeSetlistLocal(path.slice("setlists/".length));
+        } else if (path.startsWith("members/")) {
+            const key = path.slice("members/".length);
+            if (hasValue) upsertMemberLocal(value.name || key, value);
+            else removeMemberLocal(key);
+        } else if (path === "settings/app-config") {
+            setConfigLocal(hasValue ? value : null);
+        } else if (path === "meta/bootstrap") {
+            setBootstrapLocal(hasValue ? value : null);
+        }
+    }
+
+    // One-time adoption pass for accounts whose documents already sit in
+    // rs.js's internal cache but not in our mirror (v2 → v3 upgrade, or a
+    // deleted-and-recreated mirror). Unchanged cached documents never re-fire
+    // change events, so without this read they'd stay invisible forever.
+    // Idempotent: everything goes through the upsert helpers.
+    async function seedFromRepoCache(session) {
+        try {
+            const data = await repo.loadAll();
+            if (session !== activeSession) return;
+            for (const song of data.songs || []) upsertSongLocal(song);
+            for (const setlist of data.setlists || []) upsertSetlistLocal(setlist);
+            for (const [name, member] of Object.entries(data.members || {})) upsertMemberLocal(name, member);
+            if (data.config) setConfigLocal(data.config);
+            if (data.bootstrap) setBootstrapLocal(data.bootstrap);
+        } catch (_e) {
+            // Cache read failed — the live sync events will fill things in.
+        }
     }
 
     // ---- navigation ----
@@ -858,148 +851,179 @@ export function createAppStore(repo) {
         // same rules with worse coverage. The empty-input guard above
         // stays because we don't want to send an empty string at all.
         const normalizedToken = normalizeAuthToken(token);
-        clearSyncLog();
         connectionStatus = "connecting";
         loadError = "";
         syncStatusLabel = "Connecting to remoteStorage";
-        pushSyncLog(`Connecting to ${trimmed}`);
+        armConnectingWatchdog();
         repo.connect(trimmed, normalizedToken);
     }
 
+    /**
+     * Sign out of the remote session and return to the login screen. The
+     * account's local mirror and scoped localStorage are KEPT — this is
+     * "switch away", not "remove my data from this device" (that's
+     * forgetAccount). Keeping the mirror is what makes returning to the
+     * account instant and offline-capable.
+     */
     function disconnectStorage() {
-        // Save current token before disconnecting so we can switch back later
         if (currentUserAddress) {
             saveKnownAccount(currentUserAddress, { bandName: appConfig?.bandName || "" }, repo.getToken());
         }
+        activeSession += 1;
+        deactivateAccount();
         repo.disconnect();
+        // Don't wait for the `disconnected` event: rs.js can still report
+        // connected=true while emitting it, which the handler's staleness
+        // guard (rightly) skips. This is an explicit user action — the
+        // status change is unconditional.
+        connectionStatus = "disconnected";
+        knownAccounts = getKnownAccounts();
     }
 
+    /** Blank the in-memory state and detach the mirror (data stays on disk). */
+    function deactivateAccount() {
+        terminateWorker();
+        isGenerating = false;
+        cancelConfigSave();
+        try { mirror?.close(); } catch (_e) { /* already closed */ }
+        mirror = null;
+        try { localStorage.removeItem(ACTIVE_ACCOUNT_KEY); } catch (_e) { /* unavailable */ }
+        currentUserAddress = "";
+        hydrated = false;
+        initialSyncDone = false;
+        songs = [];
+        appConfig = null;
+        bootstrapMeta = null;
+        clearGeneratedSetlist();
+        setlistLocked = false;
+        setlistSaved = false;
+        savedSetlists = [];
+        bandMembers = {};
+        selectedSongId = "";
+        editorSong = null;
+        loadError = "";
+        setSyncState("idle");
+    }
+
+    /**
+     * Make `address` the active local account: open its mirror and hydrate
+     * the UI from it. Pure local operation — no network, no remoteStorage.
+     * The caller decides whether/how to establish the remote session.
+     */
+    async function activateAccount(address, session = activeSession) {
+        currentUserAddress = address;
+        connectAddress = address;
+        hydrated = false;
+        initialSyncDone = false;
+        try { mirror?.close(); } catch (_e) { /* already closed */ }
+        mirror = null;
+        try { localStorage.setItem(ACTIVE_ACCOUNT_KEY, address); } catch (_e) { /* unavailable */ }
+
+        let data = null;
+        try {
+            const db = await openAccountDb(address);
+            if (session !== activeSession) {
+                db.close();
+                return;
+            }
+            mirror = db;
+            data = await db.loadAll();
+            if (session !== activeSession) return;
+        } catch (error) {
+            // IndexedDB unavailable (private browsing) or unreadable. Run
+            // memory-only: the seed pass + live sync will fill the UI once
+            // the remote session is up.
+            if (import.meta.env?.DEV) {
+                console.warn("[app] activateAccount: mirror unavailable", error);
+            }
+        }
+
+        songs = sortSongs((data?.songs || []).map(normalizeSongRecord));
+        appConfig = data?.config ? normalizeAppConfig(data.config) : null;
+        savedSetlists = (data?.setlists || [])
+            .map((s) => migrator.migrateDocument("setlists", s))
+            .sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+        bandMembers = Object.fromEntries(
+            Object.entries(data?.members || {}).map(([name, d]) => [name, normalizeMemberRecord(d)]),
+        );
+        bootstrapMeta = data?.bootstrap || null;
+        initialSyncDone = !!data?.syncMeta?.initialSyncDone;
+        loadUserLocalData();
+        if (appConfig) {
+            generationOptions = deepMerge(defaultGenerationOptions(appConfig), generationOptions || {});
+        }
+        hydrated = true;
+    }
+
+    /**
+     * Switch to another known account. Local data appears instantly from
+     * that account's mirror; the remote session is re-established in the
+     * background. Works fully offline (the swap just fails quietly and the
+     * dot shows disconnected).
+     */
     async function connectToAccount(address) {
-        // Refuse if a connect/swap is already in flight — clicking switch
-        // mid-discovery used to take the wrong branch and double-connect.
         if (connectionStatus === "connecting" || isSwitching) {
             toastWarn("Already connecting — hold on.");
             return;
         }
         if (!address) return;
+        if (address === currentUserAddress && repo.isConnected()) return;
 
-        const savedToken = normalizeAuthToken(getAccountToken(address));
-
-        // 1. Persist the current account before touching state.
-        if (repo.isConnected()) {
-            saveSnapshot();
-            if (currentUserAddress) {
+        isSwitching = true;
+        try {
+            // Persist the current account's metadata + token for the trip back.
+            if (repo.isConnected() && currentUserAddress) {
                 saveKnownAccount(currentUserAddress, { bandName: appConfig?.bandName || "" }, repo.getToken());
             }
-        }
 
-        // 2. Bump the session — any in-flight async (reloadAll, worker
-        //    callbacks) from the previous account is now stale.
-        activeSession += 1;
+            // New session: in-flight async from the previous account is stale.
+            activeSession += 1;
 
-        // 3. Restore the target account's snapshot for instant UI; otherwise
-        //    blank the visible state until the connected/sync handlers fill it.
-        const hasSnapshot = restoreSnapshot(address);
-        if (hasSnapshot) {
-            currentUserAddress = address;
-            connectAddress = address;
-            loadUserLocalData();
-            initialSyncComplete = true;
-        } else {
-            songs = [];
-            appConfig = null;
-            savedSetlists = [];
-            bandMembers = {};
-            initialSyncComplete = false;
-            currentUserAddress = "";
-            connectAddress = address;
-        }
+            // Clear transient per-session state, then hydrate the target
+            // account's local data for instant UI.
+            clearGeneratedSetlist();
+            setlistLocked = false;
+            setlistSaved = false;
+            pendingRollConfirm = false;
+            selectedSongId = "";
+            editorSong = null;
+            // Enter "syncing" BEFORE the hydrate await: the old account's
+            // transient "synced" state must not be observable against the
+            // new account's address.
+            setSyncState("syncing");
+            syncStatusLabel = "Switching accounts";
+            await activateAccount(address);
 
-        // Clear transient state
-        clearGeneratedSetlist();
-        setlistLocked = false;
-        setlistSaved = false;
-        selectedSongId = "";
-        editorSong = null;
-
-        clearSyncLog();
-        connectionStatus = "connecting";
-        syncStatusLabel = "Switching accounts";
-        // Snapshot path skips the full-screen sync-shell, so the user lands on
-        // Roll instantly. Mark sync in-flight up front so the TopBar pill and
-        // RollScreen skeletons render immediately rather than waiting for
-        // reloadAll() to start. Reset the per-session sync gates — the new
-        // account starts a fresh round and inherits no completion state from
-        // the previous session.
-        setSyncState("syncing");
-        syncRoundCompleted = false;
-        pendingBodies = 0;
-        initialSyncSettled = false;
-        bumpSyncActivity("account swap");
-        // The previous account may have relaxed rs.js to its steady-state
-        // polling interval; tighten it back up so the new account gets a
-        // snappy bootstrap.
-        tightenSyncInterval();
-        pushSyncLog(`Switching to ${address}`);
-
-        // 4. Swap the rs.js connection. `swap()` disconnects cleanly (which
-        //    fires `disconnected`; the global handler skips its wipe because
-        //    isSwitching is true) and resets the cache before reconnecting.
-        //    `isSwitching` is intentionally NOT cleared in `finally`: rs.js's
-        //    `disconnected` event for the OLD account can fire after
-        //    `repo.swap()` resolves (the swap promise resolves via its 3 s
-        //    safety timeout before the actual event lands). The connected
-        //    handler clears it on a successful swap; the watchdog clears it
-        //    if neither connected nor a thrown error ever lands.
-        isSwitching = true;
-        if (switchingWatchdog) clearTimeout(switchingWatchdog);
-        switchingWatchdog = setTimeout(() => {
-            switchingWatchdog = null;
-            if (!isSwitching) return;
-            // Full reset — the re-entry guard at the top of connectToAccount
-            // checks BOTH isSwitching AND connectionStatus === "connecting",
-            // so just clearing isSwitching would leave the user locked out
-            // of retrying. Drop everything back to a clean disconnected
-            // state and surface the failure so they know what happened.
-            isSwitching = false;
-            consumePendingSwapDisconnect();
-            connectionStatus = "disconnected";
-            setSyncState("error");
-            loadError = "Account swap timed out. Try again.";
-            toastError(loadError);
-            pushSyncLog("Swap watchdog: released after 15s — neither connected nor error fired");
-        }, 15000);
-        try {
+            connectionStatus = "connecting";
+            armConnectingWatchdog();
+            const savedToken = normalizeAuthToken(getAccountToken(address));
             if (repo.isConnected()) {
-                // rs.js will fire `disconnected` (for the old account) and
-                // then `connected` (for the new). Usually the disconnect
-                // lands first while isSwitching is true. But repo.swap()
-                // resolves via a 3 s safety timeout that doesn't wait for
-                // the underlying disconnect to actually fire, so the OLD
-                // account's `disconnected` can arrive AFTER the new
-                // account's `connected` — by which point isSwitching has
-                // already been released. Arm the straggler guard so that
-                // out-of-order late disconnect is swallowed instead of
-                // taking the wipe path against the new account.
-                expectSwapDisconnect();
                 await repo.swap(address, savedToken);
             } else {
-                // Not connected — straight connect, no swap dance needed.
-                connectAddress = address;
-                connectStorage(savedToken);
+                repo.connect(address, savedToken);
             }
+            // The `connected` handler finishes the job (status, seed,
+            // migrations). If the connection never lands, the user still has
+            // the account's local data — nothing is stuck behind a spinner.
         } catch (error) {
             toastError(error?.message || "Could not switch accounts.");
-            connectionStatus = "disconnected";
-            consumePendingSwapDisconnect();
-            releaseSwitching("swap threw");
+            connectionStatus = repo.isConnected() ? "connected" : "disconnected";
+            setSyncState("error");
+        } finally {
+            isSwitching = false;
         }
     }
 
     // Per-account localStorage bases owned by the app. Keep this list in sync
     // with anything that reads/writes via accountSlot(address).key(...).
+    // "snapshot" is legacy (pre-v3 instant-swap blobs) — still cleared on
+    // forget so upgraded installs don't leave old data behind.
     const PER_ACCOUNT_STORAGE_BASES = ["snapshot", "ui-options", "current-set", "saved-sets"];
 
+    /**
+     * Remove an account from this device: registry entry, auth token,
+     * scoped localStorage, and its entire local mirror database.
+     */
     function forgetAccount(address) {
         removeKnownAccountEntry(address);
         if (typeof localStorage !== "undefined") {
@@ -1008,254 +1032,14 @@ export function createAppStore(repo) {
                 localStorage.removeItem(slot.key(base));
             }
         }
+        if (address === currentUserAddress) {
+            // Invalidate in-flight async work tied to the account being
+            // forgotten, same as disconnectStorage().
+            activeSession += 1;
+            deactivateAccount();
+        }
+        void deleteAccountDb(address).catch(() => {});
         knownAccounts = getKnownAccounts();
-    }
-
-    // ---- per-account data snapshot ----
-    let snapshotTimer = null;
-    function scheduleSnapshot() {
-        if (snapshotTimer) clearTimeout(snapshotTimer);
-        snapshotTimer = setTimeout(saveSnapshot, 2000);
-    }
-
-    function saveSnapshot() {
-        if (snapshotTimer) { clearTimeout(snapshotTimer); snapshotTimer = null; }
-        if (typeof localStorage === "undefined" || !currentUserAddress) return;
-        try {
-            const data = {
-                songs: songs.map(clone),
-                config: appConfig ? clone(appConfig) : null,
-                setlists: clone(savedSetlists),
-                members: clone(bandMembers),
-            };
-            localStorage.setItem(accountSlot(currentUserAddress).key("snapshot"), JSON.stringify(data));
-        } catch (error) {
-            // Most likely localStorage full or write blocked. Non-fatal: the
-            // next reloadAll repopulates everything from remote, so the user
-            // won't lose data — they just lose the instant-snapshot UX on a
-            // future swap. Log in dev so a real regression isn't masked.
-            if (import.meta.env?.DEV) {
-                console.warn("[app] saveSnapshot failed", error);
-            }
-        }
-    }
-
-    function restoreSnapshot(address) {
-        if (typeof localStorage === "undefined") return false;
-        const key = accountSlot(address).key("snapshot");
-        // Reading localStorage can throw even when the global is defined —
-        // Safari "Block all cookies", iOS private browsing, etc. Catch
-        // separately from the parse path so a blocked read just falls back
-        // to the full sync path; only an actual corrupt blob triggers the
-        // cleanup-and-toast branch.
-        let raw;
-        try {
-            raw = localStorage.getItem(key);
-        } catch (error) {
-            if (import.meta.env?.DEV) {
-                console.warn("[app] restoreSnapshot: localStorage read blocked", error);
-            }
-            return false;
-        }
-        if (!raw) return false;
-        try {
-            const data = JSON.parse(raw);
-            if (!data.config) return false;
-            songs = (data.songs || []).map(normalizeSongRecord);
-            appConfig = normalizeAppConfig(data.config);
-            savedSetlists = (data.setlists || []).map((s) => migrator.migrateDocument("setlists", s));
-            bandMembers = Object.fromEntries(
-                Object.entries(data.members || {}).map(([name, d]) => [name, normalizeMemberRecord(d)])
-            );
-            // generationOptions is intentionally not touched here:
-            // currentUserAddress still points at the previous account. The
-            // caller sets it after this returns, then loadUserLocalData()
-            // loads the target account's stored options.
-            return true;
-        } catch (error) {
-            // The blob exists but is unreadable — corrupt or written by an
-            // older incompatible build. Drop it so we don't keep failing on
-            // every swap, and tell the user (instant-snapshot UI silently
-            // falls back to the full sync path otherwise).
-            if (import.meta.env?.DEV) {
-                console.warn("[app] restoreSnapshot failed; dropping corrupt blob", error);
-            }
-            try { localStorage.removeItem(key); } catch (_removeError) {
-                if (import.meta.env?.DEV) {
-                    console.warn("[app] restoreSnapshot: removeItem also failed", _removeError);
-                }
-            }
-            toastWarn("Some local data was unreadable and has been reset.");
-            return false;
-        }
-    }
-
-    // ---- data loading ----
-    async function reloadAll({ quiet = false, session = activeSession } = {}) {
-        const callId = Math.random().toString(36).slice(2, 6);
-        const myEpoch = reloadEpoch;
-        // Capture this reload's generation. By the time we return, a newer
-        // reload may have started; if so, that newer one captured a more
-        // recent cache snapshot and ours is stale. We discard our results
-        // even though our session matches.
-        reloadGen += 1;
-        const myGen = reloadGen;
-        dbg(`reloadAll[${callId}] START gen=${myGen} session=${session}/${activeSession} quiet=${quiet}`);
-        // Starting a reload is unambiguous proof of activity — cancel any
-        // pending "synced" flip from the previous round so we don't resolve
-        // while we're literally about to re-read the cache.
-        bumpSyncActivity("reloadAll start");
-        setSyncState("syncing");
-        reloadInFlight += 1;
-        // Re-arm the stall watchdog. Cleared in `finally`, so each reload
-        // gets its own fresh window — long-running rs.js streams that
-        // emit progress through onChange (which kicks a new reload) keep
-        // resetting the timer instead of falsely tripping it.
-        if (syncStalledTimer) clearTimeout(syncStalledTimer);
-        syncStalled = false;
-        syncStalledTimer = setTimeout(() => {
-            syncStalledTimer = null;
-            if (reloadInFlight > 0) syncStalled = true;
-        }, SYNC_STALL_TIMEOUT_MS);
-        try {
-            busyMessage = quiet ? "" : "Loading your songs...";
-            loadError = "";
-            const data = await repo.loadAll({
-                onStep: (message) => {
-                    syncStatusLabel = message;
-                    pushSyncLog(message);
-                },
-            });
-            // Guard against stale results landing after an account swap.
-            if (session !== activeSession) {
-                pushSyncLog("Discarded stale load (account swapped)");
-                return;
-            }
-            // Guard against this reload being superseded by a newer one
-            // started while we were awaiting loadAll. The newer reload
-            // captured a fresher cache snapshot — applying our (older)
-            // results would regress the in-memory state.
-            if (myGen !== reloadGen) {
-                dbg(`reloadAll[${callId}] DISCARD gen=${myGen} (current=${reloadGen}) — superseded by newer reload`);
-                pushSyncLog("Discarded superseded load");
-                return;
-            }
-            // Update the pending count even if we early-return below — the
-            // pill state depends on it being current.
-            pendingBodies = data.pendingBodies || 0;
-            const errors = data.errors || {};
-            const errorEntries = Object.entries(errors);
-            dbg(
-                `reloadAll[${callId}] data: ${data.songs?.length ?? "—"} songs, pendingBodies=${pendingBodies}, hasConfig=${!!data.config}, errors=${errorEntries.length}`,
-            );
-            // Apply each slice only when its load actually succeeded. A
-            // rejected slice leaves the prior in-memory value intact rather
-            // than blanking the UI — partial offline-first loads are the
-            // whole point of allSettled. `data.<slice>` is undefined when
-            // that slice rejected.
-            if (data.songs !== undefined) {
-                songs = data.songs.map(normalizeSongRecord);
-            }
-            if (!errors.bootstrap) {
-                bootstrapMeta = data.bootstrap;
-            }
-            // Single-doc slices (config) need an extra-careful policy: a
-            // null read does NOT mean "remote returned no config" during a
-            // post-swap bootstrap window — rs.js's cache for the new
-            // account hasn't loaded the body yet, so getObject resolves
-            // with null. Blanking appConfig here would tip
-            // showFirstRunPrompt true and bounce a returning user into the
-            // band-name modal even though they have a perfectly good
-            // config locally (snapshot) and remotely. Genuine config
-            // deletion arrives via a remote-origin onChange event with a
-            // null newValue (see detachChange below) and is handled there.
-            if (!errors.config && data.config) {
-                appConfig = normalizeAppConfig(data.config);
-            }
-            if (data.setlists !== undefined) {
-                savedSetlists = data.setlists.map((s) => migrator.migrateDocument("setlists", s));
-            }
-            if (data.members !== undefined) {
-                bandMembers = Object.fromEntries(
-                    Object.entries(data.members).map(([name, data]) => [name, normalizeMemberRecord(data)]),
-                );
-            }
-
-            // Surface partial-failure warnings without short-circuiting. We
-            // skip a toast for `bootstrap` because the metadata is already
-            // optional (callers treat missing bootstrap as "none yet").
-            for (const [slice, error] of errorEntries) {
-                pushSyncLog(`Could not load ${slice}: ${error.message}`);
-                if (slice === "bootstrap") continue;
-                if (!quiet) toastWarn(`Couldn't load ${slice} — keeping last known data.`);
-            }
-
-            // First-run prompt: only when we *know* the config is truly
-            // absent (the slice loaded successfully and returned null), not
-            // when the config slice failed and we kept the previous value.
-            // Without this guard a transient config read failure would push
-            // a returning user into first-run, risking a duplicate config.
-            if (!errors.config && !appConfig) {
-                firstRunBandName = "";
-                navigate("roll");
-                generationOptions = defaultGenerationOptions(DEFAULT_APP_CONFIG);
-                persistGenerationOptions();
-                return;
-            }
-
-            if (appConfig) {
-                generationOptions = deepMerge(defaultGenerationOptions(appConfig), generationOptions || {});
-                persistGenerationOptions();
-                scheduleSnapshot();
-            }
-            pushSyncLog("Initial data load finished");
-        } catch (error) {
-            loadError = error?.message || "Could not load remote data.";
-            toastError(loadError);
-            pushSyncLog(loadError);
-            // Stale results from an old session shouldn't flip the indicator —
-            // the live session will resolve its own state.
-            if (session === activeSession) setSyncState("error");
-        } finally {
-            if (myEpoch === reloadEpoch) {
-                reloadInFlight = Math.max(0, reloadInFlight - 1);
-                busyMessage = "";
-                initialSyncComplete = true;
-                // Only the last in-flight reload should clear the watchdog —
-                // a fast one finishing while a slow one is still pulling
-                // shouldn't drop the stall guard.
-                if (reloadInFlight === 0) {
-                    if (syncStalledTimer) clearTimeout(syncStalledTimer);
-                    syncStalledTimer = null;
-                    syncStalled = false;
-                }
-            } else {
-                dbg(`reloadAll[${callId}] ignored stale epoch ${myEpoch} (current=${reloadEpoch})`);
-            }
-            dbg(`reloadAll[${callId}] END gen=${myGen} songs=${songs.length} pending=${pendingBodies} reloadInFlight=${reloadInFlight}`);
-            // Try to resolve the pill. Falls through silently if any of the
-            // gates (pending bodies, in-flight reloads, sync round) aren't
-            // satisfied yet — a later reload (triggered by an onChange when
-            // the next body arrives) will check again.
-            if (session === activeSession && myEpoch === reloadEpoch) maybeMarkSynced();
-        }
-    }
-
-    // Manual recovery for the stall watchdog. Invoked from the sync-shell's
-    // Retry button. We don't try to abort a stuck rs.js operation; instead
-    // we retire it from our accounting and start a fresh reload. If the
-    // underlying load finally resolves, its generation/epoch guards keep it
-    // from applying stale data or blocking the retry.
-    async function retrySync() {
-        reloadEpoch += 1;
-        reloadInFlight = 0;
-        syncStalled = false;
-        if (syncStalledTimer) {
-            clearTimeout(syncStalledTimer);
-            syncStalledTimer = null;
-        }
-        pushSyncLog("User triggered retry");
-        await reloadAll({ quiet: true });
     }
 
     async function finishFirstRun() {
@@ -1264,9 +1048,12 @@ export function createAppStore(repo) {
             toastError("Your band needs a name.");
             return;
         }
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = "Setting up...";
-            appConfig = await withSync("Setting up", () => repo.ensureConfig(bandName));
+            const config = await withSync("Setting up", () => repo.ensureConfig(bandName));
+            if (!sessionAlive()) return;
+            setConfigLocal(config);
             generationOptions = defaultGenerationOptions(appConfig);
             persistGenerationOptions();
             toastInfo(`Welcome, ${bandName}.`);
@@ -1358,7 +1145,13 @@ export function createAppStore(repo) {
             navigate("songs");
             return;
         }
-        const eligibleSongs = songs.filter((s) => !s.unpracticed);
+        // Unpracticed songs stay out of the pool unless the user opted in —
+        // but songs explicitly pinned by "Optimize Order" (fixedSongIds)
+        // always stay in, or the optimize pass would silently drop them.
+        const fixedIds = new Set(overrideOptions.fixedSongIds || []);
+        const eligibleSongs = songs.filter(
+            (s) => generationOptions.includeUnpracticed || !s.unpracticed || fixedIds.has(s.id),
+        );
         if (!eligibleSongs.length) {
             toastError("Every song is unpracticed. Time to rehearse!");
             return;
@@ -1380,7 +1173,10 @@ export function createAppStore(repo) {
         const worker = new GeneratorWorker();
         activeWorker = worker;
         worker.postMessage({
-            songs: clone(eligibleSongs),
+            // The generator works on effective setups: explicit song
+            // overrides where they exist, each member's default rig
+            // everywhere else. Songs themselves only store deviations.
+            songs: clone(eligibleSongs).map((s) => ({ ...s, members: resolveSongMembers(s, bandMembers) })),
             config: clone(appConfig || DEFAULT_APP_CONFIG),
             options: opts
         });
@@ -1468,6 +1264,8 @@ export function createAppStore(repo) {
             ? clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId)))
             : clone(generatedSetlist.songs);
 
+        const sessionAlive = sessionGuard();
+
         // If this setlist was loaded from a saved entry, update that entry in
         // place instead of creating a duplicate with a new id and name.
         if (loadedSavedId) {
@@ -1481,6 +1279,7 @@ export function createAppStore(repo) {
                     closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
                     songs: persistedSongs,
                 });
+                if (!sessionAlive()) return;
                 setlistSaved = true;
                 return;
             }
@@ -1514,8 +1313,9 @@ export function createAppStore(repo) {
             songs: persistedSongs,
         };
         try {
-            await withSync("Saving setlist", () => repo.putSetlist(entry));
-            savedSetlists = [entry, ...currentSaved];
+            const saved = await withSync("Saving setlist", () => repo.putSetlist(entry));
+            if (!sessionAlive()) return;
+            upsertSetlistLocal(saved);
             setlistSaved = true;
             loadedSavedId = entry.id;
         } catch (error) {
@@ -1524,10 +1324,11 @@ export function createAppStore(repo) {
     }
 
     async function removeSavedSetlist(id) {
+        const sessionAlive = sessionGuard();
         try {
             await withSync("Removing setlist", () => repo.deleteSetlist(id));
-            savedSetlists = savedSetlists.filter((s) => s.id !== id);
-            if (loadedSavedId === id) loadedSavedId = "";
+            if (!sessionAlive()) return;
+            removeSetlistLocal(id);
         } catch (error) {
             toastError(error?.message || "Could not remove setlist.");
         }
@@ -1537,9 +1338,11 @@ export function createAppStore(repo) {
         const existing = savedSetlists.find((s) => s.id === id);
         if (!existing) return;
         const merged = { ...existing, ...fields };
+        const sessionAlive = sessionGuard();
         try {
-            await withSync("Updating setlist", () => repo.putSetlist(merged));
-            savedSetlists = savedSetlists.map((s) => s.id === id ? merged : s);
+            const saved = await withSync("Updating setlist", () => repo.putSetlist(clone(merged)));
+            if (!sessionAlive()) return;
+            upsertSetlistLocal(saved);
         } catch (error) {
             toastError(error?.message || "Could not update setlist.");
         }
@@ -1632,7 +1435,10 @@ export function createAppStore(repo) {
         if (generatedSetlist.songs.some((s) => s.songId === songId)) return;
         const song = songsById.get(songId);
         if (!song) return;
-        const performance = buildDefaultPerformance(song, generationOptions?.show || {});
+        const performance = buildDefaultPerformance(
+            { ...song, members: resolveSongMembers(song, bandMembers) },
+            generationOptions?.show || {},
+        );
         generatedSetlist = {
             ...generatedSetlist,
             songs: [...generatedSetlist.songs, { songId, performance }],
@@ -1641,10 +1447,13 @@ export function createAppStore(repo) {
         persistCurrentSetlist();
     }
 
+    // Unpracticed songs stay in this list on purpose: the roller won't pick
+    // them, but the band can still add one to a set deliberately (the picker
+    // marks them so it's a knowing choice).
     let songsNotInSetlist = $derived.by(() => {
-        if (!generatedSetlist?.songs) return songs.filter((s) => !s.unpracticed);
+        if (!generatedSetlist?.songs) return songs;
         const usedIds = new Set(generatedSetlist.songs.map((s) => s.songId));
-        return songs.filter((s) => !s.unpracticed && !usedIds.has(s.id));
+        return songs.filter((s) => !usedIds.has(s.id));
     });
 
     // ---- generation options ----
@@ -1672,23 +1481,19 @@ export function createAppStore(repo) {
 
 
     // ---- song editor ----
+    // Songs only store deviations from each member's default rig, so a new
+    // song starts with NO member entries — every band member implicitly
+    // plays their usual setup. The editor offers per-member overrides.
     function openNewSong() {
-        const song = blankSong();
-        Object.entries(bandMembers || {}).forEach(([name, config]) => {
-            const defaultInstName = config.defaultInstrument || "";
-            const defaultInst = (config.instruments || []).find((i) => i.name === defaultInstName);
-            const inst = defaultInst
-                ? { name: defaultInst.name, tuning: defaultInst.defaultTuning ? [defaultInst.defaultTuning] : [], capo: 0, picking: defaultInst.defaultTechnique ? [defaultInst.defaultTechnique] : [] }
-                : { name: "", tuning: [], capo: 0, picking: [] };
-            song.members[name] = { instruments: [inst] };
-        });
-        editorSong = song;
+        editorSong = blankSong();
         selectedSongId = "";
+        editorVocabAdds = {};
     }
 
     function openSong(song) {
         editorSong = normalizeSongRecord(song);
         selectedSongId = editorSong.id;
+        editorVocabAdds = {};
     }
 
     function closeEditor() {
@@ -1696,7 +1501,103 @@ export function createAppStore(repo) {
         editorSong = null;
         selectedSongId = "";
         editReturnView = "";
+        editorVocabAdds = {};
         if (returnTo) navigate(returnTo);
+    }
+
+    // ---- staged vocabulary adds ----
+    // New instruments/tunings/techniques typed inside the song editor are
+    // STAGED here and only written to the band config when the song is
+    // saved. (Previously they persisted to remoteStorage the moment they
+    // were typed — abandoning the song still left its vocabulary behind.)
+    let editorVocabAdds = $state({});
+
+    function stagedInstrumentAdds(memberName) {
+        return Object.entries(editorVocabAdds[memberName] || {})
+            .filter(([, adds]) => adds.isNew)
+            .map(([name]) => name);
+    }
+
+    function stagedTuningAdds(memberName, instrumentName) {
+        return editorVocabAdds[memberName]?.[instrumentName]?.tunings || [];
+    }
+
+    function stagedTechniqueAdds(memberName, instrumentName) {
+        return editorVocabAdds[memberName]?.[instrumentName]?.techniques || [];
+    }
+
+    function stageVocabAdd(memberName, instrumentName, kind, value) {
+        const clean = String(value ?? "").trim();
+        if (!memberName || !instrumentName || (kind !== "instrument" && !clean)) return "";
+        const memberAdds = { ...(editorVocabAdds[memberName] || {}) };
+        const instAdds = {
+            isNew: false,
+            tunings: [],
+            techniques: [],
+            ...(memberAdds[instrumentName] || {}),
+        };
+        if (kind === "instrument") instAdds.isNew = true;
+        if (kind === "tuning" && !instAdds.tunings.includes(clean)) {
+            instAdds.tunings = [...instAdds.tunings, clean];
+        }
+        if (kind === "technique" && !instAdds.techniques.includes(clean)) {
+            instAdds.techniques = [...instAdds.techniques, clean];
+        }
+        memberAdds[instrumentName] = instAdds;
+        editorVocabAdds = { ...editorVocabAdds, [memberName]: memberAdds };
+        return kind === "instrument" ? instrumentName : clean;
+    }
+
+    /** Write the staged vocabulary into the band config (at song save). */
+    async function applyStagedVocab() {
+        for (const [memberName, memberAdds] of Object.entries(editorVocabAdds || {})) {
+            let member = clone(bandMembers[memberName] || null);
+            let dirty = false;
+            if (!member) {
+                member = { instruments: [] };
+                dirty = true;
+            }
+            if (!member.instruments) member.instruments = [];
+            for (const [instName, adds] of Object.entries(memberAdds)) {
+                let inst = member.instruments.find((i) => i.name === instName);
+                if (!inst) {
+                    inst = { name: instName, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" };
+                    member.instruments.push(inst);
+                    dirty = true;
+                }
+                for (const tuning of adds.tunings || []) {
+                    if (!inst.tunings.includes(tuning)) {
+                        inst.tunings.push(tuning);
+                        if (!inst.defaultTuning) inst.defaultTuning = tuning;
+                        dirty = true;
+                    }
+                }
+                for (const technique of adds.techniques || []) {
+                    if (!inst.techniques.includes(technique)) {
+                        inst.techniques.push(technique);
+                        dirty = true;
+                    }
+                }
+            }
+            if (dirty && !(await persistMemberEdit(memberName, member))) return false;
+        }
+        editorVocabAdds = {};
+        return true;
+    }
+
+    /**
+     * Drop member overrides that add nothing: empty ones and ones equal to
+     * the member's default rig. Runs at save so stored songs converge to
+     * deviations-only over time.
+     */
+    function squashDefaultMembers(members) {
+        const out = {};
+        for (const [name, setup] of Object.entries(members || {})) {
+            if ((setup?.instruments || []).length === 0) continue;
+            if (bandMembers[name] && rigEqualsDefault(setup, bandMembers[name])) continue;
+            out[name] = setup;
+        }
+        return out;
     }
 
     function updateEditor(mutator) {
@@ -1709,45 +1610,18 @@ export function createAppStore(repo) {
         updateEditor((s) => { s[key] = value; });
     }
 
-    function renameMember(prev, next) {
-        const clean = next.trim();
-        if (!clean || clean === prev) return;
-        updateEditor((song) => {
-            const entries = Object.entries(song.members || {});
-            const rebuilt = {};
-            entries.forEach(([name, val]) => { rebuilt[name === prev ? clean : name] = val; });
-            song.members = rebuilt;
-        });
-    }
-
+    /**
+     * Create a per-song override for a band member, prefilled from their
+     * default rig so the user edits from a working starting point.
+     */
     function addMember(memberName) {
+        if (!memberName) return;
         updateEditor((song) => {
-            let name = memberName;
-            if (!name) {
-                const base = `member${Object.keys(song.members || {}).length + 1}`;
-                name = base;
-                let c = 1;
-                while (song.members[name]) { c++; name = `${base}-${c}`; }
-            }
-            if (song.members[name]) return; // already in this song
-            // Seed instruments from band config if this member exists there
-            const bandMember = bandMembers?.[name];
-            if (bandMember && (bandMember.instruments || []).length > 0) {
-                const defaultInst = bandMember.defaultInstrument || bandMember.instruments[0]?.name || "";
-                const inst = bandMember.instruments.find((i) => i.name === defaultInst) || bandMember.instruments[0];
-                const defaultTuning = inst?.defaultTuning;
-                const defaultTechnique = inst?.defaultTechnique;
-                song.members[name] = {
-                    instruments: [{
-                        name: inst.name,
-                        tuning: defaultTuning ? [defaultTuning] : [],
-                        capo: 0,
-                        picking: defaultTechnique ? [defaultTechnique] : []
-                    }]
-                };
-            } else {
-                song.members[name] = { instruments: [{ name: "", tuning: [], capo: 0, picking: [] }] };
-            }
+            if (song.members[memberName]) return; // already overridden
+            const rig = memberDefaultRig(bandMembers?.[memberName]);
+            song.members[memberName] = rig
+                ? clone(rig)
+                : { instruments: [{ name: "", tuning: [], capo: 0, picking: [] }] };
         });
     }
 
@@ -1790,52 +1664,23 @@ export function createAppStore(repo) {
             toastError("Songs need names.");
             return;
         }
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = `Saving "${editorSong.name}"...`;
+            // Vocabulary the user staged in the editor (new instruments,
+            // tunings, techniques) lands in the band config first, so the
+            // squash below compares against the up-to-date defaults.
+            if (!(await applyStagedVocab())) return;
+            if (!sessionAlive()) return;
             const saved = await withSync("Saving song", () => repo.putSong({
-                ...editorSong, updatedAt: nowIso()
+                ...editorSong,
+                members: squashDefaultMembers(editorSong.members),
+                updatedAt: nowIso(),
             }));
-            songs = songs.filter((s) => s.id !== saved.id).concat(saved).sort((a, b) => a.name.localeCompare(b.name));
+            if (!sessionAlive()) return;
+            upsertSongLocal(saved);
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
-
-            // Sync member names and instruments from the song into band members
-            const dirtyMembers = new Map();
-
-            for (const [memberName, memberSetup] of Object.entries(saved.members || {})) {
-                let member = clone(bandMembers[memberName] || null);
-                let dirty = false;
-                if (!member) {
-                    member = { instruments: [] };
-                    dirty = true;
-                }
-                if (!member.instruments) member.instruments = [];
-                for (const inst of (memberSetup.instruments || [])) {
-                    if (!inst.name) continue;
-                    const existing = member.instruments.find((i) => i.name === inst.name);
-                    if (!existing) {
-                        member.instruments.push({
-                            name: inst.name, tunings: [], defaultTuning: "",
-                            techniques: [], defaultTechnique: ""
-                        });
-                        dirty = true;
-                    }
-                    // Sync tunings that appear in songs but not in band members
-                    const bandInst = member.instruments.find((i) => i.name === inst.name);
-                    for (const tuning of (inst.tuning || [])) {
-                        if (tuning && !(bandInst.tunings || []).includes(tuning)) {
-                            if (!bandInst.tunings) bandInst.tunings = [];
-                            bandInst.tunings.push(tuning);
-                            if (!bandInst.defaultTuning) bandInst.defaultTuning = tuning;
-                            dirty = true;
-                        }
-                    }
-                }
-                if (dirty) dirtyMembers.set(memberName, member);
-            }
-            for (const [memberName, memberData] of dirtyMembers) {
-                await persistMemberEdit(memberName, memberData);
-            }
 
             closeEditor();
             toastInfo(`Saved "${saved.name}".`);
@@ -1858,10 +1703,12 @@ export function createAppStore(repo) {
 
     async function deleteSong(song) {
         if (!window.confirm(`Delete "${song.name}"?`)) return;
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = `Deleting "${song.name}"...`;
             await withSync("Removing song", () => repo.deleteSong(song.id));
-            songs = songs.filter((e) => e.id !== song.id);
+            if (!sessionAlive()) return;
+            removeSongLocal(song.id);
             if (editorSong?.id === song.id) closeEditor();
             toastInfo(`Deleted "${song.name}".`);
         } catch (error) {
@@ -1874,27 +1721,48 @@ export function createAppStore(repo) {
     async function deleteAllData() {
         if (!window.confirm("This will delete ALL songs, band config, and saved setlists. This cannot be undone.\n\nAre you sure?")) return;
         if (!window.confirm("Really? Everything will be gone forever.")) return;
+        const sessionAlive = sessionGuard();
+        // Bail out cleanly if the user switches accounts mid-wipe: any
+        // further deletes would run against the NEW account's storage paths.
+        const abortIfSwitched = () => {
+            if (!sessionAlive()) throw new Error("Deletion stopped — the account changed mid-way.");
+        };
         try {
             busyMessage = "Deleting everything...";
-            // Delete all songs from RS
-            for (const song of songs) {
-                await repo.deleteSong(song.id);
+            // Delete all songs from RS. List from the repo as well as memory
+            // so songs that never made it into the in-memory catalog (e.g.
+            // mid-first-sync) are still deleted.
+            const { songs: listedSongs } = await repo.listSongs();
+            const allSongIds = new Set([...songs.map((s) => s.id), ...listedSongs.map((s) => s.id)]);
+            for (const id of allSongIds) {
+                abortIfSwitched();
+                await repo.deleteSong(id);
+                void mirror?.deleteSong(id).catch(() => {});
             }
             // Delete all setlists from RS (list from remote to catch any beyond in-memory state)
             const { setlists: allSetlists } = await repo.listSetlists();
             for (const setlist of allSetlists) {
+                abortIfSwitched();
                 await repo.deleteSetlist(setlist.id);
+                void mirror?.deleteSetlist(setlist.id).catch(() => {});
             }
             // Delete all members from RS (list from remote to catch any beyond in-memory state)
             const { members: allMembers } = await repo.listMembers();
             for (const name of Object.keys(allMembers)) {
+                abortIfSwitched();
                 await repo.deleteMember(name);
+                void mirror?.deleteMember(name).catch(() => {});
             }
             // Delete config from RS so first-run triggers on reload
+            abortIfSwitched();
             await repo.deleteConfig();
+            if (!sessionAlive()) return;
+            void mirror?.deleteKv("config").catch(() => {});
+            void mirror?.deleteKv("bootstrap").catch(() => {});
             // Clear local state
             appConfig = null;
             songs = [];
+            bootstrapMeta = null;
             clearGeneratedSetlist();
             setlistLocked = false;
             setlistSaved = false;
@@ -1930,8 +1798,30 @@ export function createAppStore(repo) {
         return value;
     }
 
+    // Debounced autosave for config field edits. Advanced-config inputs
+    // write through updateConfigField on every keystroke; persisting each
+    // one would spam remoteStorage, and requiring an explicit "Save
+    // Settings" press silently lost edits when the user navigated away
+    // (the in-memory config had already changed). One save model instead:
+    // edits persist themselves shortly after the user stops typing.
+    let configSaveTimer = null;
+    function scheduleConfigSave() {
+        if (configSaveTimer) clearTimeout(configSaveTimer);
+        configSaveTimer = setTimeout(() => {
+            configSaveTimer = null;
+            if (appConfig) void persistConfigEdit(appConfig);
+        }, 800);
+    }
+    function cancelConfigSave() {
+        if (configSaveTimer) {
+            clearTimeout(configSaveTimer);
+            configSaveTimer = null;
+        }
+    }
+
     function updateConfigField(fieldOrPath, rawValue) {
         if (!appConfig) return;
+        scheduleConfigSave();
         // Accept either a field object { path, type } or a plain path string
         if (typeof fieldOrPath === "string") {
             appConfig = setByPath(appConfig, fieldOrPath, rawValue);
@@ -1961,29 +1851,35 @@ export function createAppStore(repo) {
         if (!appConfig) return;
         try {
             busyMessage = "Saving config...";
-            const nextConfig = normalizeAppConfig({ ...clone(appConfig), updatedAt: nowIso() });
-            appConfig = await withSync("Saving settings", () => repo.putConfig(nextConfig));
-            generationOptions = deepMerge(defaultGenerationOptions(appConfig), generationOptions);
-            persistGenerationOptions();
-            if (currentUserAddress && appConfig?.bandName) {
-                saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
-                knownAccounts = getKnownAccounts();
-            }
-            toastInfo("Settings saved.");
-        } catch (error) {
-            toastError(error?.message || "Could not save config.");
+            if (await persistConfigEdit(appConfig)) toastInfo("Settings saved.");
         } finally {
             busyMessage = "";
         }
     }
 
+    // Monotonic token serializing config saves: rapid edits can overlap
+    // (debounced autosave + blur save, or two slow writes), and applying an
+    // OLDER save's response would roll the UI and known-accounts registry
+    // back to stale data. Only the newest in-flight save applies its result.
+    let configSaveRevision = 0;
+
     async function persistConfigEdit(nextConfig, errorMessage = "Could not save config.") {
         const normalized = normalizeAppConfig({ ...clone(nextConfig), updatedAt: nowIso() });
+        const sessionAlive = sessionGuard();
+        const revision = ++configSaveRevision;
         appConfig = normalized;
         try {
-            appConfig = await withSync("Saving settings", () => repo.putConfig(normalized));
-            generationOptions = deepMerge(defaultGenerationOptions(appConfig), generationOptions);
+            const saved = await withSync("Saving settings", () => repo.putConfig(normalized));
+            if (!sessionAlive()) return false;
+            // Superseded by a newer save: the write itself succeeded, but
+            // the newer save's response owns the local state.
+            if (revision !== configSaveRevision) return true;
+            setConfigLocal(saved);
             persistGenerationOptions();
+            if (currentUserAddress && appConfig?.bandName) {
+                saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
+                knownAccounts = getKnownAccounts();
+            }
             return true;
         } catch (error) {
             toastError(error?.message || errorMessage);
@@ -1995,15 +1891,19 @@ export function createAppStore(repo) {
     async function persistMemberEdit(memberName, data, errorMessage = "Could not save member.") {
         const normalized = normalizeMemberRecord(data);
         const previousMember = bandMembers?.[memberName];
+        const sessionAlive = sessionGuard();
         bandMembers = { ...bandMembers, [memberName]: normalized };
         try {
             await withSync("Saving member", () => repo.putMember(memberName, normalized));
+            if (!sessionAlive()) return false;
+            void mirror?.putMember({ ...normalized, name: memberName }).catch(() => {});
             return true;
         } catch (error) {
             // Revert only our own key, and only if a newer edit hasn't already
             // replaced it, so a failed save can't clobber a concurrent successful
-            // edit to this or another member.
-            if (bandMembers?.[memberName] === normalized) {
+            // edit to this or another member. Post-switch the state was
+            // blanked/re-hydrated wholesale — nothing of ours to revert.
+            if (sessionAlive() && bandMembers?.[memberName] === normalized) {
                 const next = { ...bandMembers };
                 if (previousMember === undefined) delete next[memberName];
                 else next[memberName] = previousMember;
@@ -2014,22 +1914,32 @@ export function createAppStore(repo) {
         }
     }
 
-    async function addBandMember() {
-        const clean = newMemberName.trim();
-        if (!clean) { toastError("Name the member first."); return; }
-        if (bandMemberEntries.some(([n]) => n === clean)) { toastError("Already exists."); return; }
+    async function addBandMember(name) {
+        const clean = String(name ?? "").trim();
+        if (!clean) { toastError("Name the member first."); return false; }
+        if (bandMemberEntries.some(([n]) => n === clean)) { toastError("Already exists."); return false; }
         if (await persistMemberEdit(clean, { instruments: [] }, "Could not add member.")) {
             expandedBandMember = clean;
-            newMemberName = "";
             toastInfo(`Added "${clean}".`);
+            return true;
         }
+        return false;
     }
 
     async function renameBandMember(oldName, newName) {
         const clean = newName.trim();
         if (!clean || clean === oldName || bandMemberEntries.some(([n]) => n === clean)) return;
+        // The rename cascades through every song referencing the member.
+        // Until the account's first sync has settled, the in-memory catalog
+        // may be partial and the cascade would miss documents — refuse
+        // rather than rename half the catalog.
+        if (!catalogSettled) {
+            toastWarn("Still syncing your catalog — try the rename again in a moment.");
+            return;
+        }
         const data = bandMembers[oldName] || { instruments: [] };
 
+        const sessionAlive = sessionGuard();
         // Put the new key first so a failure leaves the original member
         // intact — songs that reference `oldName` still resolve, and we
         // bail out without touching local state.
@@ -2039,16 +1949,15 @@ export function createAppStore(repo) {
             toastError(error?.message || "Could not rename member.");
             return;
         }
+        if (!sessionAlive()) return;
 
         // Apply the local rename now: the new key exists remotely, so the
         // UI must switch over even if the follow-up delete fails. The
         // caller (BandScreen) moves `editingMemberName` to `clean` without
         // awaiting this function; without the local mutation here the
         // edit-view filter would match nothing and the pane would go blank.
-        const next = { ...bandMembers };
-        delete next[oldName];
-        next[clean] = data;
-        bandMembers = next;
+        upsertMemberLocal(clean, data);
+        removeMemberLocal(oldName);
         if (expandedBandMember === oldName) expandedBandMember = clean;
 
         // Best-effort delete of the old key. A failure here leaves a
@@ -2065,6 +1974,30 @@ export function createAppStore(repo) {
                     error?.message ? ` (${error.message})` : ""
                 }`,
             );
+        }
+        if (!sessionAlive()) return;
+
+        // Cascade the rename into everything else keyed by member name —
+        // song overrides and per-member generation constraints. Without
+        // this, renamed members silently orphaned both.
+        const affectedSongs = songs.filter((s) => s.members && oldName in s.members);
+        for (const song of affectedSongs) {
+            const members = { ...song.members, [clean]: song.members[oldName] };
+            delete members[oldName];
+            try {
+                const saved = await repo.putSong({ ...clone(song), members });
+                if (!sessionAlive()) return;
+                upsertSongLocal(saved);
+            } catch (error) {
+                toastWarn(`Couldn't update "${song.name}" for the rename: ${error?.message || error}`);
+            }
+        }
+        const showMembers = generationOptions.show?.members;
+        if (showMembers?.[oldName]) {
+            const members = { ...showMembers, [clean]: showMembers[oldName] };
+            delete members[oldName];
+            generationOptions = { ...generationOptions, show: { ...generationOptions.show, members } };
+            persistGenerationOptions();
         }
     }
 
@@ -2105,11 +2038,11 @@ export function createAppStore(repo) {
         } else {
             if (!window.confirm(`Remove "${memberName}" from the band?`)) return;
         }
+        const sessionAlive = sessionGuard();
         try {
             await withSync("Removing member", () => repo.deleteMember(memberName));
-            const next = { ...bandMembers };
-            delete next[memberName];
-            bandMembers = next;
+            if (!sessionAlive()) return;
+            removeMemberLocal(memberName);
             if (expandedBandMember === memberName) expandedBandMember = "";
             toastInfo(`Removed "${memberName}".`);
         } catch (error) {
@@ -2117,17 +2050,18 @@ export function createAppStore(repo) {
         }
     }
 
-    async function addBandMemberInstrument(memberName) {
-        const draft = (newInstrumentByMember[memberName] || "").trim();
-        if (!draft) { toastError("Type an instrument name first."); return; }
+    async function addBandMemberInstrument(memberName, instrumentName) {
+        const clean = String(instrumentName ?? "").trim();
+        if (!clean) { toastError("Type an instrument name first."); return false; }
         const member = bandMembers[memberName] || { instruments: [] };
         const current = member.instruments || [];
-        if (current.some((i) => i.name === draft)) { toastError("Already on this member."); return; }
-        const updated = { ...member, instruments: current.concat({ name: draft, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" }) };
+        if (current.some((i) => i.name === clean)) { toastError("Already on this member."); return false; }
+        const updated = { ...member, instruments: current.concat({ name: clean, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newInstrumentByMember = { ...newInstrumentByMember, [memberName]: "" };
-            toastInfo(`Added ${draft} for ${memberName}.`);
+            toastInfo(`Added ${clean} for ${memberName}.`);
+            return true;
         }
+        return false;
     }
 
     async function removeBandMemberInstrument(memberName, instrumentName) {
@@ -2144,10 +2078,6 @@ export function createAppStore(repo) {
         const member = bandMembers[memberName] || { instruments: [] };
         const updated = { ...member, instruments: (member.instruments || []).filter((i) => i.name !== instrumentName) };
         if (await persistMemberEdit(memberName, updated)) toastInfo(`Removed ${instrumentName} from ${memberName}.`);
-    }
-
-    function tuningDraftKey(memberName, instrumentName) {
-        return `${memberName}::${instrumentName}`;
     }
 
     // Ensure a member and instrument exist in band members (creates them if missing)
@@ -2167,21 +2097,20 @@ export function createAppStore(repo) {
         if (dirty) await persistMemberEdit(memberName, member);
     }
 
-    async function addTuningChoice(memberName, instrumentName) {
-        const draftKey = tuningDraftKey(memberName, instrumentName);
-        const clean = (newTuningByInstrument[draftKey] || "").trim();
-        if (!clean) { toastError("Type a tuning name first."); return; }
+    async function addTuningChoice(memberName, instrumentName, tuning) {
+        const clean = String(tuning ?? "").trim();
+        if (!clean) { toastError("Type a tuning name first."); return ""; }
         await ensureBandInstrument(memberName, instrumentName);
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
         const current = currentInstruments.find((i) => i.name === instrumentName);
-        if ((current?.tunings || []).includes(clean)) { toastError("Already exists."); return; }
+        if ((current?.tunings || []).includes(clean)) { toastError("Already exists."); return ""; }
         const updated = { ...member, instruments: currentInstruments.map((i) => i.name !== instrumentName ? i : { ...i, tunings: (i.tunings || []).concat(clean) }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newTuningByInstrument = { ...newTuningByInstrument, [draftKey]: "" };
             toastInfo(`Added "${clean}" to ${instrumentName}.`);
+            return clean;
         }
-        return clean;
+        return "";
     }
 
     async function removeTuningChoice(memberName, instrumentName, tuning) {
@@ -2220,25 +2149,20 @@ export function createAppStore(repo) {
         }
     }
 
-    function techniqueDraftKey(memberName, instrumentName) {
-        return `${memberName}::${instrumentName}::tech`;
-    }
-
-    async function addTechniqueChoice(memberName, instrumentName) {
-        const draftKey = techniqueDraftKey(memberName, instrumentName);
-        const clean = (newTechniqueByInstrument[draftKey] || "").trim();
-        if (!clean) { toastError("Type a technique name first."); return; }
+    async function addTechniqueChoice(memberName, instrumentName, technique) {
+        const clean = String(technique ?? "").trim();
+        if (!clean) { toastError("Type a technique name first."); return ""; }
         await ensureBandInstrument(memberName, instrumentName);
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
         const current = currentInstruments.find((i) => i.name === instrumentName);
-        if ((current?.techniques || []).includes(clean)) { toastError("Already exists."); return; }
+        if ((current?.techniques || []).includes(clean)) { toastError("Already exists."); return ""; }
         const updated = { ...member, instruments: currentInstruments.map((i) => i.name !== instrumentName ? i : { ...i, techniques: (i.techniques || []).concat(clean) }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newTechniqueByInstrument = { ...newTechniqueByInstrument, [draftKey]: "" };
             toastInfo(`Added "${clean}" technique to ${instrumentName}.`);
+            return clean;
         }
-        return clean;
+        return "";
     }
 
     async function removeTechniqueChoice(memberName, instrumentName, technique) {
@@ -2338,6 +2262,10 @@ export function createAppStore(repo) {
 
     async function importFromFile() {
         if (!importFile) { toastError("Choose a JSON file first."); return; }
+        const sessionAlive = sessionGuard();
+        const abortIfSwitched = () => {
+            if (!sessionAlive()) throw new Error("Import stopped — the account changed mid-way.");
+        };
         try {
             busyMessage = "Importing...";
             const text = await importFile.text();
@@ -2349,30 +2277,39 @@ export function createAppStore(repo) {
             await withSync("Importing data", async () => {
                 for (const s of imported.songs) {
                     if (importMode === "skip" && existing.has(s.id)) continue;
-                    await repo.putSong(s); ws++;
+                    const saved = await repo.putSong(s);
+                    abortIfSwitched();
+                    upsertSongLocal(saved); ws++;
                 }
                 if (imported.config && (importMode === "overwrite" || !appConfig)) {
-                    await repo.putConfig(imported.config);
+                    const savedConfig = await repo.putConfig(imported.config);
+                    abortIfSwitched();
+                    setConfigLocal(savedConfig);
                 }
                 // Import members
                 if (imported.bandMembers) {
                     for (const [name, data] of Object.entries(imported.bandMembers)) {
-                        await repo.putMember(name, normalizeMemberRecord(data));
+                        const savedMember = await repo.putMember(name, normalizeMemberRecord(data));
+                        abortIfSwitched();
+                        upsertMemberLocal(name, savedMember);
                     }
                 }
                 // Import setlists
                 if (imported.savedSetlists && imported.savedSetlists.length > 0) {
                     for (const entry of imported.savedSetlists) {
-                        await repo.putSetlist(migrator.migrateDocument("setlists", entry));
+                        const savedSetlist = await repo.putSetlist(migrator.migrateDocument("setlists", entry));
+                        abortIfSwitched();
+                        upsertSetlistLocal(savedSetlist);
                     }
                 }
-                bootstrapMeta = await repo.putBootstrapMeta({
+                const savedBootstrap = await repo.putBootstrapMeta({
                     source: "uploaded-json", payloadType: imported.payloadType, mode: importMode,
                     fileName: importFile?.name || null, importedSongs: ws
                 });
+                abortIfSwitched();
+                setBootstrapLocal(savedBootstrap);
             });
 
-            await reloadAll({ quiet: true });
             const parts = [`${ws} song${ws === 1 ? "" : "s"}`];
             if (imported.savedSetlists?.length) parts.push(`${imported.savedSetlists.length} saved setlist${imported.savedSetlists.length === 1 ? "" : "s"}`);
             if (imported.bandMembers) parts.push(`${Object.keys(imported.bandMembers).length} member${Object.keys(imported.bandMembers).length === 1 ? "" : "s"}`);
@@ -2399,26 +2336,27 @@ export function createAppStore(repo) {
     }
 
     // ---- migrations ----
-    async function runMigrations({ skipReload = false } = {}) {
-        let needsReload = false;
-
+    async function runMigrations() {
+        const sessionAlive = sessionGuard();
         // Migrate config: read raw config to check for band.members before normalization strips them
-        pushSyncLog("Checking data migrations");
         const rawConfig = await repo.getRawConfig();
+        if (!sessionAlive()) return;
         if (rawConfig?.band?.members && Object.keys(rawConfig.band.members).length > 0) {
-            pushSyncLog("Migrating band members from legacy config");
             // Extract members from old config and write only those not already migrated
             for (const [name, data] of Object.entries(rawConfig.band.members)) {
                 if (!bandMembers[name]) {
-                    await repo.putMember(name, normalizeMemberRecord(data));
+                    const savedMember = await repo.putMember(name, normalizeMemberRecord(data));
+                    if (!sessionAlive()) return;
+                    upsertMemberLocal(name, savedMember);
                 }
             }
             // Run rs-migrate on the raw config to strip band.members, then save
             const migratedConfig = migrator.migrateDocument("config", rawConfig);
             if (migratedConfig !== rawConfig) {
-                await repo.putConfig(migratedConfig);
+                const savedConfig = await repo.putConfig(migratedConfig);
+                if (!sessionAlive()) return;
+                setConfigLocal(savedConfig);
             }
-            needsReload = true;
         }
 
         // Migrate localStorage setlists to remoteStorage
@@ -2426,7 +2364,6 @@ export function createAppStore(repo) {
             const localKey = storageKey("saved-sets");
             const raw = localStorage.getItem(localKey);
             if (raw) {
-                pushSyncLog("Migrating saved setlists from local storage");
                 const localSets = tryParseJson(raw, []) || [];
                 if (localSets.length > 0) {
                     // Normalize via rs-migrate before uploading
@@ -2434,23 +2371,13 @@ export function createAppStore(repo) {
                     const toMigrate = localSets.filter((s) => !remoteIds.has(s.id));
                     for (const entry of toMigrate) {
                         const normalized = migrator.migrateDocument("setlists", entry);
-                        await repo.putSetlist(normalized);
+                        const savedSetlist = await repo.putSetlist(normalized);
+                        if (!sessionAlive()) return;
+                        upsertSetlistLocal(savedSetlist);
                     }
-                    if (toMigrate.length > 0) needsReload = true;
                 }
                 localStorage.removeItem(localKey);
             }
-        }
-
-        if (needsReload) {
-            if (skipReload) {
-                pushSyncLog("Migrations applied; reload skipped");
-            } else {
-                pushSyncLog("Reloading after migrations");
-                await reloadAll({ quiet: true });
-            }
-        } else {
-            pushSyncLog("No migrations needed");
         }
     }
 
@@ -2467,6 +2394,20 @@ export function createAppStore(repo) {
             toastWarn("Some local data was unreadable and has been reset.");
         }
 
+        // One-time cleanup of pre-multi-account localStorage keys.
+        clearUnscopedLocalStorage();
+
+        // Local-first boot: hydrate the last active account's mirror
+        // immediately. The UI is fully usable on local data while rs.js
+        // initializes and re-establishes the remote session in parallel.
+        let bootAddress = "";
+        try {
+            bootAddress = localStorage.getItem(ACTIVE_ACCOUNT_KEY) || "";
+        } catch (_e) { /* storage unavailable */ }
+        // Held so the connected handler can await an in-flight boot hydrate
+        // for the SAME account instead of racing it.
+        let pendingActivation = bootAddress ? activateAccount(bootAddress) : null;
+
         // Safety timeout in case RS never fires "connected" or "not-connected"
         // (e.g. library bug or feature loading hangs).
         const safetyTimer = setTimeout(() => {
@@ -2475,279 +2416,162 @@ export function createAppStore(repo) {
             }
         }, 10000);
 
-        // RS fires "not-connected" after features load when there is no stored
-        // token and no OAuth redirect params. This replaces the old fixed 800ms
-        // timer that could race against async feature init (IndexedDB open).
+        // RS fires "not-connected" after features load when there is no
+        // stored token and no OAuth redirect params.
         const detachNotConnected = repo.on("not-connected", () => {
             clearTimeout(safetyTimer);
-            if (connectionStatus === "pending") {
+            if (connectionStatus !== "pending") return;
+            // rs.js lost its own session but we still have an active local
+            // account. If its token is in the registry, re-establish the
+            // remote session silently; either way the local data stays up.
+            const savedToken = bootAddress ? normalizeAuthToken(getAccountToken(bootAddress)) : undefined;
+            if (bootAddress && savedToken) {
+                connectionStatus = "connecting";
+                armConnectingWatchdog();
+                repo.connect(bootAddress, savedToken);
+            } else {
                 connectionStatus = "disconnected";
             }
         });
 
         const detachConnecting = repo.on("connecting", () => {
             syncStatusLabel = "Discovering remote storage";
-            pushSyncLog("Discovering remote storage endpoint");
         });
         const detachAuthing = repo.on("authing", () => {
             syncStatusLabel = "Waiting for authorization";
-            pushSyncLog("Authorization required");
+            // The user may be typing a password in the OAuth popup — give
+            // this phase the long window.
+            if (connectionStatus === "connecting") armConnectingWatchdog(AUTHING_TIMEOUT_MS);
         });
         const detachStandaloneRedirect = repo.on("standalone-auth-redirect", () => {
             syncStatusLabel = "Opening authorization";
-            pushSyncLog("Redirecting this app to the remoteStorage login");
         });
-        const detachSyncStarted = repo.on("sync-started", () => {
-            dbg("rs.js event: sync-started");
-            pushSyncLog("Sync cycle started");
-            // Diagnostic only. We deliberately do NOT bumpSyncActivity or
-            // setSyncState("syncing") here: rs.js fires sync-started for
-            // every sync cycle, including periodic ETag-refresh cycles that
-            // accomplish no actual data movement. Treating those as
-            // "activity" pinned the flip indefinitely (each ~2 s poll
-            // cancelled the pending settle). Real data movement is signaled
-            // by remote `onChange` events, which DO bumpSyncActivity and
-            // re-set the syncing state — so any actual round 2/3 work
-            // during bootstrap, or genuine remote changes during steady
-            // state, will correctly extend / re-arm the indicator.
-        });
-        const detachSyncReqDone = repo.on("sync-req-done", (event) => {
-            dbg(`rs.js event: sync-req-done tasksRemaining=${event?.tasksRemaining ?? 0}`);
-            pushSyncLog(`Sync request finished, ${event?.tasksRemaining ?? 0} remaining`);
-            // Diagnostic only — see sync-started above. A task completing
-            // doesn't imply data changed (refresh tasks finish without
-            // firing onChange when ETags match).
-        });
+
         const detachSyncDone = repo.on("sync-done", (event) => {
-            dbg(`rs.js event: sync-done completed=${event?.completed}`);
-            pushSyncLog(event?.completed ? "Sync cycle completed" : "Sync cycle paused for retry");
-            // sync-done {completed:true} is necessary but not sufficient: rs.js
-            // sometimes fires this before all body change events propagate, so
-            // pendingBodies (read from the cache after each reload) is the
-            // authoritative gate. We just record the milestone — the actual
-            // pill flip happens once the next reloadAll lands and confirms
-            // pendingBodies === 0.
-            if (event?.completed) {
-                syncRoundCompleted = true;
-                maybeMarkSynced();
-            }
+            // Quiescence detection: sync-done arms the settle timer, any
+            // incoming remote change (below) cancels it. One quiet polling
+            // interval after a completed round means the tree is in.
+            if (event?.completed) armSettleTimer();
         });
 
         const detachConnected = repo.on("connected", async () => {
             clearTimeout(safetyTimer);
-            // Swap landed (or first connect completed). Release the swap
-            // guard now: any further `disconnected` event must be a real
-            // user-initiated disconnect, not the old account's stale
-            // cleanup. Idempotent — does nothing on cold connects where
-            // the guard was never raised.
-            releaseSwitching("connected");
-            // Each connect starts a fresh session so prior async work is
-            // discarded even on a plain (non-swap) reconnect.
-            activeSession += 1;
+            cancelConnectingWatchdog();
+            isSwitching = false;
             connectionStatus = "connected";
-            // Fresh connection — clear any cross-session sync gates so the
-            // pill doesn't inherit completion state from the previous
-            // account. (connectToAccount already resets these for the
-            // snapshot path; this covers cold connect and OAuth-redirect.)
-            syncRoundCompleted = false;
-            pendingBodies = 0;
-            initialSyncSettled = false;
-            if (changeReloadTimer) { clearTimeout(changeReloadTimer); changeReloadTimer = null; changeReloadPending = false; }
-            bumpSyncActivity("connected");
-            // Cold connect / OAuth path: ensure rs.js is in bootstrap-pace
-            // polling. (connectToAccount already does this for swaps.)
-            tightenSyncInterval();
-            if (syncState !== "error") setSyncState("syncing");
-            connectAddress = repo.getUserAddress() || connectAddress;
-            currentUserAddress = connectAddress;
-            loadUserLocalData();
-            pushSyncLog(`Connected as ${currentUserAddress}`);
-
-            if (initialSyncComplete) {
-                // Snapshot already restored (account switch) — don't overwrite
-                // with stale cache. The onChange handler will pick up fresh
-                // data once rs.js finishes syncing with the new remote.
-                try {
-                    await runMigrations({ skipReload: true });
-                } catch (err) {
-                    console.error("Migration failed:", err);
-                    toastError("Data migration encountered an error. Some data may need re-syncing.");
-                    pushSyncLog("Data migration encountered an error");
-                }
-            } else {
-                // First load or switch without snapshot — read from cache
-                beginSync("Loading");
-                try {
-                    await reloadAll({ quiet: true });
-                    await runMigrations();
-                } catch (err) {
-                    console.error("Migration/reload failed:", err);
-                    toastError("Data sync encountered an error. Some data may need re-syncing.");
-                    pushSyncLog("Initial sync encountered an error");
-                } finally {
-                    endSync();
-                }
+            loadError = "";
+            const address = repo.getUserAddress() || connectAddress;
+            if (pendingActivation) {
+                await pendingActivation;
+                pendingActivation = null;
             }
+            let session = activeSession;
+            if (address && address !== currentUserAddress) {
+                // Cold connect or OAuth return — adopt the account locally.
+                // (Swaps already activated the account before reconnecting.)
+                activeSession += 1;
+                session = activeSession;
+                await activateAccount(address, session);
+                if (session !== activeSession) return;
+            }
+            if (initialSyncDone) relaxSyncInterval();
+            else tightenSyncInterval();
+            setSyncState("syncing");
+            syncStatusLabel = "Syncing";
             saveKnownAccount(currentUserAddress, { bandName: appConfig?.bandName || "" }, repo.getToken());
             knownAccounts = getKnownAccounts();
+            // First sync of this account on this device: also adopt whatever
+            // already sits in rs.js's own cache (pre-mirror builds), since
+            // unchanged cached documents never re-fire change events.
+            if (!initialSyncDone) void seedFromRepoCache(session);
+            try {
+                await runMigrations();
+            } catch (err) {
+                console.error("Migration failed:", err);
+                toastError("Data migration encountered an error. Some data may need re-syncing.");
+            }
         });
 
         const detachDisconnected = repo.on("disconnected", () => {
-            // Mid-swap, the disconnected event is just an intermediate step.
-            // Don't wipe state — the snapshot we restored stays visible until
-            // the next `connected` event fills in real data.
-            if (isSwitching) {
-                // Consume the straggler flag too: the in-window disconnect
-                // satisfies the expectation set by expectSwapDisconnect(),
-                // and we don't want a stale flag living past this point.
-                consumePendingSwapDisconnect();
-                pushSyncLog("Disconnected (switching accounts)");
-                return;
-            }
-            // Post-swap straggler: rs.js's old-account `disconnected` event
-            // can arrive AFTER the new account's `connected` because
-            // repo.swap() resolves via a 3 s safety timeout that doesn't
-            // wait for the underlying disconnect to actually finish. By the
-            // time this lands, isSwitching has already been released by the
-            // connected handler — but we still need to skip the wipe, since
-            // it's the OLD account telling us about itself. The straggler
-            // flag was armed at swap entry exactly for this case.
-            if (pendingSwapDisconnect) {
-                consumePendingSwapDisconnect();
-                pushSyncLog("Disconnected (post-swap straggler from old account — ignored)");
-                return;
-            }
-            terminateWorker();
-            isGenerating = false;
+            // Nothing destructive happens on disconnect anymore — data wipes
+            // are explicit (forgetAccount). Mid-swap, the old account's
+            // disconnect is an intermediate step; and a "straggler"
+            // disconnect can land even after the new account has connected
+            // (repo.swap resolves via a safety timeout). Both must not
+            // clobber the live connection status.
+            if (isSwitching || repo.isConnected()) return;
+            cancelConnectingWatchdog();
             connectionStatus = "disconnected";
-            reloadInFlight = 0;
-            pendingBodies = 0;
-            syncRoundCompleted = false;
-            initialSyncSettled = false;
-            if (syncStalledTimer) clearTimeout(syncStalledTimer);
-            syncStalledTimer = null;
-            syncStalled = false;
-            bumpSyncActivity("disconnected");
-            // Reset the pill's high-level state too. Without this, a
-            // disconnect mid-bootstrap (or mid-swap that fell through the
-            // wipe path) leaves syncState pinned at "syncing" — RollScreen
-            // then keeps rendering the sync skeleton forever instead of the
-            // onboarding/login UI.
-            setSyncState("idle");
-            loadError = "";
-            clearUserLocalStorage();
-            clearUnscopedLocalStorage();
-            currentUserAddress = "";
-            songs = [];
-            appConfig = null;
-            clearGeneratedSetlist();
-            setlistLocked = false;
-            setlistSaved = false;
-            savedSetlists = [];
-            bandMembers = {};
-            initialSyncComplete = false;
-            selectedSongId = "";
-            editorSong = null;
-            pushSyncLog("Disconnected");
+            cancelSettleTimer();
+            if (syncState !== "error") setSyncState("idle");
         });
 
         const detachError = repo.on("error", (error) => {
             loadError = error?.message || "remoteStorage error.";
             toastError(loadError);
-            pushSyncLog(loadError);
-            // Surface the error in the pill/skeleton state. Without this,
-            // setting `loadError` alone keeps maybeMarkSynced blocked while
-            // syncState stays "syncing" — the dot pulses blue forever and
-            // the user never sees the errored state. The next reloadAll
-            // (triggered by user action or fresh remote onChange) will
-            // unconditionally re-set syncState back to "syncing" via the
-            // bumpSyncActivity / setSyncState calls in reloadAll start, so
-            // we don't need a separate recovery path here.
             setSyncState("error");
-            // Only nuke the session for auth/discovery failures. SyncError and
-            // friends are typically transient (flaky network, 5xx) — let rs.js
-            // retry instead of dropping the user back to the login screen.
+            // Auth/discovery failures end the remote session — but local
+            // data stays: the user may only need to re-authorize. Transient
+            // errors (flaky network, 5xx) are left for rs.js to retry.
             const fatal = error?.name === "Unauthorized" || error?.name === "DiscoveryError";
             if (fatal) {
-                // If we're mid-swap, release the guard so the upcoming
-                // `disconnected` event runs the wipe instead of being
-                // swallowed by the swap-in-progress check. Also consume
-                // the straggler flag — otherwise repo.disconnect() below
-                // would land a `disconnected` event that gets eaten by
-                // the post-swap branch instead of running the wipe we
-                // want for a fatal auth failure.
-                releaseSwitching("fatal error during swap");
-                consumePendingSwapDisconnect();
-                repo.disconnect();
+                isSwitching = false;
+                cancelConnectingWatchdog();
+                if (repo.isConnected()) repo.disconnect();
+                // Set the status directly — the disconnected event may be
+                // skipped by its staleness guard while rs.js still reports
+                // connected mid-teardown.
+                connectionStatus = "disconnected";
             }
         });
 
-        // Coalesce change-driven reloads. rs.js streams one change event per
-        // document while pulling remote data, so a bootstrap of a ~150-song
-        // catalog fires ~150 events — without a debounce, each one kicked a
-        // full reloadAll() (five slice reads + normalize + sort). The
-        // reloadGen guard already discards stale *results*, but all that
-        // wasted work still ran on the main thread: an O(N²) bootstrap.
-        // A trailing debounce collapses each burst into one reload. The
-        // settle-window logic tolerates the delay because every event still
-        // bumpSyncActivity()s immediately below, keeping the pill honest
-        // while the timer is pending.
-        let changeReloadTimer = null;
-        // True if any event in the current burst was remote-origin; picks
-        // the sync label when the coalesced reload finally runs.
-        let changeBurstHadRemote = false;
-        // Session pinned at the LATEST event of the burst. If the user swaps
-        // accounts mid-burst, the swap bumps activeSession, and reloadAll's
-        // own session guard drops the stale results.
-        let changeBurstSession = 0;
-        const detachChange = repo.onChange((event) => {
-            dbg(`rs.js change: path=${event?.relativePath || event?.path || "?"} origin=${event?.origin} oldVal=${typeof event?.oldValue} newVal=${typeof event?.newValue}`);
-            if (connectionStatus !== "connected" || event?.origin === "window") return;
-            // Remote-origin events mean rs.js is streaming bodies in. Show
-            // activity in the pill even though the reload is deferred, and
-            // cancel any pending settle-window flip since data is still
-            // arriving.
-            if (event?.origin === "remote") {
-                changeBurstHadRemote = true;
-                bumpSyncActivity("remote onChange");
-                if (syncState !== "error") setSyncState("syncing");
+        const detachOffline = repo.on("network-offline", () => {
+            cancelSettleTimer();
+            if (syncState === "syncing" || syncState === "synced") setSyncState("idle");
+            syncStatusLabel = "Offline";
+        });
+        const detachOnline = repo.on("network-online", () => {
+            if (connectionStatus === "connected") {
+                setSyncState("syncing");
+                syncStatusLabel = "Syncing";
             }
-            changeBurstSession = activeSession;
-            if (changeReloadTimer) clearTimeout(changeReloadTimer);
-            changeReloadPending = true;
-            changeReloadTimer = setTimeout(async () => {
-                changeReloadTimer = null;
-                changeReloadPending = false;
-                const hadRemote = changeBurstHadRemote;
-                changeBurstHadRemote = false;
-                const session = changeBurstSession;
-                beginSync(hadRemote ? "Pulling remote changes" : "Syncing");
-                try { await reloadAll({ quiet: true, session }); }
-                finally { endSync(); }
-            }, CHANGE_RELOAD_DEBOUNCE_MS);
+        });
+
+        // Apply remote/conflict changes incrementally — one document at a
+        // time, straight into memory + mirror. Local-origin events are
+        // echoes of our own optimistic writes (already applied); "window"
+        // origin is disabled at the rs.js constructor.
+        const detachChange = repo.onChange((event) => {
+            if (event?.origin !== "remote" && event?.origin !== "conflict") return;
+            if (!currentUserAddress) return;
+            // Mid-swap, in-flight events can still belong to the OLD
+            // account's aborted sync — never apply them to the new mirror.
+            if (isSwitching) return;
+            cancelSettleTimer();
+            if (syncState !== "error") setSyncState("syncing");
+            applyRemoteChange(event);
         });
 
         return () => {
             window.removeEventListener("hashchange", syncRouteFromHash);
             clearTimeout(safetyTimer);
-            if (syncIndicatorTimer) clearTimeout(syncIndicatorTimer);
             if (syncStateTimer) clearTimeout(syncStateTimer);
-            if (syncFlipTimer) clearTimeout(syncFlipTimer);
-            if (syncStalledTimer) clearTimeout(syncStalledTimer);
-            if (switchingWatchdog) clearTimeout(switchingWatchdog);
-            if (pendingSwapDisconnectTimer) clearTimeout(pendingSwapDisconnectTimer);
-            if (changeReloadTimer) { clearTimeout(changeReloadTimer); changeReloadPending = false; }
+            cancelSettleTimer();
+            cancelConnectingWatchdog();
+            cancelConfigSave();
             detachConnecting();
             detachAuthing();
             detachStandaloneRedirect();
-            detachSyncStarted();
-            detachSyncReqDone();
             detachSyncDone();
             detachConnected();
             detachDisconnected();
             detachNotConnected();
             detachError();
+            detachOffline();
+            detachOnline();
             detachChange();
+            try { mirror?.close(); } catch (_e) { /* already closed */ }
+            mirror = null;
         };
     }
 
@@ -2774,16 +2598,14 @@ export function createAppStore(repo) {
         get busyMessage() { return busyMessage; },
         get toastMessages() { return toastMessages; },
         get showFirstRunPrompt() { return showFirstRunPrompt; },
-        get initialSyncComplete() { return initialSyncComplete; },
+        get hydrated() { return hydrated; },
+        get initialSyncDone() { return initialSyncDone; },
+        get currentUserAddress() { return currentUserAddress; },
         get firstRunBandName() { return firstRunBandName; },
         set firstRunBandName(v) { firstRunBandName = v; },
-        get syncIndicatorVisible() { return syncIndicatorVisible; },
         get syncStatusLabel() { return syncStatusLabel; },
         get syncActivelyRunning() { return syncActiveCount > 0; },
         get syncState() { return syncState; },
-        get syncLogEntries() { return syncLogEntries; },
-        get syncStalled() { return syncStalled; },
-        retrySync,
         get generationOptions() { return generationOptions; },
         get editorSong() { return editorSong; },
         get selectedSongId() { return selectedSongId; },
@@ -2802,14 +2624,6 @@ export function createAppStore(repo) {
         clearKeyFilters() { songKeyFilters = new Set(); },
         get expandedBandMember() { return expandedBandMember; },
         set expandedBandMember(v) { expandedBandMember = v; },
-        get newMemberName() { return newMemberName; },
-        set newMemberName(v) { newMemberName = v; },
-        get newInstrumentByMember() { return newInstrumentByMember; },
-        set newInstrumentByMember(v) { newInstrumentByMember = v; },
-        get newTuningByInstrument() { return newTuningByInstrument; },
-        set newTuningByInstrument(v) { newTuningByInstrument = v; },
-        get newTechniqueByInstrument() { return newTechniqueByInstrument; },
-        set newTechniqueByInstrument(v) { newTechniqueByInstrument = v; },
         get importMode() { return importMode; },
         set importMode(v) { importMode = v; },
         get importFile() { return importFile; },
@@ -2869,10 +2683,14 @@ export function createAppStore(repo) {
         openNewSong,
         openSong,
         closeEditor,
+        stageVocabAdd,
+        stagedInstrumentAdds,
+        stagedTuningAdds,
+        stagedTechniqueAdds,
+        get editorVocabAdds() { return editorVocabAdds; },
         get editReturnView() { return editReturnView; },
         set editReturnView(v) { editReturnView = v; },
         updateSongField,
-        renameMember,
         addMember,
         removeMember,
         addInstrumentOption,
@@ -2897,8 +2715,6 @@ export function createAppStore(repo) {
         addTechniqueChoice,
         removeTechniqueChoice,
         setInstrumentDefaultTechnique,
-        techniqueDraftKey,
-        tuningDraftKey,
         exportAllData,
         importFromFile,
         performanceSummary,
@@ -2907,6 +2723,7 @@ export function createAppStore(repo) {
         toastError,
         toastAction,
         dismissToast,
+        runToastAction,
         songsUsingMember,
         songsUsingInstrument,
         songsUsingTuning,

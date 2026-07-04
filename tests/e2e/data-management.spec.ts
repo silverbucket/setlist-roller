@@ -119,6 +119,10 @@ test.describe("Import", () => {
         );
         await app.goto();
         await app.waitForReady();
+        // Settle the bootstrap sync before importing: an import racing an
+        // in-flight pull of the same doc loses to rs.js's remote-wins
+        // conflict handling (real imports never happen mid-bootstrap).
+        await app.waitForSynced();
         const shell = new AppShell(page);
         await shell.gotoBand();
 
@@ -229,6 +233,10 @@ test.describe("Delete all data", () => {
         );
         await app.goto();
         await app.waitForReady();
+        // Settle the bootstrap sync before wiping: deletes racing an
+        // in-flight pull of the same docs lose to rs.js's remote-wins
+        // conflict handling and the data resurrects.
+        await app.waitForSynced();
         const shell = new AppShell(page);
         await shell.gotoBand();
 
