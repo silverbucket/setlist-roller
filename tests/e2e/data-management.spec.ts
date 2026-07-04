@@ -119,6 +119,10 @@ test.describe("Import", () => {
         );
         await app.goto();
         await app.waitForReady();
+        // Settle the bootstrap sync before importing: an import racing an
+        // in-flight pull of the same doc loses to rs.js's remote-wins
+        // conflict handling (real imports never happen mid-bootstrap).
+        await app.waitForSynced();
         const shell = new AppShell(page);
         await shell.gotoBand();
 

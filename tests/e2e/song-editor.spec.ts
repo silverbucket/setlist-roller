@@ -71,7 +71,8 @@ test.describe("Song editor — basics", () => {
         await songs.openSong("Stable");
         await editor.waitForVisible();
         await editor.fillName("Changed In Memory");
-        await editor.close();
+        // A dirty editor asks before discarding — accept the confirm.
+        await editor.closeDiscarding();
 
         // Original is still in the list — Back does NOT save the change.
         await songs.expectSongVisible("Stable");
@@ -216,7 +217,7 @@ test.describe("Song editor — delete confirmation", () => {
 });
 
 test.describe("Song editor — members & instruments", () => {
-    test("can add an existing band member to a song", async ({ page, app }) => {
+    test("band members show their usual setup; an untouched override squashes at save", async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 members: {
@@ -232,18 +233,59 @@ test.describe("Song editor — members & instruments", () => {
         const editor = new SongEditorPage(page);
         await songs.openSong("Add Alice");
         await editor.waitForVisible();
-        await editor.addMemberByName("Alice");
+        // Alice appears as a usual-setup row (no per-song data needed).
+        await expect(editor.usualSetupRow("Alice")).toBeVisible();
 
-        // The member section should now appear with Alice listed.
+        // Creating an override shows the full editor card...
+        await editor.addMemberByName("Alice");
         await expect(editor.memberSection("Alice")).toBeVisible();
         await editor.save();
 
+        // ...but an override left identical to the usual setup stores
+        // nothing on the song — inheritance covers it.
         const state = await app.getState();
         const song = state.songs.find((s: SeedSong) => s.name === "Add Alice");
-        expect(song.members.Alice).toBeTruthy();
+        expect(song.members.Alice).toBeUndefined();
     });
 
-    test("can add a new ad-hoc member from the editor", async ({ page, app }) => {
+    test("a modified override persists on the song", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                members: {
+                    Alice: makeMember("Alice", { instruments: [{ name: "Guitar" }] }),
+                },
+                songs: { x: makeSong({ id: "x", name: "Capo Song" }) },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSongs();
+
+        const songs = new SongsPage(page);
+        const editor = new SongEditorPage(page);
+        await songs.openSong("Capo Song");
+        await editor.waitForVisible();
+        await editor.addMemberByName("Alice");
+        await expect(editor.memberSection("Alice")).toBeVisible();
+        // Deviate from the usual setup: capo 2.
+        const card = editor.memberSection("Alice");
+        await card.getByRole("button", { name: "Increase" }).click();
+        await card.getByRole("button", { name: "Increase" }).click();
+        await editor.save();
+
+        const state = await app.getState();
+        const song = state.songs.find((s: SeedSong) => s.name === "Capo Song");
+        expect(song.members.Alice.instruments[0].capo).toBe(2);
+        // Resetting to the usual setup removes the stored override again.
+        await songs.openSong("Capo Song");
+        await editor.waitForVisible();
+        await editor.expandMember("Alice");
+        await editor.memberSection("Alice").getByRole("button", { name: "Reset to usual setup" }).click();
+        await editor.save();
+        const after = await app.getState();
+        expect(after.songs.find((s: SeedSong) => s.name === "Capo Song").members.Alice).toBeUndefined();
+    });
+
+    test("songs need no member setup at all when everyone plays their usual gear", async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: { x: makeSong({ id: "x", name: "Solo Tune" }) },
@@ -256,9 +298,9 @@ test.describe("Song editor — members & instruments", () => {
         const editor = new SongEditorPage(page);
         await songs.openSong("Solo Tune");
         await editor.waitForVisible();
-        // No existing members — only the "+ New member" button appears
-        await editor.addNewMember();
-        // A member card with empty name should now be visible
-        await expect(editor.overlay.locator(".member-card")).toHaveCount(1);
+        // No band members configured — the editor says so and offers no
+        // override UI (members are managed on the Band screen now).
+        await expect(editor.overlay.locator(".members-hint")).toContainText(/No band members/);
+        await expect(editor.overlay.locator(".member-card")).toHaveCount(0);
     });
 });

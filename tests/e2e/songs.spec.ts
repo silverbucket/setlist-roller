@@ -193,17 +193,20 @@ test.describe("Songs catalog — status filters", () => {
         expect(names).toEqual(["Needs Work"]);
     });
 
-    test("Incomplete chip surfaces songs missing setup", async ({ page, app }) => {
+    test("Incomplete chip surfaces songs with broken overrides", async ({ page, app }) => {
+        // Under the inheritance model, a song with NO member entries is
+        // fully valid (everyone plays their usual setup). Incomplete now
+        // means an explicit override that's broken — an unnamed instrument.
         await app.seed(
             buildSeed({
                 members: { Alice: makeMember("Alice", { instruments: [{ name: "Guitar" }] }) },
                 songs: {
-                    ok: makeSong({
-                        id: "ok",
-                        name: "Complete",
-                        members: { Alice: { instruments: [{ name: "Guitar" }] } },
+                    ok: makeSong({ id: "ok", name: "Complete", members: {} }),
+                    inc: makeSong({
+                        id: "inc",
+                        name: "Half-baked",
+                        members: { Alice: { instruments: [{ name: "", tuning: [], capo: 0, picking: [] }] } },
                     }),
-                    inc: makeSong({ id: "inc", name: "Half-baked", members: {} }),
                 },
             }),
         );

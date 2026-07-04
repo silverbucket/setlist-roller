@@ -206,7 +206,8 @@ test.describe("Band screen — advanced config", () => {
         const band = new BandPage(page);
         await band.openAdvancedConfig();
         await expect(band.advancedTitle).toBeVisible();
-        await expect(band.saveSettingsButton).toBeVisible();
+        // No explicit save button anymore — edits autosave (debounced).
+        await expect(band.autosaveHint).toBeVisible();
     });
 
     test("Back button from advanced returns to main view", async ({ page, app }) => {

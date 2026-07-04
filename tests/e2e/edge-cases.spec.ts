@@ -183,7 +183,7 @@ test.describe("Search / filter edge cases", () => {
 });
 
 test.describe("Boundary inputs", () => {
-    test("saving a song with no name shows an error toast and keeps the editor open", async ({ page, app }) => {
+    test("a song with no name cannot be saved (Save disabled, editor stays open)", async ({ page, app }) => {
         await app.seed(buildSeed());
         await app.goto();
         await app.waitForReady();
@@ -193,11 +193,12 @@ test.describe("Boundary inputs", () => {
         await songs.clickAdd();
         const editor = new SongEditorPage(page);
         await editor.waitForVisible();
-        // Don't fill in a name — name input is empty by default
-        await editor.saveButton.click();
-        // Editor should stay open; toast should explain why.
+        // Name input is empty by default — Save must be disabled, and
+        // typing a name enables it.
+        await expect(editor.saveButton).toBeDisabled();
+        await editor.fillName("Now It Has A Name");
+        await expect(editor.saveButton).toBeEnabled();
         await expect(editor.overlay).toBeVisible();
-        await expect(new AppShell(page).toast).toContainText(/name/i);
     });
 
     test("song count stepper enforces minimum and maximum", async ({ app }) => {
