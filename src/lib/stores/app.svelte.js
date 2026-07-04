@@ -643,15 +643,53 @@ export function createAppStore(repo) {
     }
 
     // Quiescence detector: rs.js fired sync-done and one full polling
-    // interval passed with no incoming remote changes — the tree is in.
-    // Every remote change cancels the timer (see onChange in init); the
-    // next sync-done re-arms it.
+    // interval passed with no incoming remote changes — the tree should be
+    // in. Every remote change cancels the timer (see onChange in init); the
+    // next sync-done re-arms it. Because rs.js syncs in rounds and the
+    // early rounds (root + folder listings) fire no change events, the
+    // quiet window alone can elapse while the cache is still skeletal — so
+    // before declaring the sync settled we verify the cache is coherent,
+    // and while we're at it reconcile the mirror against it (documents
+    // deleted remotely while this device was away, or while the account
+    // was switched out and rs.js's cache was reset, never fire deletion
+    // events — this sweep is what removes them locally).
     function armSettleTimer() {
         if (settleTimer || syncState !== "syncing") return;
         const session = activeSession;
-        settleTimer = setTimeout(() => {
+        settleTimer = setTimeout(async () => {
             settleTimer = null;
             if (session !== activeSession || syncState !== "syncing") return;
+            let data = null;
+            try {
+                data = await repo.loadAll();
+            } catch (_e) {
+                return; // cache unreadable — a later sync-done retries
+            }
+            if (session !== activeSession || syncState !== "syncing") return;
+            if ((data.pendingBodies || 0) > 0) return; // bodies still arriving
+            if (Object.keys(data.errors || {}).length > 0) return; // partial read — never prune on it
+            const cacheEmpty =
+                !data.songs?.length &&
+                !data.setlists?.length &&
+                !Object.keys(data.members || {}).length &&
+                !data.config;
+            const memoryHasData =
+                songs.length > 0 || savedSetlists.length > 0 || Object.keys(bandMembers).length > 0 || !!appConfig;
+            // An empty cache with local data on screen means rs.js hasn't
+            // pulled the folder listings yet (fresh cache after a swap) —
+            // not that the account is empty. Wait for a later round.
+            if (cacheEmpty && memoryHasData) return;
+
+            // The cache is authoritative now: drop anything local it no
+            // longer contains.
+            const songIds = new Set((data.songs || []).map((s) => s.id));
+            for (const song of songs.filter((s) => !songIds.has(s.id))) removeSongLocal(song.id);
+            const setlistIds = new Set((data.setlists || []).map((s) => s.id));
+            for (const setlist of savedSetlists.filter((s) => !setlistIds.has(s.id))) removeSetlistLocal(setlist.id);
+            const memberNames = new Set(Object.keys(data.members || {}));
+            for (const name of Object.keys(bandMembers).filter((n) => !memberNames.has(n))) removeMemberLocal(name);
+            if (!data.config && appConfig) setConfigLocal(null);
+
             setSyncState("synced");
             if (!initialSyncDone) {
                 initialSyncDone = true;

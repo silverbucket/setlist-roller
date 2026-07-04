@@ -7,11 +7,12 @@ import { expect, test } from "../fixtures/test-fixtures";
  * "we got into the app shell" — that's a weak guarantee. The deeper claim
  * we want to pin is:
  *
- *   1. After connect, sync says "synced".
+ *   1. After connect, sync settles.
  *   2. The catalog contains exactly the songs the server has.
  *   3. Roll succeeds and the generated setlist is non-empty.
  *   4. A subsequent forced re-sync DOES NOT clear the generated setlist.
- *   5. Swap is fast (snapshot path covers the gap before remote arrives).
+ *   5. Swap is fast (the per-account mirror covers the gap before remote
+ *      data arrives).
  *   6. Every property above holds on the swapped-to account.
  *
  * The test seeds two armadietto users with disjoint catalogs by PUTing
@@ -69,7 +70,7 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         // ---- Phase 2: sync settles, catalog matches the server ----
         await app.waitForSynced();
         let state = await app.getState();
-        expect(state?.syncState).toBe("synced");
+        expect(state?.initialSyncDone).toBe(true);
         expect(state?.appConfig?.bandName).toBe("Band A");
         expect(names(state)).toEqual(A_SONGS.map((s) => s.name).sort());
         // Sanity: B's data is NOT visible to A.
@@ -93,13 +94,13 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         }
 
         // ---- Phase 4: forced re-sync MUST NOT clear the rolled setlist ----
-        // retrySync triggers reloadAll, which is the path the user would
-        // hit on any onChange burst. The roll is in-memory only and not
-        // backed by the cache, so a naive "blank state then repopulate"
-        // reload would drop it. This is the exact regression to guard.
+        // Force a full rs.js sync cycle — the path the user hits on any
+        // background poll. The roll is in-memory only and not backed by
+        // remote documents, so any regression back toward "blank state
+        // then repopulate" sync handling would drop it.
         await page.evaluate(() => {
-            const s = (window as unknown as { __SR_STORE__?: { retrySync?: () => Promise<void> } }).__SR_STORE__;
-            return s?.retrySync?.();
+            const r = (window as unknown as { __SR_REPO__?: { sync?: () => Promise<void> } }).__SR_REPO__;
+            return r?.sync?.();
         });
         await app.waitForSynced();
         state = await app.getState();
@@ -111,11 +112,9 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         await page.locator("header.top-bar").getByRole("button", { name: "Menu" }).click();
         await page.locator(".dropdown-item--account").filter({ hasText: userB.address }).click();
         await app.waitForReady();
-        // The snapshot path (when restoreSnapshot returns true) lands in
-        // the app shell instantly; even on the cold-cache no-snapshot
-        // path the swap should be sub-10s against a local backend.
-        // We've never had a snapshot for B in this test, so this is the
-        // cold path — keep the bound generous but still snappy.
+        // Switching hydrates the target's local mirror instantly; B has
+        // never been visited in this test, so this is the cold path (empty
+        // mirror, catalog streams in) — keep the bound generous but snappy.
         const tShellVisible = Date.now();
         expect(
             tShellVisible - tStart,
@@ -125,7 +124,7 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         // ---- Phase 6: post-swap, every Phase 2-4 check holds for B ----
         await app.waitForSynced();
         state = await app.getState();
-        expect(state?.syncState).toBe("synced");
+        expect(state?.initialSyncDone).toBe(true);
         expect(state?.appConfig?.bandName).toBe("Band B");
         expect(names(state)).toEqual(B_SONGS.map((s) => s.name).sort());
         expect(names(state)).not.toContain("Africa"); // A's data must NOT leak.
@@ -142,8 +141,8 @@ test.describe("Real backend — roll survives sync, swap retains roll-readiness"
         }
         // Forced re-sync still doesn't clobber the roll on B.
         await page.evaluate(() => {
-            const s = (window as unknown as { __SR_STORE__?: { retrySync?: () => Promise<void> } }).__SR_STORE__;
-            return s?.retrySync?.();
+            const r = (window as unknown as { __SR_REPO__?: { sync?: () => Promise<void> } }).__SR_REPO__;
+            return r?.sync?.();
         });
         await app.waitForSynced();
         state = await app.getState();

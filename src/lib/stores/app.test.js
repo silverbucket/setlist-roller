@@ -315,15 +315,78 @@ describe("incremental remote sync", () => {
         await vi.advanceTimersByTimeAsync(3000);
         expect(store.syncState).toBe("syncing");
 
-        // ...and the next completed round re-arms it. Quiet window → synced.
+        // ...and the next completed round re-arms it. The settle pass
+        // verifies against the rs.js cache, so the stub must now report
+        // the document the change event delivered.
+        repo.loadAll.mockResolvedValue({
+            songs: [{ id: "s1", name: "A" }],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
         repo.fire("sync-done", { completed: true });
         await vi.advanceTimersByTimeAsync(2500);
         expect(store.syncState).toBe("synced");
         expect(store.initialSyncDone).toBe(true);
+        expect(store.songs.map((s) => s.name)).toEqual(["A"]);
 
         // The transient confirmation fades back to idle.
         await vi.advanceTimersByTimeAsync(2500);
         expect(store.syncState).toBe("idle");
+        teardown();
+    });
+
+    it("does not settle while the cache is still skeletal, and prunes stale local docs once it is coherent", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        // Local catalog holds two songs (e.g. hydrated from the mirror)...
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Keep" } });
+        repo.fireChange({ relativePath: "songs/s2", origin: "remote", newValue: { id: "s2", name: "Stale" } });
+        expect(store.songs).toHaveLength(2);
+
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+        // ...but the rs.js cache reads completely empty (fresh cache after
+        // a swap, folder listings not pulled yet). The settle pass must
+        // NOT flip to synced or prune anything.
+        repo.loadAll.mockResolvedValue({
+            songs: [],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("syncing");
+        expect(store.songs).toHaveLength(2);
+        expect(store.initialSyncDone).toBe(false);
+
+        // Once the cache is coherent but only contains s1, the settle
+        // pass reconciles: s2 was deleted remotely while we were away.
+        repo.loadAll.mockResolvedValue({
+            songs: [{ id: "s1", name: "Keep" }],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        });
+        repo.fire("sync-done", { completed: true });
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(store.syncState).toBe("synced");
+        expect(store.songs.map((s) => s.name)).toEqual(["Keep"]);
+        expect(store.initialSyncDone).toBe(true);
         teardown();
     });
 });
