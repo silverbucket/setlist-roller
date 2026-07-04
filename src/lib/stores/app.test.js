@@ -159,6 +159,33 @@ describe("setlist v2 migration", () => {
     });
 });
 
+describe("sticky action toasts", () => {
+    it("does not auto-dismiss and exposes the action", () => {
+        vi.useFakeTimers();
+        const store = createAppStore({});
+        const onAction = vi.fn();
+
+        store.toastAction("Update ready", "Refresh", onAction);
+        expect(store.toastMessages).toHaveLength(1);
+        expect(store.toastMessages[0]).toMatchObject({
+            message: "Update ready",
+            tone: "info",
+            sticky: true,
+        });
+        expect(store.toastMessages[0].action.label).toBe("Refresh");
+
+        // Sticky toasts survive the normal dwell timers.
+        vi.advanceTimersByTime(60000);
+        expect(store.toastMessages).toHaveLength(1);
+
+        store.toastMessages[0].action.onClick();
+        expect(onAction).toHaveBeenCalledTimes(1);
+
+        store.dismissToast(store.toastMessages[0].id);
+        expect(store.toastMessages).toHaveLength(0);
+    });
+});
+
 describe("change-driven reload coalescing", () => {
     // The store's init() needs window + localStorage; we're in node, so
     // polyfill exactly those (same approach as account-switching.test.js —

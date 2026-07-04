@@ -1,6 +1,5 @@
 import { mount } from "svelte";
 import "./app.css";
-import { registerSW } from "virtual:pwa-register";
 import App from "./App.svelte";
 
 // Prevent the browser / iOS PWA runtime from restoring a stale scroll
@@ -37,7 +36,9 @@ if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncAppHeight);
 }
 
-registerSW({ immediate: true });
+// Service-worker registration lives in App.svelte: with prompt-style
+// updates (vite.config.js registerType: "prompt"), onNeedRefresh must
+// surface a toast, and the toast system belongs to the app store.
 
 const app = mount(App, {
     target: document.getElementById("app"),

@@ -9,7 +9,11 @@ export default defineConfig({
     plugins: [
         svelte(),
         VitePWA({
-            registerType: "autoUpdate",
+            // Update flow: "prompt" means a new deploy waits until the user
+            // taps Refresh (see registerSW in App.svelte) instead of
+            // auto-reloading the page — which could eat an unsaved setlist
+            // mid-gig.
+            registerType: "prompt",
             // The plugin precaches manifest icons by default, which would
             // shadow the dynamic-icon runtime route below — the precache
             // handler wins for an exact URL match, pinning icons to the
