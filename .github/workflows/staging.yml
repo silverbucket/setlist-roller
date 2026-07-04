@@ -54,8 +54,12 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (staging mode)
+        # --mode staging turns on sourcemaps, keeps function names in the
+        # minified output, suffixes the app version with "-staging",
+        # renames the PWA manifest, and lights up the in-app STAGING badge.
+        # See the mode handling in vite.config.js.
+        run: npm run build:staging
 
       - name: Setup SSH for 5apps
         env:

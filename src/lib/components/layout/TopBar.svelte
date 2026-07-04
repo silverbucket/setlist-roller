@@ -4,6 +4,9 @@
   import ViewportDiagnostics from "./ViewportDiagnostics.svelte";
 
   const store = getContext("app");
+  // Staging builds (vite build --mode staging) show a badge next to the
+  // band name so a deployed staging PWA can never be mistaken for prod.
+  const isStaging = import.meta.env.MODE === "staging";
   // TEMP(iOS diagnostics): keep this reachable in installed PWA builds until
   // the viewport gap is measured and fixed.
   const viewportDiagnosticsEnabled = import.meta.env.DEV || (typeof window !== "undefined" && (
@@ -149,6 +152,9 @@
       title={dotLabel}
     ></span>
     <span class="band-name">{store.appConfig?.bandName || "Setlist Roller"}</span>
+    {#if isStaging}
+      <span class="staging-badge" title="This is the staging deployment ({__APP_VERSION__})">STAGING</span>
+    {/if}
   </div>
 
   <div class="right">
@@ -309,6 +315,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
+  }
+
+  /* Compile-time badge: only rendered in staging builds. Amber so it reads
+     as "caution/not prod" without clashing with the sync-dot colors. */
+  .staging-badge {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border-radius: var(--radius-full);
+    background: var(--warning-soft);
+    border: 1px solid var(--toast-warning);
+    color: var(--toast-warning);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
   }
 
   .right {

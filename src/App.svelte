@@ -18,6 +18,10 @@
     const store = createAppStore(repo);
     setContext("app", store);
 
+    // Staging builds (vite build --mode staging) mark the connect screen;
+    // TopBar carries the in-app badge.
+    const isStaging = import.meta.env.MODE === "staging";
+
     // Prompt-style service-worker updates. autoUpdate reloaded the page the
     // moment a new deploy activated — mid-gig, that could eat an unsaved
     // setlist. Instead we surface a persistent toast and let the user pick
@@ -161,7 +165,10 @@
 {#if store.connectionStatus === "disconnected"}
     <main class="connect-shell">
         <section class="connect-card">
-            <p class="eyebrow">Setlist Roller</p>
+            <p class="eyebrow">
+                Setlist Roller
+                {#if isStaging}<span class="eyebrow-staging">· Staging</span>{/if}
+            </p>
             <h1>{store.appTitle}</h1>
             <p class="lede">
                 Connect to remoteStorage so your songs survive the tour bus.
@@ -351,6 +358,10 @@
         font-weight: 800;
         letter-spacing: 0.18em;
         text-transform: uppercase;
+    }
+
+    .eyebrow-staging {
+        color: var(--toast-warning);
     }
 
     h1 {
