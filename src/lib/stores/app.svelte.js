@@ -207,6 +207,11 @@ export function createAppStore(repo) {
     // pending → disconnected fallback (init() below); this covers the
     // gap once the connection has succeeded but the data load hangs.
     const SYNC_STALL_TIMEOUT_MS = 15000;
+    // Trailing debounce for change-driven reloads (see the onChange
+    // handler in init). Short enough that a lone remote edit still shows
+    // up near-instantly; long enough to swallow rs.js's per-document
+    // event bursts during sync rounds.
+    const CHANGE_RELOAD_DEBOUNCE_MS = 250;
     let syncStalled = $state(false);
     let syncStalledTimer = null;
 
@@ -2661,24 +2666,47 @@ export function createAppStore(repo) {
             }
         });
 
-        const detachChange = repo.onChange(async (event) => {
+        // Coalesce change-driven reloads. rs.js streams one change event per
+        // document while pulling remote data, so a bootstrap of a ~150-song
+        // catalog fires ~150 events — without a debounce, each one kicked a
+        // full reloadAll() (five slice reads + normalize + sort). The
+        // reloadGen guard already discards stale *results*, but all that
+        // wasted work still ran on the main thread: an O(N²) bootstrap.
+        // A trailing debounce collapses each burst into one reload. The
+        // settle-window logic tolerates the delay because every event still
+        // bumpSyncActivity()s immediately below, keeping the pill honest
+        // while the timer is pending.
+        let changeReloadTimer = null;
+        // True if any event in the current burst was remote-origin; picks
+        // the sync label when the coalesced reload finally runs.
+        let changeBurstHadRemote = false;
+        // Session pinned at the LATEST event of the burst. If the user swaps
+        // accounts mid-burst, the swap bumps activeSession, and reloadAll's
+        // own session guard drops the stale results.
+        let changeBurstSession = 0;
+        const detachChange = repo.onChange((event) => {
             dbg(`rs.js change: path=${event?.relativePath || event?.path || "?"} origin=${event?.origin} oldVal=${typeof event?.oldValue} newVal=${typeof event?.newValue}`);
             if (connectionStatus !== "connected" || event?.origin === "window") return;
             // Remote-origin events mean rs.js is streaming bodies in. Show
-            // activity in the pill even if no reload runs (defensive — the
-            // reload below will normally handle this), and cancel any
-            // pending settle-window flip since data is still arriving.
+            // activity in the pill even though the reload is deferred, and
+            // cancel any pending settle-window flip since data is still
+            // arriving.
             if (event?.origin === "remote") {
+                changeBurstHadRemote = true;
                 bumpSyncActivity("remote onChange");
                 if (syncState !== "error") setSyncState("syncing");
             }
-            // Pin the session at the moment the event fired. If the user
-            // swaps accounts mid-reload, the awaited reloadAll() returns
-            // into a different session and we drop its results.
-            const session = activeSession;
-            beginSync(event?.origin === "remote" ? "Pulling remote changes" : "Syncing");
-            try { await reloadAll({ quiet: true, session }); }
-            finally { endSync(); }
+            changeBurstSession = activeSession;
+            if (changeReloadTimer) clearTimeout(changeReloadTimer);
+            changeReloadTimer = setTimeout(async () => {
+                changeReloadTimer = null;
+                const hadRemote = changeBurstHadRemote;
+                changeBurstHadRemote = false;
+                const session = changeBurstSession;
+                beginSync(hadRemote ? "Pulling remote changes" : "Syncing");
+                try { await reloadAll({ quiet: true, session }); }
+                finally { endSync(); }
+            }, CHANGE_RELOAD_DEBOUNCE_MS);
         });
 
         return () => {
@@ -2690,6 +2718,7 @@ export function createAppStore(repo) {
             if (syncStalledTimer) clearTimeout(syncStalledTimer);
             if (switchingWatchdog) clearTimeout(switchingWatchdog);
             if (pendingSwapDisconnectTimer) clearTimeout(pendingSwapDisconnectTimer);
+            if (changeReloadTimer) clearTimeout(changeReloadTimer);
             detachConnecting();
             detachAuthing();
             detachStandaloneRedirect();
