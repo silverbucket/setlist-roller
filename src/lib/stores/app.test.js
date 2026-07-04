@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { accountSlot } from "../accounts.js";
 import { migrator } from "../migrations.js";
 import { createAppStore, normalizeAuthToken } from "./app.svelte.js";
 
@@ -293,6 +294,105 @@ describe("incremental remote sync", () => {
         repo.fireChange({ relativePath: "songs/w1", origin: "window", newValue: { id: "w1", name: "W" } });
         repo.fireChange({ relativePath: "songs/l1", origin: "local", newValue: { id: "l1", name: "L" } });
         expect(store.songs).toEqual([]);
+        teardown();
+    });
+
+    it("propagates a remote note edit into the displayed setlist", async () => {
+        // Regression for the band report: a note edited on another device
+        // showed up in the Songs catalog but not in the rolled setlist.
+        // Displayed setlists hydrate from the live catalog, so an
+        // incremental remote change must flow through.
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("current-set"),
+            JSON.stringify({ seed: 1, songs: [{ songId: "s1", performance: {} }] }),
+        );
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Alpha", notes: "old note" },
+        });
+        expect(store.displayedSetlist?.songs?.[0]?.notes).toBe("old note");
+
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Alpha", notes: "new note" },
+        });
+        expect(store.displayedSetlist?.songs?.[0]?.notes).toBe("new note");
+        teardown();
+    });
+
+    it("squashes overrides equal to the default rig at save time and stages vocabulary adds", async () => {
+        const repo = buildRepo();
+        repo.putSong = vi.fn(async (s) => s);
+        repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        // Band config arrives: Nick's default rig is Guitar / Standard.
+        repo.fireChange({
+            relativePath: "members/Nick",
+            origin: "remote",
+            newValue: {
+                name: "Nick",
+                instruments: [
+                    {
+                        name: "Guitar",
+                        tunings: ["Standard"],
+                        defaultTuning: "Standard",
+                        techniques: [],
+                        defaultTechnique: "",
+                    },
+                ],
+                defaultInstrument: "Guitar",
+            },
+        });
+
+        store.openNewSong();
+        store.updateSongField("name", "Riff City");
+        // Override prefilled from the default rig, left unchanged — must be
+        // squashed out of the stored song.
+        store.addMember("Nick");
+        // Stage a brand-new tuning for the override; applied to the band
+        // config only at save.
+        store.stageVocabAdd("Nick", "Guitar", "tuning", "Open G");
+        expect(repo.putMember).not.toHaveBeenCalled();
+
+        await store.saveSong();
+
+        // The stored song carries no members — the untouched override
+        // matched the default rig.
+        expect(repo.putSong).toHaveBeenCalledTimes(1);
+        expect(repo.putSong.mock.calls[0][0].members).toEqual({});
+        // The staged tuning landed in the band config exactly once, at save.
+        expect(repo.putMember).toHaveBeenCalledTimes(1);
+        const savedMember = repo.putMember.mock.calls[0][1];
+        expect(savedMember.instruments[0].tunings).toContain("Open G");
+        expect(store.bandMembers.Nick.instruments[0].tunings).toContain("Open G");
+        teardown();
+    });
+
+    it("keeps unpracticed songs addable to the current setlist", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Rusty", unpracticed: true },
+        });
+        expect(store.songsNotInSetlist.map((s) => s.id)).toContain("s1");
         teardown();
     });
 

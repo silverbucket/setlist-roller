@@ -128,6 +128,26 @@ export function blankSong() {
     };
 }
 
+function normalizeSongMembers(members) {
+    const normalized = {};
+    for (const [name, setup] of Object.entries(members || {})) {
+        const instruments = (Array.isArray(setup?.instruments) ? setup.instruments : []).map((option) => ({
+            name: option?.name || "",
+            tuning: (Array.isArray(option?.tuning) ? option.tuning : option?.tuning ? [option.tuning] : []).filter(
+                Boolean,
+            ),
+            capo: Number(option?.capo) || 0,
+            // "none" was a legacy sentinel meaning "explicitly no technique";
+            // an empty array now carries that meaning (technique is optional).
+            picking: (Array.isArray(option?.picking) ? option.picking : option?.picking ? [option.picking] : []).filter(
+                (technique) => technique && technique !== "none",
+            ),
+        }));
+        normalized[name] = { instruments };
+    }
+    return normalized;
+}
+
 export function normalizeSongRecord(song) {
     const timestamp = song.createdAt || nowIso();
     return {
@@ -143,8 +163,79 @@ export function normalizeSongRecord(song) {
         schemaVersion: song.schemaVersion || SCHEMA_VERSION,
         createdAt: song.createdAt || timestamp,
         updatedAt: song.updatedAt || timestamp,
-        members: song.members || {},
+        members: normalizeSongMembers(song.members),
     };
+}
+
+/**
+ * A member's default rig, shaped like a song member entry: the default
+ * instrument with its default tuning and technique. This is what a member
+ * plays on any song that doesn't override them. Returns null for members
+ * with no instruments configured (they're just listed — nothing for the
+ * roller to schedule).
+ */
+export function memberDefaultRig(memberConfig) {
+    const instruments = memberConfig?.instruments || [];
+    if (instruments.length === 0) return null;
+    const defaultName = memberConfig.defaultInstrument || instruments[0].name;
+    const instrument = instruments.find((i) => i.name === defaultName) || instruments[0];
+    return {
+        instruments: [
+            {
+                name: instrument.name,
+                tuning: instrument.defaultTuning ? [instrument.defaultTuning] : [],
+                capo: 0,
+                picking: instrument.defaultTechnique ? [instrument.defaultTechnique] : [],
+            },
+        ],
+    };
+}
+
+/**
+ * Resolve a song's effective member setups: explicit song overrides win,
+ * every other band member inherits their default rig. Songs therefore only
+ * need to store deviations — a member with no special needs never appears
+ * in song data at all. Members that exist only on the song (removed from
+ * the band config since) keep their stored setups.
+ */
+export function resolveSongMembers(song, bandMembers) {
+    const resolved = {};
+    for (const [name, config] of Object.entries(bandMembers || {})) {
+        const override = song?.members?.[name];
+        if (override && (override.instruments || []).length > 0) {
+            resolved[name] = override;
+        } else {
+            const rig = memberDefaultRig(config);
+            if (rig) resolved[name] = rig;
+        }
+    }
+    for (const [name, setup] of Object.entries(song?.members || {})) {
+        if (!(name in resolved) && (setup?.instruments || []).length > 0) {
+            resolved[name] = setup;
+        }
+    }
+    return resolved;
+}
+
+/**
+ * True when a song's member entry is exactly the member's default rig —
+ * such entries are redundant (inheritance produces the same result) and
+ * get squashed out of the song at save time.
+ */
+export function rigEqualsDefault(setup, memberConfig) {
+    const rig = memberDefaultRig(memberConfig);
+    if (!rig) return false;
+    const options = setup?.instruments || [];
+    if (options.length !== 1) return false;
+    const actual = options[0];
+    const expected = rig.instruments[0];
+    const sortedEqual = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
+    return (
+        actual.name === expected.name &&
+        (Number(actual.capo) || 0) === 0 &&
+        sortedEqual(actual.tuning, expected.tuning) &&
+        sortedEqual(actual.picking, expected.picking)
+    );
 }
 
 export function normalizeAppConfig(config) {

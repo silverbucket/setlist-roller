@@ -1,6 +1,6 @@
 import { accountSlot, consumeKnownAccountsCorrupted, getAccountToken, getKnownAccounts, removeKnownAccountEntry, saveKnownAccount } from "../accounts.js";
 import { CONFIG_SECTIONS } from "../config-meta.js";
-import { blankSong, DEFAULT_APP_CONFIG, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, sortSongs } from "../defaults.js";
+import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, sortSongs } from "../defaults.js";
 import { buildDefaultPerformance, scoreFixedOrder } from "../generator.js";
 import GeneratorWorker from "../generator.worker.js?worker";
 import { pruneStaleKeys, sortKeys } from "../keys.js";
@@ -243,6 +243,7 @@ export function createAppStore(repo) {
             maxCovers: source.general?.limits?.covers ?? -1,
             maxInstrumentals: source.general?.limits?.instrumentals ?? -1,
             keyFlow: false,
+            includeUnpracticed: false,
             seed: "",
             randomness: {
                 temperature: source.general?.randomness?.temperature ?? 0.85,
@@ -311,22 +312,17 @@ export function createAppStore(repo) {
         return Array.from(names).sort();
     }
 
+    // A song is incomplete only when one of its explicit overrides is
+    // broken (an instrument row without a name). Members without an
+    // override simply inherit their default rig — absence is the normal,
+    // zero-effort state, not an error.
     function songIncompleteReasons(song) {
-        const members = bandMembers || {};
-        const memberNames = Object.keys(members);
-        if (memberNames.length === 0) return [];
-        const songMembers = song.members || {};
         const reasons = [];
-        for (const name of memberNames) {
-            const memberSetup = songMembers[name];
-            if (!memberSetup) { reasons.push(`${name}: not set up`); continue; }
-            const instruments = memberSetup.instruments || [];
-            if (instruments.length === 0) { reasons.push(`${name}: needs instrument`); continue; }
-            for (const inst of instruments) {
-                if (!inst.name) { reasons.push(`${name}: instrument not selected`); continue; }
-                const bandInst = (members[name].instruments || []).find((i) => i.name === inst.name);
-                if (bandInst && (bandInst.techniques || []).length > 0 && (!Array.isArray(inst.picking) || inst.picking.length === 0)) {
-                    reasons.push(`${name}: ${inst.name} needs technique`);
+        for (const [name, setup] of Object.entries(song.members || {})) {
+            for (const inst of setup?.instruments || []) {
+                if (!inst.name) {
+                    reasons.push(`${name}: pick an instrument`);
+                    break;
                 }
             }
         }
@@ -1139,7 +1135,13 @@ export function createAppStore(repo) {
             navigate("songs");
             return;
         }
-        const eligibleSongs = songs.filter((s) => !s.unpracticed);
+        // Unpracticed songs stay out of the pool unless the user opted in —
+        // but songs explicitly pinned by "Optimize Order" (fixedSongIds)
+        // always stay in, or the optimize pass would silently drop them.
+        const fixedIds = new Set(overrideOptions.fixedSongIds || []);
+        const eligibleSongs = songs.filter(
+            (s) => generationOptions.includeUnpracticed || !s.unpracticed || fixedIds.has(s.id),
+        );
         if (!eligibleSongs.length) {
             toastError("Every song is unpracticed. Time to rehearse!");
             return;
@@ -1161,7 +1163,10 @@ export function createAppStore(repo) {
         const worker = new GeneratorWorker();
         activeWorker = worker;
         worker.postMessage({
-            songs: clone(eligibleSongs),
+            // The generator works on effective setups: explicit song
+            // overrides where they exist, each member's default rig
+            // everywhere else. Songs themselves only store deviations.
+            songs: clone(eligibleSongs).map((s) => ({ ...s, members: resolveSongMembers(s, bandMembers) })),
             config: clone(appConfig || DEFAULT_APP_CONFIG),
             options: opts
         });
@@ -1420,7 +1425,10 @@ export function createAppStore(repo) {
         if (generatedSetlist.songs.some((s) => s.songId === songId)) return;
         const song = songsById.get(songId);
         if (!song) return;
-        const performance = buildDefaultPerformance(song, generationOptions?.show || {});
+        const performance = buildDefaultPerformance(
+            { ...song, members: resolveSongMembers(song, bandMembers) },
+            generationOptions?.show || {},
+        );
         generatedSetlist = {
             ...generatedSetlist,
             songs: [...generatedSetlist.songs, { songId, performance }],
@@ -1429,10 +1437,13 @@ export function createAppStore(repo) {
         persistCurrentSetlist();
     }
 
+    // Unpracticed songs stay in this list on purpose: the roller won't pick
+    // them, but the band can still add one to a set deliberately (the picker
+    // marks them so it's a knowing choice).
     let songsNotInSetlist = $derived.by(() => {
-        if (!generatedSetlist?.songs) return songs.filter((s) => !s.unpracticed);
+        if (!generatedSetlist?.songs) return songs;
         const usedIds = new Set(generatedSetlist.songs.map((s) => s.songId));
-        return songs.filter((s) => !s.unpracticed && !usedIds.has(s.id));
+        return songs.filter((s) => !usedIds.has(s.id));
     });
 
     // ---- generation options ----
@@ -1460,23 +1471,19 @@ export function createAppStore(repo) {
 
 
     // ---- song editor ----
+    // Songs only store deviations from each member's default rig, so a new
+    // song starts with NO member entries — every band member implicitly
+    // plays their usual setup. The editor offers per-member overrides.
     function openNewSong() {
-        const song = blankSong();
-        Object.entries(bandMembers || {}).forEach(([name, config]) => {
-            const defaultInstName = config.defaultInstrument || "";
-            const defaultInst = (config.instruments || []).find((i) => i.name === defaultInstName);
-            const inst = defaultInst
-                ? { name: defaultInst.name, tuning: defaultInst.defaultTuning ? [defaultInst.defaultTuning] : [], capo: 0, picking: defaultInst.defaultTechnique ? [defaultInst.defaultTechnique] : [] }
-                : { name: "", tuning: [], capo: 0, picking: [] };
-            song.members[name] = { instruments: [inst] };
-        });
-        editorSong = song;
+        editorSong = blankSong();
         selectedSongId = "";
+        editorVocabAdds = {};
     }
 
     function openSong(song) {
         editorSong = normalizeSongRecord(song);
         selectedSongId = editorSong.id;
+        editorVocabAdds = {};
     }
 
     function closeEditor() {
@@ -1484,7 +1491,103 @@ export function createAppStore(repo) {
         editorSong = null;
         selectedSongId = "";
         editReturnView = "";
+        editorVocabAdds = {};
         if (returnTo) navigate(returnTo);
+    }
+
+    // ---- staged vocabulary adds ----
+    // New instruments/tunings/techniques typed inside the song editor are
+    // STAGED here and only written to the band config when the song is
+    // saved. (Previously they persisted to remoteStorage the moment they
+    // were typed — abandoning the song still left its vocabulary behind.)
+    let editorVocabAdds = $state({});
+
+    function stagedInstrumentAdds(memberName) {
+        return Object.entries(editorVocabAdds[memberName] || {})
+            .filter(([, adds]) => adds.isNew)
+            .map(([name]) => name);
+    }
+
+    function stagedTuningAdds(memberName, instrumentName) {
+        return editorVocabAdds[memberName]?.[instrumentName]?.tunings || [];
+    }
+
+    function stagedTechniqueAdds(memberName, instrumentName) {
+        return editorVocabAdds[memberName]?.[instrumentName]?.techniques || [];
+    }
+
+    function stageVocabAdd(memberName, instrumentName, kind, value) {
+        const clean = String(value ?? "").trim();
+        if (!memberName || !instrumentName || (kind !== "instrument" && !clean)) return "";
+        const memberAdds = { ...(editorVocabAdds[memberName] || {}) };
+        const instAdds = {
+            isNew: false,
+            tunings: [],
+            techniques: [],
+            ...(memberAdds[instrumentName] || {}),
+        };
+        if (kind === "instrument") instAdds.isNew = true;
+        if (kind === "tuning" && !instAdds.tunings.includes(clean)) {
+            instAdds.tunings = [...instAdds.tunings, clean];
+        }
+        if (kind === "technique" && !instAdds.techniques.includes(clean)) {
+            instAdds.techniques = [...instAdds.techniques, clean];
+        }
+        memberAdds[instrumentName] = instAdds;
+        editorVocabAdds = { ...editorVocabAdds, [memberName]: memberAdds };
+        return kind === "instrument" ? instrumentName : clean;
+    }
+
+    /** Write the staged vocabulary into the band config (at song save). */
+    async function applyStagedVocab() {
+        for (const [memberName, memberAdds] of Object.entries(editorVocabAdds || {})) {
+            let member = clone(bandMembers[memberName] || null);
+            let dirty = false;
+            if (!member) {
+                member = { instruments: [] };
+                dirty = true;
+            }
+            if (!member.instruments) member.instruments = [];
+            for (const [instName, adds] of Object.entries(memberAdds)) {
+                let inst = member.instruments.find((i) => i.name === instName);
+                if (!inst) {
+                    inst = { name: instName, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" };
+                    member.instruments.push(inst);
+                    dirty = true;
+                }
+                for (const tuning of adds.tunings || []) {
+                    if (!inst.tunings.includes(tuning)) {
+                        inst.tunings.push(tuning);
+                        if (!inst.defaultTuning) inst.defaultTuning = tuning;
+                        dirty = true;
+                    }
+                }
+                for (const technique of adds.techniques || []) {
+                    if (!inst.techniques.includes(technique)) {
+                        inst.techniques.push(technique);
+                        dirty = true;
+                    }
+                }
+            }
+            if (dirty && !(await persistMemberEdit(memberName, member))) return false;
+        }
+        editorVocabAdds = {};
+        return true;
+    }
+
+    /**
+     * Drop member overrides that add nothing: empty ones and ones equal to
+     * the member's default rig. Runs at save so stored songs converge to
+     * deviations-only over time.
+     */
+    function squashDefaultMembers(members) {
+        const out = {};
+        for (const [name, setup] of Object.entries(members || {})) {
+            if ((setup?.instruments || []).length === 0) continue;
+            if (bandMembers[name] && rigEqualsDefault(setup, bandMembers[name])) continue;
+            out[name] = setup;
+        }
+        return out;
     }
 
     function updateEditor(mutator) {
@@ -1508,34 +1611,18 @@ export function createAppStore(repo) {
         });
     }
 
+    /**
+     * Create a per-song override for a band member, prefilled from their
+     * default rig so the user edits from a working starting point.
+     */
     function addMember(memberName) {
+        if (!memberName) return;
         updateEditor((song) => {
-            let name = memberName;
-            if (!name) {
-                const base = `member${Object.keys(song.members || {}).length + 1}`;
-                name = base;
-                let c = 1;
-                while (song.members[name]) { c++; name = `${base}-${c}`; }
-            }
-            if (song.members[name]) return; // already in this song
-            // Seed instruments from band config if this member exists there
-            const bandMember = bandMembers?.[name];
-            if (bandMember && (bandMember.instruments || []).length > 0) {
-                const defaultInst = bandMember.defaultInstrument || bandMember.instruments[0]?.name || "";
-                const inst = bandMember.instruments.find((i) => i.name === defaultInst) || bandMember.instruments[0];
-                const defaultTuning = inst?.defaultTuning;
-                const defaultTechnique = inst?.defaultTechnique;
-                song.members[name] = {
-                    instruments: [{
-                        name: inst.name,
-                        tuning: defaultTuning ? [defaultTuning] : [],
-                        capo: 0,
-                        picking: defaultTechnique ? [defaultTechnique] : []
-                    }]
-                };
-            } else {
-                song.members[name] = { instruments: [{ name: "", tuning: [], capo: 0, picking: [] }] };
-            }
+            if (song.members[memberName]) return; // already overridden
+            const rig = memberDefaultRig(bandMembers?.[memberName]);
+            song.members[memberName] = rig
+                ? clone(rig)
+                : { instruments: [{ name: "", tuning: [], capo: 0, picking: [] }] };
         });
     }
 
@@ -1581,52 +1668,20 @@ export function createAppStore(repo) {
         const sessionAlive = sessionGuard();
         try {
             busyMessage = `Saving "${editorSong.name}"...`;
+            // Vocabulary the user staged in the editor (new instruments,
+            // tunings, techniques) lands in the band config first, so the
+            // squash below compares against the up-to-date defaults.
+            if (!(await applyStagedVocab())) return;
+            if (!sessionAlive()) return;
             const saved = await withSync("Saving song", () => repo.putSong({
-                ...editorSong, updatedAt: nowIso()
+                ...editorSong,
+                members: squashDefaultMembers(editorSong.members),
+                updatedAt: nowIso(),
             }));
             if (!sessionAlive()) return;
             upsertSongLocal(saved);
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
-
-            // Sync member names and instruments from the song into band members
-            const dirtyMembers = new Map();
-
-            for (const [memberName, memberSetup] of Object.entries(saved.members || {})) {
-                let member = clone(bandMembers[memberName] || null);
-                let dirty = false;
-                if (!member) {
-                    member = { instruments: [] };
-                    dirty = true;
-                }
-                if (!member.instruments) member.instruments = [];
-                for (const inst of (memberSetup.instruments || [])) {
-                    if (!inst.name) continue;
-                    const existing = member.instruments.find((i) => i.name === inst.name);
-                    if (!existing) {
-                        member.instruments.push({
-                            name: inst.name, tunings: [], defaultTuning: "",
-                            techniques: [], defaultTechnique: ""
-                        });
-                        dirty = true;
-                    }
-                    // Sync tunings that appear in songs but not in band members
-                    const bandInst = member.instruments.find((i) => i.name === inst.name);
-                    for (const tuning of (inst.tuning || [])) {
-                        if (tuning && !(bandInst.tunings || []).includes(tuning)) {
-                            if (!bandInst.tunings) bandInst.tunings = [];
-                            bandInst.tunings.push(tuning);
-                            if (!bandInst.defaultTuning) bandInst.defaultTuning = tuning;
-                            dirty = true;
-                        }
-                    }
-                }
-                if (dirty) dirtyMembers.set(memberName, member);
-            }
-            for (const [memberName, memberData] of dirtyMembers) {
-                await persistMemberEdit(memberName, memberData);
-                if (!sessionAlive()) return;
-            }
 
             closeEditor();
             toastInfo(`Saved "${saved.name}".`);
@@ -2588,6 +2643,11 @@ export function createAppStore(repo) {
         openNewSong,
         openSong,
         closeEditor,
+        stageVocabAdd,
+        stagedInstrumentAdds,
+        stagedTuningAdds,
+        stagedTechniqueAdds,
+        get editorVocabAdds() { return editorVocabAdds; },
         get editReturnView() { return editReturnView; },
         set editReturnView(v) { editReturnView = v; },
         updateSongField,
