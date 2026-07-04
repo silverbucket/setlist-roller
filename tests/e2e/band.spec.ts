@@ -123,9 +123,9 @@ test.describe("Band screen — members", () => {
 
         const band = new BandPage(page);
         await band.openMemberEdit("Alice");
-        // The store calls window.confirm — auto-accept it.
-        page.once("dialog", (d) => d.accept());
         await band.removeMemberButton.click();
+        // Confirm via the in-app destructive modal.
+        await page.locator(".confirm-backdrop .modal").getByRole("button", { name: "Remove", exact: true }).click();
         await band.expectMemberAbsent("Alice");
     });
 });

@@ -254,7 +254,7 @@ test.describe("Delete all data", () => {
         expect(state.appConfig).toBeNull();
     });
 
-    test("cancelling the first confirm leaves data intact", async ({ page, app }) => {
+    test("cancelling the confirm leaves data intact", async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: { s1: makeSong({ id: "s1", name: "Survives" }) },
@@ -266,7 +266,7 @@ test.describe("Delete all data", () => {
         await shell.gotoBand();
 
         const band = new BandPage(page);
-        await band.cancelDeleteAllData(page, 1);
+        await band.cancelDeleteAllData(page);
 
         // No first-run prompt; data still there
         await expect(shell.firstRunModal).toBeHidden();
@@ -274,7 +274,7 @@ test.describe("Delete all data", () => {
         await expect(new SongsPage(page).songRow("Survives")).toBeVisible();
     });
 
-    test("cancelling the second confirm leaves data intact", async ({ page, app }) => {
+    test("cancelling after typing the band name still leaves data intact", async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: { s1: makeSong({ id: "s1", name: "AlsoSurvives" }) },
@@ -286,10 +286,28 @@ test.describe("Delete all data", () => {
         await shell.gotoBand();
 
         const band = new BandPage(page);
-        await band.cancelDeleteAllData(page, 2);
+        await band.cancelDeleteAllData(page, { typeName: "Test Band" });
 
         await expect(shell.firstRunModal).toBeHidden();
         await shell.gotoSongs();
         await expect(new SongsPage(page).songRow("AlsoSurvives")).toBeVisible();
+    });
+
+    test("the delete button stays disabled until the band name is typed", async ({ page, app }) => {
+        await app.seed(buildSeed());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoBand();
+
+        await new BandPage(page).deleteAllButton.click();
+        const modal = page.locator(".confirm-backdrop .modal");
+        await expect(modal).toBeVisible();
+        const confirmBtn = modal.getByRole("button", { name: "Delete everything" });
+        await expect(confirmBtn).toBeDisabled();
+        await modal.locator("input").fill("Wrong Name");
+        await expect(confirmBtn).toBeDisabled();
+        await modal.locator("input").fill("Test Band");
+        await expect(confirmBtn).toBeEnabled();
+        await modal.getByRole("button", { name: "Cancel" }).click();
     });
 });

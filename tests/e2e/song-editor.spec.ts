@@ -94,9 +94,9 @@ test.describe("Song editor — basics", () => {
         await editor.waitForVisible();
         await editor.fillName("Changed In Memory");
 
-        // Cancel the discard confirm — nothing is lost.
-        page.once("dialog", (d) => d.dismiss());
+        // Cancel the discard confirm (in-app modal) — nothing is lost.
         await editor.backButton.click();
+        await editor.confirmModal().getByRole("button", { name: "Keep editing" }).click();
         await expect(editor.overlay).toBeVisible();
         await expect(editor.nameInput).toHaveValue("Changed In Memory");
     });

@@ -62,25 +62,28 @@ export class SongEditorPage {
         await expect(this.overlay).toBeHidden();
     }
 
+    /** The app-wide destructive-confirm modal (replaces window.confirm). */
+    confirmModal(): Locator {
+        return this.page.locator(".confirm-backdrop .modal");
+    }
+
     /** Close a dirty editor, accepting the discard-changes confirm. */
     async closeDiscarding() {
-        this.page.once("dialog", (d) => d.accept());
         await this.backButton.click();
+        await this.confirmModal().getByRole("button", { name: "Discard" }).click();
         await expect(this.overlay).toBeHidden();
     }
 
     async confirmDelete() {
-        // First click reveals the confirm; second commits.
         await this.deleteButton.click();
-        // The store's deleteSong() also calls window.confirm() — auto-accept it.
-        this.page.once("dialog", (d) => d.accept());
-        await this.overlay.getByRole("button", { name: "Yes, delete" }).click();
+        await this.confirmModal().getByRole("button", { name: "Delete", exact: true }).click();
         await expect(this.overlay).toBeHidden();
     }
 
     async cancelDelete() {
         await this.deleteButton.click();
-        await this.overlay.getByRole("button", { name: "Cancel" }).click();
+        await this.confirmModal().getByRole("button", { name: "Cancel" }).click();
+        await expect(this.confirmModal()).toBeHidden();
     }
 
     async duplicate() {

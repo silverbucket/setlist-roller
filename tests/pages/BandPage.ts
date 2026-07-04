@@ -141,46 +141,30 @@ export class BandPage {
     }
 
     /**
-     * Delete-all is gated behind TWO sequential window.confirm dialogs, so
-     * tests need to register both handlers before clicking the button.
+     * Delete-all is gated behind the in-app confirm modal with typed
+     * band-name verification: type the name, then click Delete everything.
      */
-    async confirmDeleteAllData(page: Page) {
-        let dialogsSeen = 0;
-        const onDialog = (d: import("@playwright/test").Dialog) => {
-            dialogsSeen += 1;
-            d.accept();
-        };
-        page.on("dialog", onDialog);
-        try {
-            await this.deleteAllButton.click();
-            // Wait until both confirms have appeared. Using a short poll
-            // because dialogs fire on a microtask after click.
-            await expect.poll(() => dialogsSeen, { timeout: 5_000 }).toBe(2);
-        } finally {
-            page.off("dialog", onDialog);
-        }
+    async confirmDeleteAllData(page: Page, bandName = "Test Band") {
+        await this.deleteAllButton.click();
+        const modal = page.locator(".confirm-backdrop .modal");
+        await expect(modal).toBeVisible();
+        await modal.locator("input").fill(bandName);
+        await modal.getByRole("button", { name: "Delete everything" }).click();
+        await expect(modal).toBeHidden();
     }
 
     /**
-     * Click delete-all but cancel one of the confirms — used to verify the
-     * abort path doesn't wipe data.
+     * Open the delete-all confirm but cancel — used to verify the abort
+     * path doesn't wipe data. Optionally type the band name first (the
+     * "got all the way there and still bailed" path).
      */
-    async cancelDeleteAllData(page: Page, atStep: 1 | 2 = 1) {
-        let dialogsSeen = 0;
-        const onDialog = (d: import("@playwright/test").Dialog) => {
-            dialogsSeen += 1;
-            if (dialogsSeen === atStep) d.dismiss();
-            else d.accept();
-        };
-        page.on("dialog", onDialog);
-        try {
-            await this.deleteAllButton.click();
-            await expect.poll(() => dialogsSeen, { timeout: 5_000 }).toBeGreaterThanOrEqual(atStep);
-        } finally {
-            // Allow a beat for any trailing dialog before unsubscribing.
-            await page.waitForTimeout(100);
-            page.off("dialog", onDialog);
-        }
+    async cancelDeleteAllData(page: Page, { typeName = "" } = {}) {
+        await this.deleteAllButton.click();
+        const modal = page.locator(".confirm-backdrop .modal");
+        await expect(modal).toBeVisible();
+        if (typeName) await modal.locator("input").fill(typeName);
+        await modal.getByRole("button", { name: "Cancel" }).click();
+        await expect(modal).toBeHidden();
     }
 
     /**
