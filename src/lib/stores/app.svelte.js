@@ -489,10 +489,9 @@ export function createAppStore(repo) {
     }
 
     // Remove any un-scoped legacy localStorage keys so they can't leak between
-    // accounts. Called only from the `disconnected` handler — that's the
-    // migration path for users coming from the pre-multi-account build, where
-    // these keys were written without the per-account hash. After one
-    // disconnect, the keys are gone; we don't re-run this on every connect.
+    // accounts. Called once per boot from init() — that's the migration path
+    // for users coming from the pre-multi-account build, where these keys
+    // were written without the per-account hash. Idempotent and cheap.
     function clearUnscopedLocalStorage() {
         if (typeof localStorage === "undefined") return;
         localStorage.removeItem("setlist-roller-ui-options");
@@ -701,6 +700,15 @@ export function createAppStore(repo) {
                 void mirror?.putKv("sync-meta", { initialSyncDone: true, completedAt: nowIso() }).catch(() => {});
             }
         }, SYNC_SETTLE_MS);
+    }
+
+    // Async-write staleness guard. Capture at the start of any action that
+    // awaits repo I/O and check after each await: if the user switched (or
+    // signed out of) the account mid-flight, the result belongs to the OLD
+    // account and must not be applied to the newly active mirror/state.
+    function sessionGuard() {
+        const session = activeSession;
+        return () => session === activeSession;
     }
 
     // ---- local catalog mutation ----
@@ -1019,6 +1027,9 @@ export function createAppStore(repo) {
             }
         }
         if (address === currentUserAddress) {
+            // Invalidate in-flight async work tied to the account being
+            // forgotten, same as disconnectStorage().
+            activeSession += 1;
             deactivateAccount();
         }
         void deleteAccountDb(address).catch(() => {});
@@ -1031,9 +1042,11 @@ export function createAppStore(repo) {
             toastError("Your band needs a name.");
             return;
         }
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = "Setting up...";
             const config = await withSync("Setting up", () => repo.ensureConfig(bandName));
+            if (!sessionAlive()) return;
             setConfigLocal(config);
             generationOptions = defaultGenerationOptions(appConfig);
             persistGenerationOptions();
@@ -1236,6 +1249,8 @@ export function createAppStore(repo) {
             ? clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId)))
             : clone(generatedSetlist.songs);
 
+        const sessionAlive = sessionGuard();
+
         // If this setlist was loaded from a saved entry, update that entry in
         // place instead of creating a duplicate with a new id and name.
         if (loadedSavedId) {
@@ -1249,6 +1264,7 @@ export function createAppStore(repo) {
                     closerFilterRelaxed: !!generatedSetlist.closerFilterRelaxed,
                     songs: persistedSongs,
                 });
+                if (!sessionAlive()) return;
                 setlistSaved = true;
                 return;
             }
@@ -1283,6 +1299,7 @@ export function createAppStore(repo) {
         };
         try {
             const saved = await withSync("Saving setlist", () => repo.putSetlist(entry));
+            if (!sessionAlive()) return;
             upsertSetlistLocal(saved);
             setlistSaved = true;
             loadedSavedId = entry.id;
@@ -1292,8 +1309,10 @@ export function createAppStore(repo) {
     }
 
     async function removeSavedSetlist(id) {
+        const sessionAlive = sessionGuard();
         try {
             await withSync("Removing setlist", () => repo.deleteSetlist(id));
+            if (!sessionAlive()) return;
             removeSetlistLocal(id);
         } catch (error) {
             toastError(error?.message || "Could not remove setlist.");
@@ -1304,8 +1323,10 @@ export function createAppStore(repo) {
         const existing = savedSetlists.find((s) => s.id === id);
         if (!existing) return;
         const merged = { ...existing, ...fields };
+        const sessionAlive = sessionGuard();
         try {
             const saved = await withSync("Updating setlist", () => repo.putSetlist(clone(merged)));
+            if (!sessionAlive()) return;
             upsertSetlistLocal(saved);
         } catch (error) {
             toastError(error?.message || "Could not update setlist.");
@@ -1557,11 +1578,13 @@ export function createAppStore(repo) {
             toastError("Songs need names.");
             return;
         }
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = `Saving "${editorSong.name}"...`;
             const saved = await withSync("Saving song", () => repo.putSong({
                 ...editorSong, updatedAt: nowIso()
             }));
+            if (!sessionAlive()) return;
             upsertSongLocal(saved);
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
@@ -1602,6 +1625,7 @@ export function createAppStore(repo) {
             }
             for (const [memberName, memberData] of dirtyMembers) {
                 await persistMemberEdit(memberName, memberData);
+                if (!sessionAlive()) return;
             }
 
             closeEditor();
@@ -1625,9 +1649,11 @@ export function createAppStore(repo) {
 
     async function deleteSong(song) {
         if (!window.confirm(`Delete "${song.name}"?`)) return;
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = `Deleting "${song.name}"...`;
             await withSync("Removing song", () => repo.deleteSong(song.id));
+            if (!sessionAlive()) return;
             removeSongLocal(song.id);
             if (editorSong?.id === song.id) closeEditor();
             toastInfo(`Deleted "${song.name}".`);
@@ -1641,27 +1667,42 @@ export function createAppStore(repo) {
     async function deleteAllData() {
         if (!window.confirm("This will delete ALL songs, band config, and saved setlists. This cannot be undone.\n\nAre you sure?")) return;
         if (!window.confirm("Really? Everything will be gone forever.")) return;
+        const sessionAlive = sessionGuard();
+        // Bail out cleanly if the user switches accounts mid-wipe: any
+        // further deletes would run against the NEW account's storage paths.
+        const abortIfSwitched = () => {
+            if (!sessionAlive()) throw new Error("Deletion stopped — the account changed mid-way.");
+        };
         try {
             busyMessage = "Deleting everything...";
-            // Delete all songs from RS
-            for (const song of songs) {
-                await repo.deleteSong(song.id);
-                void mirror?.deleteSong(song.id).catch(() => {});
+            // Delete all songs from RS. List from the repo as well as memory
+            // so songs that never made it into the in-memory catalog (e.g.
+            // mid-first-sync) are still deleted.
+            const { songs: listedSongs } = await repo.listSongs();
+            const allSongIds = new Set([...songs.map((s) => s.id), ...listedSongs.map((s) => s.id)]);
+            for (const id of allSongIds) {
+                abortIfSwitched();
+                await repo.deleteSong(id);
+                void mirror?.deleteSong(id).catch(() => {});
             }
             // Delete all setlists from RS (list from remote to catch any beyond in-memory state)
             const { setlists: allSetlists } = await repo.listSetlists();
             for (const setlist of allSetlists) {
+                abortIfSwitched();
                 await repo.deleteSetlist(setlist.id);
                 void mirror?.deleteSetlist(setlist.id).catch(() => {});
             }
             // Delete all members from RS (list from remote to catch any beyond in-memory state)
             const { members: allMembers } = await repo.listMembers();
             for (const name of Object.keys(allMembers)) {
+                abortIfSwitched();
                 await repo.deleteMember(name);
                 void mirror?.deleteMember(name).catch(() => {});
             }
             // Delete config from RS so first-run triggers on reload
+            abortIfSwitched();
             await repo.deleteConfig();
+            if (!sessionAlive()) return;
             void mirror?.deleteKv("config").catch(() => {});
             void mirror?.deleteKv("bootstrap").catch(() => {});
             // Clear local state
@@ -1732,10 +1773,13 @@ export function createAppStore(repo) {
 
     async function saveConfig() {
         if (!appConfig) return;
+        const sessionAlive = sessionGuard();
         try {
             busyMessage = "Saving config...";
             const nextConfig = normalizeAppConfig({ ...clone(appConfig), updatedAt: nowIso() });
-            setConfigLocal(await withSync("Saving settings", () => repo.putConfig(nextConfig)));
+            const saved = await withSync("Saving settings", () => repo.putConfig(nextConfig));
+            if (!sessionAlive()) return;
+            setConfigLocal(saved);
             persistGenerationOptions();
             if (currentUserAddress && appConfig?.bandName) {
                 saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
@@ -1751,9 +1795,12 @@ export function createAppStore(repo) {
 
     async function persistConfigEdit(nextConfig, errorMessage = "Could not save config.") {
         const normalized = normalizeAppConfig({ ...clone(nextConfig), updatedAt: nowIso() });
+        const sessionAlive = sessionGuard();
         appConfig = normalized;
         try {
-            setConfigLocal(await withSync("Saving settings", () => repo.putConfig(normalized)));
+            const saved = await withSync("Saving settings", () => repo.putConfig(normalized));
+            if (!sessionAlive()) return false;
+            setConfigLocal(saved);
             persistGenerationOptions();
             return true;
         } catch (error) {
@@ -1766,16 +1813,19 @@ export function createAppStore(repo) {
     async function persistMemberEdit(memberName, data, errorMessage = "Could not save member.") {
         const normalized = normalizeMemberRecord(data);
         const previousMember = bandMembers?.[memberName];
+        const sessionAlive = sessionGuard();
         bandMembers = { ...bandMembers, [memberName]: normalized };
         try {
             await withSync("Saving member", () => repo.putMember(memberName, normalized));
+            if (!sessionAlive()) return false;
             void mirror?.putMember({ ...normalized, name: memberName }).catch(() => {});
             return true;
         } catch (error) {
             // Revert only our own key, and only if a newer edit hasn't already
             // replaced it, so a failed save can't clobber a concurrent successful
-            // edit to this or another member.
-            if (bandMembers?.[memberName] === normalized) {
+            // edit to this or another member. Post-switch the state was
+            // blanked/re-hydrated wholesale — nothing of ours to revert.
+            if (sessionAlive() && bandMembers?.[memberName] === normalized) {
                 const next = { ...bandMembers };
                 if (previousMember === undefined) delete next[memberName];
                 else next[memberName] = previousMember;
@@ -1802,6 +1852,7 @@ export function createAppStore(repo) {
         if (!clean || clean === oldName || bandMemberEntries.some(([n]) => n === clean)) return;
         const data = bandMembers[oldName] || { instruments: [] };
 
+        const sessionAlive = sessionGuard();
         // Put the new key first so a failure leaves the original member
         // intact — songs that reference `oldName` still resolve, and we
         // bail out without touching local state.
@@ -1811,6 +1862,7 @@ export function createAppStore(repo) {
             toastError(error?.message || "Could not rename member.");
             return;
         }
+        if (!sessionAlive()) return;
 
         // Apply the local rename now: the new key exists remotely, so the
         // UI must switch over even if the follow-up delete fails. The
@@ -1875,8 +1927,10 @@ export function createAppStore(repo) {
         } else {
             if (!window.confirm(`Remove "${memberName}" from the band?`)) return;
         }
+        const sessionAlive = sessionGuard();
         try {
             await withSync("Removing member", () => repo.deleteMember(memberName));
+            if (!sessionAlive()) return;
             removeMemberLocal(memberName);
             if (expandedBandMember === memberName) expandedBandMember = "";
             toastInfo(`Removed "${memberName}".`);
@@ -2106,6 +2160,10 @@ export function createAppStore(repo) {
 
     async function importFromFile() {
         if (!importFile) { toastError("Choose a JSON file first."); return; }
+        const sessionAlive = sessionGuard();
+        const abortIfSwitched = () => {
+            if (!sessionAlive()) throw new Error("Import stopped — the account changed mid-way.");
+        };
         try {
             busyMessage = "Importing...";
             const text = await importFile.text();
@@ -2117,27 +2175,37 @@ export function createAppStore(repo) {
             await withSync("Importing data", async () => {
                 for (const s of imported.songs) {
                     if (importMode === "skip" && existing.has(s.id)) continue;
-                    upsertSongLocal(await repo.putSong(s)); ws++;
+                    const saved = await repo.putSong(s);
+                    abortIfSwitched();
+                    upsertSongLocal(saved); ws++;
                 }
                 if (imported.config && (importMode === "overwrite" || !appConfig)) {
-                    setConfigLocal(await repo.putConfig(imported.config));
+                    const savedConfig = await repo.putConfig(imported.config);
+                    abortIfSwitched();
+                    setConfigLocal(savedConfig);
                 }
                 // Import members
                 if (imported.bandMembers) {
                     for (const [name, data] of Object.entries(imported.bandMembers)) {
-                        upsertMemberLocal(name, await repo.putMember(name, normalizeMemberRecord(data)));
+                        const savedMember = await repo.putMember(name, normalizeMemberRecord(data));
+                        abortIfSwitched();
+                        upsertMemberLocal(name, savedMember);
                     }
                 }
                 // Import setlists
                 if (imported.savedSetlists && imported.savedSetlists.length > 0) {
                     for (const entry of imported.savedSetlists) {
-                        upsertSetlistLocal(await repo.putSetlist(migrator.migrateDocument("setlists", entry)));
+                        const savedSetlist = await repo.putSetlist(migrator.migrateDocument("setlists", entry));
+                        abortIfSwitched();
+                        upsertSetlistLocal(savedSetlist);
                     }
                 }
-                setBootstrapLocal(await repo.putBootstrapMeta({
+                const savedBootstrap = await repo.putBootstrapMeta({
                     source: "uploaded-json", payloadType: imported.payloadType, mode: importMode,
                     fileName: importFile?.name || null, importedSongs: ws
-                }));
+                });
+                abortIfSwitched();
+                setBootstrapLocal(savedBootstrap);
             });
 
             const parts = [`${ws} song${ws === 1 ? "" : "s"}`];
@@ -2167,19 +2235,25 @@ export function createAppStore(repo) {
 
     // ---- migrations ----
     async function runMigrations() {
+        const sessionAlive = sessionGuard();
         // Migrate config: read raw config to check for band.members before normalization strips them
         const rawConfig = await repo.getRawConfig();
+        if (!sessionAlive()) return;
         if (rawConfig?.band?.members && Object.keys(rawConfig.band.members).length > 0) {
             // Extract members from old config and write only those not already migrated
             for (const [name, data] of Object.entries(rawConfig.band.members)) {
                 if (!bandMembers[name]) {
-                    upsertMemberLocal(name, await repo.putMember(name, normalizeMemberRecord(data)));
+                    const savedMember = await repo.putMember(name, normalizeMemberRecord(data));
+                    if (!sessionAlive()) return;
+                    upsertMemberLocal(name, savedMember);
                 }
             }
             // Run rs-migrate on the raw config to strip band.members, then save
             const migratedConfig = migrator.migrateDocument("config", rawConfig);
             if (migratedConfig !== rawConfig) {
-                setConfigLocal(await repo.putConfig(migratedConfig));
+                const savedConfig = await repo.putConfig(migratedConfig);
+                if (!sessionAlive()) return;
+                setConfigLocal(savedConfig);
             }
         }
 
@@ -2195,7 +2269,9 @@ export function createAppStore(repo) {
                     const toMigrate = localSets.filter((s) => !remoteIds.has(s.id));
                     for (const entry of toMigrate) {
                         const normalized = migrator.migrateDocument("setlists", entry);
-                        upsertSetlistLocal(await repo.putSetlist(normalized));
+                        const savedSetlist = await repo.putSetlist(normalized);
+                        if (!sessionAlive()) return;
+                        upsertSetlistLocal(savedSetlist);
                     }
                 }
                 localStorage.removeItem(localKey);
@@ -2366,6 +2442,9 @@ export function createAppStore(repo) {
         const detachChange = repo.onChange((event) => {
             if (event?.origin !== "remote" && event?.origin !== "conflict") return;
             if (!currentUserAddress) return;
+            // Mid-swap, in-flight events can still belong to the OLD
+            // account's aborted sync — never apply them to the new mirror.
+            if (isSwitching) return;
             cancelSettleTimer();
             if (syncState !== "error") setSyncState("syncing");
             applyRemoteChange(event);

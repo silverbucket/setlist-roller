@@ -386,6 +386,49 @@ describe("connectToAccount — swap path (currently connected)", () => {
     });
 });
 
+describe("stale async writes", () => {
+    it("drops a save that resolves after switching accounts", async () => {
+        await seedMirror("user-b@example.com", { config: { bandName: "Band B", schemaVersion: 2 } });
+        saveKnownAccount("user-b@example.com", { bandName: "B" }, "token-b");
+        const repo = buildStubRepo({ initiallyConnected: true });
+        repo.setUserAddress("user-a@example.com");
+        // A putSong the test resolves manually — models a slow remote write
+        // still in flight when the user switches accounts.
+        let resolvePut;
+        repo.putSong = vi.fn(
+            () =>
+                new Promise((resolve) => {
+                    resolvePut = resolve;
+                }),
+        );
+        const store = createAppStore(repo);
+        store.init();
+        repo.fire("connected");
+        await settle();
+
+        store.openNewSong();
+        store.updateSongField("name", "Ghost Song");
+        const saving = store.saveSong();
+        await flush();
+        expect(repo.putSong).toHaveBeenCalledTimes(1);
+
+        await store.connectToAccount("user-b@example.com");
+        expect(store.currentUserAddress).toBe("user-b@example.com");
+
+        // The old account's save resolves AFTER the switch — it must not
+        // land in the new account's catalog or mirror.
+        resolvePut({ id: "ghost-1", name: "Ghost Song" });
+        await saving;
+        await settle();
+
+        expect(store.songs.map((s) => s.name)).not.toContain("Ghost Song");
+        const db = await openAccountDb("user-b@example.com");
+        const data = await db.loadAll();
+        db.close();
+        expect(data.songs).toEqual([]);
+    });
+});
+
 describe("disconnect vs forget", () => {
     it("disconnectStorage keeps the mirror so returning is instant", async () => {
         await seedMirror("user-a@example.com", {
