@@ -102,6 +102,7 @@ test.describe("Songs catalog — search", () => {
 
     test("matches by name substring (case-insensitive)", async ({ page, app }) => {
         await app.goto();
+        await app.waitForSynced();
         await new AppShell(page).gotoSongs();
 
         const songs = new SongsPage(page);
@@ -113,6 +114,7 @@ test.describe("Songs catalog — search", () => {
 
     test("clearing search restores full list", async ({ page, app }) => {
         await app.goto();
+        await app.waitForSynced();
         await new AppShell(page).gotoSongs();
 
         const songs = new SongsPage(page);
@@ -135,6 +137,7 @@ test.describe("Songs catalog — type filter", () => {
             }),
         );
         await app.goto();
+        await app.waitForSynced();
         await new AppShell(page).gotoSongs();
 
         const songs = new SongsPage(page);

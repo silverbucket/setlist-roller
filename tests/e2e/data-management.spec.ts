@@ -24,6 +24,7 @@ test.describe("Export", () => {
         );
         await app.goto();
         await app.waitForReady();
+        await app.waitForSynced();
         await new AppShell(page).gotoBand();
 
         const band = new BandPage(page);
@@ -83,6 +84,7 @@ test.describe("Import", () => {
         );
         await app.goto();
         await app.waitForReady();
+        await app.waitForSynced();
         const shell = new AppShell(page);
         await shell.gotoBand();
 
