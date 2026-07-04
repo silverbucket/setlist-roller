@@ -157,10 +157,6 @@ export function createAppStore(repo) {
 
     // ---- band editing ----
     let expandedBandMember = $state("");
-    let newMemberName = $state("");
-    let newInstrumentByMember = $state({});
-    let newTuningByInstrument = $state({});
-    let newTechniqueByInstrument = $state({});
 
     // ---- import/export ----
     let importMode = $state("skip");
@@ -875,6 +871,7 @@ export function createAppStore(repo) {
     function deactivateAccount() {
         terminateWorker();
         isGenerating = false;
+        cancelConfigSave();
         try { mirror?.close(); } catch (_e) { /* already closed */ }
         mirror = null;
         try { localStorage.removeItem(ACTIVE_ACCOUNT_KEY); } catch (_e) { /* unavailable */ }
@@ -1788,8 +1785,30 @@ export function createAppStore(repo) {
         return value;
     }
 
+    // Debounced autosave for config field edits. Advanced-config inputs
+    // write through updateConfigField on every keystroke; persisting each
+    // one would spam remoteStorage, and requiring an explicit "Save
+    // Settings" press silently lost edits when the user navigated away
+    // (the in-memory config had already changed). One save model instead:
+    // edits persist themselves shortly after the user stops typing.
+    let configSaveTimer = null;
+    function scheduleConfigSave() {
+        if (configSaveTimer) clearTimeout(configSaveTimer);
+        configSaveTimer = setTimeout(() => {
+            configSaveTimer = null;
+            if (appConfig) void persistConfigEdit(appConfig);
+        }, 800);
+    }
+    function cancelConfigSave() {
+        if (configSaveTimer) {
+            clearTimeout(configSaveTimer);
+            configSaveTimer = null;
+        }
+    }
+
     function updateConfigField(fieldOrPath, rawValue) {
         if (!appConfig) return;
+        scheduleConfigSave();
         // Accept either a field object { path, type } or a plain path string
         if (typeof fieldOrPath === "string") {
             appConfig = setByPath(appConfig, fieldOrPath, rawValue);
@@ -1846,6 +1865,10 @@ export function createAppStore(repo) {
             if (!sessionAlive()) return false;
             setConfigLocal(saved);
             persistGenerationOptions();
+            if (currentUserAddress && appConfig?.bandName) {
+                saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
+                knownAccounts = getKnownAccounts();
+            }
             return true;
         } catch (error) {
             toastError(error?.message || errorMessage);
@@ -1880,15 +1903,16 @@ export function createAppStore(repo) {
         }
     }
 
-    async function addBandMember() {
-        const clean = newMemberName.trim();
-        if (!clean) { toastError("Name the member first."); return; }
-        if (bandMemberEntries.some(([n]) => n === clean)) { toastError("Already exists."); return; }
+    async function addBandMember(name) {
+        const clean = String(name ?? "").trim();
+        if (!clean) { toastError("Name the member first."); return false; }
+        if (bandMemberEntries.some(([n]) => n === clean)) { toastError("Already exists."); return false; }
         if (await persistMemberEdit(clean, { instruments: [] }, "Could not add member.")) {
             expandedBandMember = clean;
-            newMemberName = "";
             toastInfo(`Added "${clean}".`);
+            return true;
         }
+        return false;
     }
 
     async function renameBandMember(oldName, newName) {
@@ -1931,6 +1955,30 @@ export function createAppStore(repo) {
                     error?.message ? ` (${error.message})` : ""
                 }`,
             );
+        }
+        if (!sessionAlive()) return;
+
+        // Cascade the rename into everything else keyed by member name —
+        // song overrides and per-member generation constraints. Without
+        // this, renamed members silently orphaned both.
+        const affectedSongs = songs.filter((s) => s.members && oldName in s.members);
+        for (const song of affectedSongs) {
+            const members = { ...song.members, [clean]: song.members[oldName] };
+            delete members[oldName];
+            try {
+                const saved = await repo.putSong({ ...clone(song), members });
+                if (!sessionAlive()) return;
+                upsertSongLocal(saved);
+            } catch (error) {
+                toastWarn(`Couldn't update "${song.name}" for the rename: ${error?.message || error}`);
+            }
+        }
+        const showMembers = generationOptions.show?.members;
+        if (showMembers?.[oldName]) {
+            const members = { ...showMembers, [clean]: showMembers[oldName] };
+            delete members[oldName];
+            generationOptions = { ...generationOptions, show: { ...generationOptions.show, members } };
+            persistGenerationOptions();
         }
     }
 
@@ -1983,17 +2031,18 @@ export function createAppStore(repo) {
         }
     }
 
-    async function addBandMemberInstrument(memberName) {
-        const draft = (newInstrumentByMember[memberName] || "").trim();
-        if (!draft) { toastError("Type an instrument name first."); return; }
+    async function addBandMemberInstrument(memberName, instrumentName) {
+        const clean = String(instrumentName ?? "").trim();
+        if (!clean) { toastError("Type an instrument name first."); return false; }
         const member = bandMembers[memberName] || { instruments: [] };
         const current = member.instruments || [];
-        if (current.some((i) => i.name === draft)) { toastError("Already on this member."); return; }
-        const updated = { ...member, instruments: current.concat({ name: draft, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" }) };
+        if (current.some((i) => i.name === clean)) { toastError("Already on this member."); return false; }
+        const updated = { ...member, instruments: current.concat({ name: clean, tunings: [], defaultTuning: "", techniques: [], defaultTechnique: "" }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newInstrumentByMember = { ...newInstrumentByMember, [memberName]: "" };
-            toastInfo(`Added ${draft} for ${memberName}.`);
+            toastInfo(`Added ${clean} for ${memberName}.`);
+            return true;
         }
+        return false;
     }
 
     async function removeBandMemberInstrument(memberName, instrumentName) {
@@ -2010,10 +2059,6 @@ export function createAppStore(repo) {
         const member = bandMembers[memberName] || { instruments: [] };
         const updated = { ...member, instruments: (member.instruments || []).filter((i) => i.name !== instrumentName) };
         if (await persistMemberEdit(memberName, updated)) toastInfo(`Removed ${instrumentName} from ${memberName}.`);
-    }
-
-    function tuningDraftKey(memberName, instrumentName) {
-        return `${memberName}::${instrumentName}`;
     }
 
     // Ensure a member and instrument exist in band members (creates them if missing)
@@ -2033,21 +2078,20 @@ export function createAppStore(repo) {
         if (dirty) await persistMemberEdit(memberName, member);
     }
 
-    async function addTuningChoice(memberName, instrumentName) {
-        const draftKey = tuningDraftKey(memberName, instrumentName);
-        const clean = (newTuningByInstrument[draftKey] || "").trim();
-        if (!clean) { toastError("Type a tuning name first."); return; }
+    async function addTuningChoice(memberName, instrumentName, tuning) {
+        const clean = String(tuning ?? "").trim();
+        if (!clean) { toastError("Type a tuning name first."); return ""; }
         await ensureBandInstrument(memberName, instrumentName);
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
         const current = currentInstruments.find((i) => i.name === instrumentName);
-        if ((current?.tunings || []).includes(clean)) { toastError("Already exists."); return; }
+        if ((current?.tunings || []).includes(clean)) { toastError("Already exists."); return ""; }
         const updated = { ...member, instruments: currentInstruments.map((i) => i.name !== instrumentName ? i : { ...i, tunings: (i.tunings || []).concat(clean) }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newTuningByInstrument = { ...newTuningByInstrument, [draftKey]: "" };
             toastInfo(`Added "${clean}" to ${instrumentName}.`);
+            return clean;
         }
-        return clean;
+        return "";
     }
 
     async function removeTuningChoice(memberName, instrumentName, tuning) {
@@ -2086,25 +2130,20 @@ export function createAppStore(repo) {
         }
     }
 
-    function techniqueDraftKey(memberName, instrumentName) {
-        return `${memberName}::${instrumentName}::tech`;
-    }
-
-    async function addTechniqueChoice(memberName, instrumentName) {
-        const draftKey = techniqueDraftKey(memberName, instrumentName);
-        const clean = (newTechniqueByInstrument[draftKey] || "").trim();
-        if (!clean) { toastError("Type a technique name first."); return; }
+    async function addTechniqueChoice(memberName, instrumentName, technique) {
+        const clean = String(technique ?? "").trim();
+        if (!clean) { toastError("Type a technique name first."); return ""; }
         await ensureBandInstrument(memberName, instrumentName);
         const member = bandMembers[memberName] || { instruments: [] };
         const currentInstruments = member.instruments || [];
         const current = currentInstruments.find((i) => i.name === instrumentName);
-        if ((current?.techniques || []).includes(clean)) { toastError("Already exists."); return; }
+        if ((current?.techniques || []).includes(clean)) { toastError("Already exists."); return ""; }
         const updated = { ...member, instruments: currentInstruments.map((i) => i.name !== instrumentName ? i : { ...i, techniques: (i.techniques || []).concat(clean) }) };
         if (await persistMemberEdit(memberName, updated)) {
-            newTechniqueByInstrument = { ...newTechniqueByInstrument, [draftKey]: "" };
             toastInfo(`Added "${clean}" technique to ${instrumentName}.`);
+            return clean;
         }
-        return clean;
+        return "";
     }
 
     async function removeTechniqueChoice(memberName, instrumentName, technique) {
@@ -2565,14 +2604,6 @@ export function createAppStore(repo) {
         clearKeyFilters() { songKeyFilters = new Set(); },
         get expandedBandMember() { return expandedBandMember; },
         set expandedBandMember(v) { expandedBandMember = v; },
-        get newMemberName() { return newMemberName; },
-        set newMemberName(v) { newMemberName = v; },
-        get newInstrumentByMember() { return newInstrumentByMember; },
-        set newInstrumentByMember(v) { newInstrumentByMember = v; },
-        get newTuningByInstrument() { return newTuningByInstrument; },
-        set newTuningByInstrument(v) { newTuningByInstrument = v; },
-        get newTechniqueByInstrument() { return newTechniqueByInstrument; },
-        set newTechniqueByInstrument(v) { newTechniqueByInstrument = v; },
         get importMode() { return importMode; },
         set importMode(v) { importMode = v; },
         get importFile() { return importFile; },
@@ -2664,8 +2695,6 @@ export function createAppStore(repo) {
         addTechniqueChoice,
         removeTechniqueChoice,
         setInstrumentDefaultTechnique,
-        techniqueDraftKey,
-        tuningDraftKey,
         exportAllData,
         importFromFile,
         performanceSummary,

@@ -380,6 +380,45 @@ describe("incremental remote sync", () => {
         teardown();
     });
 
+    it("cascades a band-member rename into song overrides and generation constraints", async () => {
+        const repo = buildRepo();
+        repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
+        repo.deleteMember = vi.fn(async () => {});
+        repo.putSong = vi.fn(async (s) => s);
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "members/Nick",
+            origin: "remote",
+            newValue: { name: "Nick", instruments: [{ name: "Guitar", tunings: [], defaultTuning: "" }] },
+        });
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: {
+                id: "s1",
+                name: "Override Song",
+                members: { Nick: { instruments: [{ name: "Guitar", tuning: ["Drop D"], capo: 0, picking: [] }] } },
+            },
+        });
+        store.ensureMemberShowConfig("Nick");
+
+        await store.renameBandMember("Nick", "Nicholas");
+        await settle();
+
+        expect(store.bandMembers.Nicholas).toBeDefined();
+        expect(store.bandMembers.Nick).toBeUndefined();
+        const song = store.songs.find((s) => s.id === "s1");
+        expect(song.members.Nicholas).toBeDefined();
+        expect(song.members.Nick).toBeUndefined();
+        expect(store.generationOptions.show.members.Nicholas).toBeDefined();
+        expect(store.generationOptions.show.members.Nick).toBeUndefined();
+        teardown();
+    });
+
     it("keeps unpracticed songs addable to the current setlist", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
