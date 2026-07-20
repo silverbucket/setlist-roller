@@ -33,6 +33,27 @@ test.describe("Song editor — basics", () => {
         expect(created.notes).toBe("Capo on 2");
     });
 
+    test("energy selection sticks on the first change", async ({ page, app }) => {
+        await app.seed(buildSeed());
+        await app.goto();
+        await new AppShell(page).gotoSongs();
+
+        const songs = new SongsPage(page);
+        const editor = new SongEditorPage(page);
+        await songs.clickAdd();
+        await editor.waitForVisible();
+        await editor.fillName("High Energy");
+
+        await editor.selectEnergy(5);
+        await expect(editor.energySelect).toHaveValue("5");
+        const draft = await app.getState();
+        expect(draft.editorSong.energy).toBe(5);
+
+        await editor.save();
+        const saved = await app.getState();
+        expect(saved.songs.find((song: SeedSong) => song.name === "High Energy")?.energy).toBe(5);
+    });
+
     test("editing a song persists changes after closing/reopening", async ({ page, app }) => {
         await app.seed(
             buildSeed({

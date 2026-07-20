@@ -318,11 +318,11 @@
                         value={store.editorSong.energy || 3}
                         onchange={(e) => store.updateSongField("energy", Number(e.currentTarget.value))}
                     >
-                        <option value="1">1 · Very low</option>
-                        <option value="2">2 · Low</option>
-                        <option value="3">3 · Medium</option>
-                        <option value="4">4 · High</option>
-                        <option value="5">5 · Peak</option>
+                        <option value={1}>1 · Very low</option>
+                        <option value={2}>2 · Low</option>
+                        <option value={3}>3 · Medium</option>
+                        <option value={4}>4 · High</option>
+                        <option value={5}>5 · Peak</option>
                     </select>
                 </label>
 
