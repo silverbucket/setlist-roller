@@ -82,6 +82,9 @@ export function createAppStore(repo) {
     let appConfig = $state(null);
     let bootstrapMeta = $state(null);
     let generatedSetlist = $state(null);
+    // Songs explicitly chosen before the first roll. Once a roll completes,
+    // pin state moves onto the lean setlist entries so positions can be kept.
+    let preRollPinnedIds = $state([]);
     let isGenerating = $state(false);
     let activeWorker = null;
     let generationId = 0;
@@ -240,6 +243,10 @@ export function createAppStore(repo) {
             maxInstrumentals: source.general?.limits?.instrumentals ?? -1,
             keyFlow: false,
             includeUnpracticed: false,
+            setShape: "build",
+            rotation: "balanced",
+            transitionSmoothness: "balanced",
+            selectionVariety: 50,
             seed: "",
             randomness: {
                 temperature: source.general?.randomness?.temperature ?? 0.85,
@@ -387,14 +394,15 @@ export function createAppStore(repo) {
         const fat = [];
         for (const entry of setlist.songs) {
             const song = songsById.get(entry.songId);
-            if (song) fat.push({ ...song, performance: entry.performance || {} });
+            if (song) fat.push({ ...song, performance: entry.performance || {}, pinned: !!entry.pinned });
         }
         const scored = scoreFixedOrder(fat, appConfig || DEFAULT_APP_CONFIG, {
             keyFlow: generationOptions?.keyFlow,
         });
+        const pinnedIds = new Set(fat.filter((song) => song.pinned).map((song) => song.id));
         return {
             ...setlist,
-            songs: scored.songs,
+            songs: scored.songs.map((song) => ({ ...song, pinned: pinnedIds.has(song.id) })),
             summary: {
                 ...scored.summary,
                 minimumsRelaxed: !!setlist.minimumsRelaxed,
@@ -435,6 +443,7 @@ export function createAppStore(repo) {
             songs: (result.songs || []).map((s) => ({
                 songId: s.id,
                 performance: s.performance || {},
+                pinned: !!s.pinned,
             })),
         };
     }
@@ -452,6 +461,7 @@ export function createAppStore(repo) {
         const songs = setlist.songs.map((s) => ({
             songId: s.songId || s.id,
             performance: s.performance || {},
+            pinned: !!s.pinned,
         }));
         const out = { ...setlist, songs };
         if (out.summary) {
@@ -503,9 +513,11 @@ export function createAppStore(repo) {
         // the NEXT ROLL clobbering the list, not against persistence.
         if (current) {
             generatedSetlist = current;
+            preRollPinnedIds = [];
             setlistLocked = current._locked || false;
         } else {
             clearGeneratedSetlist();
+            preRollPinnedIds = [];
             setlistLocked = false;
         }
         setlistSaved = false;
@@ -1146,7 +1158,11 @@ export function createAppStore(repo) {
     function confirmFreshRoll() {
         pendingRollConfirm = false;
         setlistLocked = false;
-        generate();
+        generatedSetlist = generatedSetlist
+            ? { ...generatedSetlist, songs: generatedSetlist.songs.map((entry) => ({ ...entry, pinned: false })) }
+            : null;
+        preRollPinnedIds = [];
+        generate({ _clearPins: true });
     }
 
     function confirmOptimizeOrder() {
@@ -1185,7 +1201,16 @@ export function createAppStore(repo) {
         // Unpracticed songs stay out of the pool unless the user opted in —
         // but songs explicitly pinned by "Optimize Order" (fixedSongIds)
         // always stay in, or the optimize pass would silently drop them.
-        const fixedIds = new Set(overrideOptions.fixedSongIds || []);
+        const currentPins = overrideOptions._clearPins
+            ? []
+            : (generatedSetlist?.songs || [])
+                  .map((entry, index) => (entry.pinned ? { id: entry.songId, position: index + 1 } : null))
+                  .filter(Boolean);
+        const queuedPins = overrideOptions._clearPins
+            ? []
+            : preRollPinnedIds.map((id) => ({ id, position: null }));
+        const pinsForRoll = overrideOptions.fixedSongIds ? [] : [...currentPins, ...queuedPins];
+        const fixedIds = new Set([...(overrideOptions.fixedSongIds || []), ...pinsForRoll.map((pin) => pin.id)]);
         const eligibleSongs = songs.filter(
             (s) => generationOptions.includeUnpracticed || !s.unpracticed || fixedIds.has(s.id),
         );
@@ -1206,6 +1231,12 @@ export function createAppStore(repo) {
         const thisSession = activeSession;
         const opts = clone(generationOptions);
         Object.assign(opts, overrideOptions);
+        delete opts._clearPins;
+        if (pinsForRoll.length) {
+            opts.pinnedSongs = pinsForRoll;
+            const lastPinnedPosition = Math.max(0, ...currentPins.map((pin) => pin.position));
+            opts.count = Math.max(opts.count, pinsForRoll.length, lastPinnedPosition);
+        }
 
         const worker = new GeneratorWorker();
         activeWorker = worker;
@@ -1237,7 +1268,13 @@ export function createAppStore(repo) {
                 ]));
                 return;
             }
-            generatedSetlist = leanFromGeneratorResult(result);
+            const pinnedIds = new Set(pinsForRoll.map((pin) => pin.id));
+            const lean = leanFromGeneratorResult(result);
+            generatedSetlist = {
+                ...lean,
+                songs: lean.songs.map((entry) => ({ ...entry, pinned: pinnedIds.has(entry.songId) })),
+            };
+            preRollPinnedIds = [];
             if (opts._keepLock) {
                 setlistSaved = false;
             } else {
@@ -1297,9 +1334,11 @@ export function createAppStore(repo) {
         // remotely but haven't loaded yet. When unsettled, we save the songs
         // verbatim — any truly-deleted entries will be pruned on the next save
         // once the catalog is stable.
-        const persistedSongs = catalogSettled
+        const currentSongs = catalogSettled
             ? clone(generatedSetlist.songs.filter((e) => songsById.has(e.songId)))
             : clone(generatedSetlist.songs);
+        // Pins are working-session state, not part of a saved historical set.
+        const persistedSongs = currentSongs.map(({ pinned: _pinned, ...entry }) => entry);
 
         const sessionAlive = sessionGuard();
 
@@ -1478,11 +1517,37 @@ export function createAppStore(repo) {
         );
         generatedSetlist = {
             ...generatedSetlist,
-            songs: [...generatedSetlist.songs, { songId, performance }],
+            songs: [...generatedSetlist.songs, { songId, performance, pinned: true }],
         };
         setlistSaved = false;
         persistCurrentSetlist();
     }
+
+    function pinSongBeforeRoll(songId) {
+        if (generatedSetlist || !songsById.has(songId) || preRollPinnedIds.includes(songId)) return;
+        preRollPinnedIds = [...preRollPinnedIds, songId];
+    }
+
+    function unpinSongBeforeRoll(songId) {
+        preRollPinnedIds = preRollPinnedIds.filter((id) => id !== songId);
+    }
+
+    function toggleSetlistSongPin(songId) {
+        if (!generatedSetlist) return;
+        generatedSetlist = {
+            ...generatedSetlist,
+            songs: generatedSetlist.songs.map((entry) =>
+                entry.songId === songId ? { ...entry, pinned: !entry.pinned } : entry,
+            ),
+        };
+        setlistSaved = false;
+        persistCurrentSetlist();
+    }
+
+    let preRollPinnedSongs = $derived(preRollPinnedIds.map((id) => songsById.get(id)).filter(Boolean));
+    let pinnedSongCount = $derived(
+        preRollPinnedIds.length + (generatedSetlist?.songs || []).filter((entry) => entry.pinned).length,
+    );
 
     // Unpracticed songs stay in this list on purpose: the roller won't pick
     // them, but the band can still add one to a set deliberately (the picker
@@ -2644,6 +2709,8 @@ export function createAppStore(repo) {
         get appConfig() { return appConfig; },
         get bandMembers() { return bandMembers; },
         get generatedSetlist() { return generatedSetlist; },
+        get preRollPinnedSongs() { return preRollPinnedSongs; },
+        get pinnedSongCount() { return pinnedSongCount; },
         get displayedSetlist() { return displayedSetlist; },
         get displayedSavedSetlists() { return displayedSavedSetlists; },
         get isGenerating() { return isGenerating; },
@@ -2735,6 +2802,9 @@ export function createAppStore(repo) {
         reorderSetlistSong,
         removeSetlistSong,
         addSetlistSong,
+        pinSongBeforeRoll,
+        unpinSongBeforeRoll,
+        toggleSetlistSongPin,
         get songsNotInSetlist() { return songsNotInSetlist; },
         updateGenerationField,
         toggleListValue,

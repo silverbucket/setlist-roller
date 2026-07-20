@@ -13,6 +13,7 @@ export class SongEditorPage {
     readonly nameInput: Locator;
     readonly keySelect: Locator;
     readonly notesInput: Locator;
+    readonly energySelect: Locator;
     readonly duplicateButton: Locator;
     readonly deleteButton: Locator;
 
@@ -26,6 +27,7 @@ export class SongEditorPage {
         this.nameInput = this.overlay.getByPlaceholder("Song title");
         this.keySelect = this.overlay.locator("select").first();
         this.notesInput = this.overlay.getByPlaceholder("Anything to remember on stage...");
+        this.energySelect = this.overlay.locator("label").filter({ hasText: "Energy" }).locator("select");
         this.duplicateButton = this.overlay.getByRole("button", { name: "Duplicate song" });
         this.deleteButton = this.overlay.getByRole("button", { name: "Delete song" });
     }
@@ -44,6 +46,10 @@ export class SongEditorPage {
 
     async fillNotes(notes: string) {
         await this.notesInput.fill(notes);
+    }
+
+    async selectEnergy(energy: number) {
+        await this.energySelect.selectOption(String(energy));
     }
 
     /** Toggle the Cover / Instrumental / Unpracticed / Not a good opener / closer chips */

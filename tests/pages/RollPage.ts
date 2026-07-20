@@ -113,7 +113,7 @@ export class RollPage {
     async activateTab(tab: "constraints" | "chaos") {
         const buttons = this.screen.locator(".settings-tab");
         if ((await buttons.count()) === 0) return; // no constraints to tab between
-        const label = tab === "constraints" ? "Demands" : "Tweak the Chaos";
+        const label = tab === "constraints" ? "Demands" : "Shape the Set";
         await buttons.filter({ hasText: label }).click();
     }
 
@@ -130,6 +130,17 @@ export class RollPage {
         await expect(this.addSongDialog).toBeVisible();
         await this.addSongSearch.fill(songName);
         await this.addSongDialog.getByRole("button", { name: songName, exact: false }).first().click();
+    }
+
+    async pinBeforeRoll(songName: string) {
+        await this.screen.getByRole("button", { name: "+ Pin songs before rolling" }).click();
+        await expect(this.addSongDialog).toBeVisible();
+        await this.addSongSearch.fill(songName);
+        await this.addSongDialog.getByRole("button", { name: songName, exact: false }).first().click();
+    }
+
+    pinButton(songName: string) {
+        return this.setlistSongs.filter({ hasText: songName }).getByRole("button", { name: `Pin ${songName}` });
     }
 
     async closeAddSongDialog() {

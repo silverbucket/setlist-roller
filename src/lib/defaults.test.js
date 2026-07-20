@@ -102,6 +102,27 @@ describe("rigEqualsDefault", () => {
 });
 
 describe("normalizeSongRecord — member setups", () => {
+    it("adds safe programming defaults to legacy songs", () => {
+        const song = normalizeSongRecord({ id: "legacy", name: "Legacy" });
+
+        expect(song.playPriority).toBe("normal");
+        expect(song.energy).toBe(3);
+        expect(song.positionPreference).toBe("anywhere");
+    });
+
+    it("normalizes invalid programming metadata", () => {
+        const song = normalizeSongRecord({
+            id: "odd",
+            playPriority: "always-ish",
+            energy: 99,
+            positionPreference: "encore",
+        });
+
+        expect(song.playPriority).toBe("normal");
+        expect(song.energy).toBe(5);
+        expect(song.positionPreference).toBe("anywhere");
+    });
+
     it("strips the legacy 'none' technique sentinel", () => {
         const song = normalizeSongRecord({
             id: "s1",

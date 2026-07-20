@@ -15,7 +15,10 @@
   let showAddSongPicker = $state(false);
   let addSongSearch = $state("");
   let setlistSongIds = $derived(
-    new Set((store.displayedSetlist?.songs || []).map((s) => s.id))
+    new Set([
+      ...(store.displayedSetlist?.songs || []).map((s) => s.id),
+      ...(store.preRollPinnedSongs || []).map((s) => s.id),
+    ])
   );
   // Unpracticed songs stay listed — adding one to a set is a deliberate
   // band decision (the roller itself won't pick them unless allowed in
@@ -113,11 +116,6 @@
   function selectedTuningCount(memberName, instName) {
     return (store.generationOptions.show?.members?.[memberName]?.allowedTunings?.[instName] || []).length;
   }
-
-  // Variety slider: maps 0-100 to temperature 0.3-2.0
-  function varietyToTemp(v) { return 0.3 + (v / 100) * 1.7; }
-  function tempToVariety(t) { return Math.round(((t - 0.3) / 1.7) * 100); }
-  let varietyValue = $derived(tempToVariety(store.generationOptions.randomness?.temperature ?? 0.85));
 
   let settingsTab = $state("constraints");
   let hasConstraints = $derived(membersWithChoices().length > 0);
@@ -335,7 +333,7 @@
             {/each}
           </svg>
         </span>
-        <span class="roll-label">{store.isGenerating ? "Rolling..." : "Roll"}</span>
+        <span class="roll-label">{store.isGenerating ? "Rolling..." : store.pinnedSongCount ? "Reroll" : "Roll"}</span>
         {#if showConfetti}
           <span class="confetti-burst">
             {#each Array(12) as _, i}
@@ -356,11 +354,41 @@
       {#if hasConstraints}
         <div class="settings-tabs">
           <button type="button" class="settings-tab" class:active={settingsTab === "constraints"} onclick={() => { settingsTab = "constraints"; }}>Demands</button>
-          <button type="button" class="settings-tab" class:active={settingsTab === "chaos"} onclick={() => { settingsTab = "chaos"; }}>Tweak the Chaos</button>
+          <button type="button" class="settings-tab" class:active={settingsTab === "chaos"} onclick={() => { settingsTab = "chaos"; }}>Shape the Set</button>
         </div>
       {/if}
 
       {#if settingsTab === "chaos" || !hasConstraints}
+        <div class="quick-row">
+          <label class="adv-field">
+            <span>Set shape</span>
+            <select value={store.generationOptions.setShape || "build"} onchange={(e) => store.updateGenerationField("setShape", e.currentTarget.value)}>
+              <option value="build">Build steadily</option>
+              <option value="big-ends">Big start and finish</option>
+              <option value="alternating">Alternating energy</option>
+              <option value="lively">Keep it lively</option>
+              <option value="none">No preference</option>
+            </select>
+          </label>
+          <label class="adv-field">
+            <span>Song mix</span>
+            <select value={store.generationOptions.rotation || "balanced"} onchange={(e) => store.updateGenerationField("rotation", e.currentTarget.value)}>
+              <option value="hits">Greatest hits</option>
+              <option value="balanced">Balanced</option>
+              <option value="deep">Dig deeper</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="adv-field">
+          <span>Transition smoothness</span>
+          <select value={store.generationOptions.transitionSmoothness || "balanced"} onchange={(e) => store.updateGenerationField("transitionSmoothness", e.currentTarget.value)}>
+            <option value="smooth">Smooth</option>
+            <option value="balanced">Balanced</option>
+            <option value="adventurous">Anything goes</option>
+          </select>
+        </label>
+
         <div class="quick-row">
           <div class="adv-field">
             <span>Max covers</span>
@@ -404,8 +432,8 @@
 
         <div class="variety-field">
           <div class="variety-header">
-            <span class="variety-label">Variety</span>
-            <span class="variety-hint">{varietyValue >= 100 ? "YOLO 🤘" : varietyValue < 30 ? "Safe pick" : varietyValue > 70 ? "Hold my beer" : "Feels right"}</span>
+            <span class="variety-label">Selection variety</span>
+            <span class="variety-hint">{store.generationOptions.selectionVariety < 30 ? "Reliable picks" : store.generationOptions.selectionVariety > 70 ? "More surprises" : "Balanced"}</span>
           </div>
           <input
             class="variety-slider"
@@ -413,12 +441,12 @@
             min="0"
             max="100"
             step="1"
-            value={varietyValue}
-            oninput={(e) => store.updateGenerationField("randomness.temperature", varietyToTemp(Number(e.currentTarget.value)))}
+            value={store.generationOptions.selectionVariety ?? 50}
+            oninput={(e) => store.updateGenerationField("selectionVariety", Number(e.currentTarget.value))}
           />
           <div class="variety-labels">
-            <span>Safe pick</span>
-            <span>Hold my beer</span>
+            <span>Reliable picks</span>
+            <span>More surprises</span>
           </div>
         </div>
 
@@ -531,6 +559,28 @@
     </div>
   {/if}
 
+  {#if !store.displayedSetlist && store.preRollPinnedSongs.length > 0}
+    <section class="pre-roll-pins" aria-label="Pinned songs">
+      <div class="pre-roll-pins-header">
+        <div>
+          <h3>Pinned songs</h3>
+          <p>These are guaranteed a place when you roll.</p>
+        </div>
+        <button type="button" class="save-set-btn add-song-btn" onclick={() => { showAddSongPicker = true; }}>+ Pin song</button>
+      </div>
+      <div class="pre-roll-pin-list">
+        {#each store.preRollPinnedSongs as song}
+          <div class="pre-roll-pin">
+            <span>📌 {song.name}</span>
+            <button type="button" aria-label={`Unpin ${song.name}`} onclick={() => store.unpinSongBeforeRoll(song.id)}>×</button>
+          </div>
+        {/each}
+      </div>
+    </section>
+  {:else if !store.displayedSetlist && hasSongs}
+    <button type="button" class="pre-roll-add" onclick={() => { showAddSongPicker = true; }}>+ Pin songs before rolling</button>
+  {/if}
+
   <!-- Getting Started -->
   {#if !readyToRoll && store.syncState !== 'syncing'}
     <div class="onboarding-card">
@@ -591,6 +641,7 @@
               onDragStart={handleDragStart}
               onEdit={handleEditSong}
               onRemove={(idx) => store.removeSetlistSong(idx)}
+              onTogglePin={store.toggleSetlistSongPin}
               arming={dragArmingIndex === i}
               dragging={dragIndex === i}
             />
@@ -653,7 +704,12 @@
               class="add-song-item"
               class:in-setlist={inSetlist}
               disabled={inSetlist}
-              onclick={() => { store.addSetlistSong(song.id); showAddSongPicker = false; addSongSearch = ""; }}
+              onclick={() => {
+                if (store.displayedSetlist) store.addSetlistSong(song.id);
+                else store.pinSongBeforeRoll(song.id);
+                showAddSongPicker = false;
+                addSongSearch = "";
+              }}
             >
               {song.name}
               {#if song.unpracticed}<span class="unpracticed-tag">unpracticed</span>{/if}
@@ -677,6 +733,64 @@
     padding: 0.5rem;
     max-width: 540px;
     margin: 0 auto;
+  }
+
+  .pre-roll-add {
+    justify-self: center;
+    padding: 0.65rem 1rem;
+    border: 1px dashed var(--accent-line);
+    border-radius: var(--radius-md, 12px);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .pre-roll-pins {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius-lg, 16px);
+    background: var(--accent-soft);
+  }
+
+  .pre-roll-pins-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .pre-roll-pins h3,
+  .pre-roll-pins p {
+    margin: 0;
+  }
+
+  .pre-roll-pins h3 { font-size: 0.95rem; }
+  .pre-roll-pins p { margin-top: 0.15rem; color: var(--muted); font-size: 0.78rem; }
+
+  .pre-roll-pin-list { display: grid; gap: 0.4rem; }
+  .pre-roll-pin {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: var(--radius-sm, 8px);
+    background: var(--paper-strong);
+    font-weight: 700;
+  }
+
+  .pre-roll-pin button {
+    width: 32px;
+    min-height: 32px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 20px;
+    cursor: pointer;
   }
 
   @media (min-width: 400px) {
@@ -1031,6 +1145,18 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.65rem;
+  }
+
+  .adv-field select {
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm, 8px);
+    background: var(--paper-strong);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
   }
 
   .variety-field {

@@ -67,6 +67,44 @@ test.describe("Roll screen — onboarding & sync state", () => {
 });
 
 test.describe("Roll screen — generation flow", () => {
+    test("a song pinned before rolling is guaranteed a place", async ({ page, app }) => {
+        await app.seed(seedWithCatalog());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(5);
+
+        await roll.pinBeforeRoll("Jolene");
+        await expect(roll.screen.getByText("📌 Jolene")).toBeVisible();
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+
+        expect(await roll.getSetlistSongNames()).toContain("Jolene");
+    });
+
+    test("pinned songs keep their positions when the rest is rerolled", async ({ page, app }) => {
+        await app.seed(seedWithCatalog());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(6);
+        await roll.setSeed(21);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+        const firstNames = await roll.getSetlistSongNames();
+        const pinnedName = firstNames[2];
+
+        await roll.pinButton(pinnedName).click();
+        await roll.setSeed(99);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+
+        const secondNames = await roll.getSetlistSongNames();
+        expect(secondNames[2]).toBe(pinnedName);
+    });
+
     test("clicking Roll generates a setlist", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();

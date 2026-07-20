@@ -52,6 +52,20 @@ function createRng(seed) {
     };
 }
 
+function normalizeSeed(seed) {
+    if (seed === undefined || seed === null || seed === "" || seed === 0 || seed === "0") {
+        return Math.floor(Date.now() + Math.random() * 1000000);
+    }
+    const parsed = Number.parseInt(seed, 10);
+    if (!Number.isNaN(parsed)) return parsed >>> 0;
+    let hashed = 0;
+    for (const char of String(seed)) {
+        hashed = (hashed << 5) - hashed + char.charCodeAt(0);
+        hashed |= 0;
+    }
+    return hashed >>> 0;
+}
+
 function cartesianProduct(groups) {
     return groups.reduce(
         (product, group) => {
@@ -198,6 +212,9 @@ class SongsCatalog {
             instrumental: Boolean(song.instrumental),
             notGoodOpener: Boolean(song.notGoodOpener),
             notGoodCloser: Boolean(song.notGoodCloser),
+            playPriority: song.playPriority || "normal",
+            energy: Math.max(1, Math.min(5, Number(song.energy) || 3)),
+            positionPreference: song.positionPreference || "anywhere",
             key: song.key || null,
             notes: song.notes || "",
             performance,
@@ -213,6 +230,19 @@ class SetList {
         this._propConfig = this._config.props || {};
         this._weights = merge(DEFAULT_WEIGHTS, this._config.general?.weighting || {});
         this._options = this._normalizeOptions(options);
+        this._pinnedPositions = new Map(
+            (this._options.pinnedSongs || [])
+                .filter((pin) => Number.isInteger(pin.position) && pin.position > 0)
+                .map((pin) => [pin.position, String(pin.id)]),
+        );
+        this._pinnedPositionById = new Map(
+            Array.from(this._pinnedPositions.entries()).map(([position, id]) => [id, position]),
+        );
+        const smoothnessScale =
+            { smooth: 1.75, balanced: 1, adventurous: 0.35 }[this._options.transitionSmoothness] ?? 1;
+        ["tuning", "capo", "instrument", "technique", "keyFlow"].forEach((key) => {
+            this._weights[key] = (this._weights[key] ?? DEFAULT_WEIGHTS[key]) * smoothnessScale;
+        });
         this._keyFlowEnabled = Boolean(this._options.keyFlow);
         this._show = deepMerge(this._config.show || {}, this._options.show || {});
         this._seed = this._normalizeSeed(this._options.seed);
@@ -231,7 +261,6 @@ class SetList {
             this._count = Math.min(this._options.count, this._catalog.length);
         }
         this._songBiasById = this._buildSongBiases(this._catalog);
-        this._songOrderBiasById = this._buildSongBiases(this._catalog);
         this._minConstraints = this._buildMinConstraints();
         this._minimumGroups = this._buildMinimumGroups();
         this._list = [];
@@ -269,21 +298,7 @@ class SetList {
     }
 
     _normalizeSeed(seed) {
-        if (seed === undefined || seed === null || seed === "" || seed === 0 || seed === "0") {
-            return Math.floor(Date.now() + Math.random() * 1000000);
-        }
-        const parsed = Number.parseInt(seed, 10);
-        if (Number.isNaN(parsed)) {
-            let hashed = 0;
-            String(seed)
-                .split("")
-                .forEach((char) => {
-                    hashed = (hashed << 5) - hashed + char.charCodeAt(0);
-                    hashed |= 0;
-                });
-            return hashed >>> 0;
-        }
-        return parsed >>> 0;
+        return normalizeSeed(seed);
     }
 
     _randomJitter(amount) {
@@ -308,20 +323,31 @@ class SetList {
     _buildSongBiases(songs) {
         const magnitude = clampFloat(this._randomness.songBias, 3, 0);
         return songs.reduce((result, song) => {
-            result[song.id] = this._randomJitter(magnitude);
+            const preferenceBias = this._options.selectionPhase ? this._selectionPreference(song) : 0;
+            result[song.id] = preferenceBias + this._randomJitter(magnitude);
             return result;
         }, {});
+    }
+
+    _selectionPreference(song) {
+        const rotation = this._options.rotation || "balanced";
+        const scores = {
+            hits: { must: -100, prefer: -16, normal: 2, rest: 30 },
+            balanced: { must: -100, prefer: -8, normal: 0, rest: 24 },
+            deep: { must: -100, prefer: -2, normal: -4, rest: 16 },
+        }[rotation];
+        return scores?.[song.playPriority || "normal"] ?? 0;
     }
 
     _songBias(songId) {
         return this._songBiasById[songId] || 0;
     }
 
-    _songOrderBias(songId) {
-        return this._songOrderBiasById[songId] || 0;
-    }
-
     _chaosAdjustment(prevItem, nextVariant) {
+        // The legacy Variety control used temperature to reward or punish
+        // awkward transitions. Modern rolls separate selection variety from
+        // transition smoothness, so temperature only explores alternatives.
+        if (this._options.selectionVariety !== undefined) return 0;
         const centeredChaos = this._chaosLevel * 2 - 1;
         if (!prevItem || centeredChaos === 0) {
             return 0;
@@ -751,6 +777,11 @@ class SetList {
                         if (state.usedIds[song.id]) {
                             continue;
                         }
+                        const pinnedId = this._pinnedPositions.get(position);
+                        const songPinnedAt = this._pinnedPositionById.get(song.id);
+                        if ((pinnedId && song.id !== pinnedId) || (songPinnedAt && songPinnedAt !== position)) {
+                            continue;
+                        }
 
                         const result = this._buildNextState(state, song, position, relaxPositionFilter);
                         if (!result) {
@@ -793,8 +824,7 @@ class SetList {
 
         const best = this._pickFinalState(states);
         const bestItems = this._collectItems(best);
-        const diversifiedItems = this._diversifyCompatibleRuns(bestItems);
-        const finalized = this._finalizeItems(diversifiedItems);
+        const finalized = this._finalizeItems(bestItems);
         this._list = finalized.items;
         this._summary = finalized.summary;
     }
@@ -899,109 +929,6 @@ class SetList {
         return pool[pool.length - 1];
     }
 
-    _diversifyCompatibleRuns(items) {
-        const result = items.slice();
-
-        for (let start = 0; start < result.length; ) {
-            const signature = this._performanceSignature(result[start].performance);
-            let end = start + 1;
-
-            while (end < result.length && this._performanceSignature(result[end].performance) === signature) {
-                end += 1;
-            }
-
-            if (end - start > 1) {
-                const reordered = this._reorderRun(result.slice(start, end), start + 1);
-                for (let index = 0; index < reordered.length; index += 1) {
-                    result[start + index] = reordered[index];
-                }
-            }
-
-            start = end;
-        }
-
-        return result;
-    }
-
-    _reorderRun(runItems, startPosition) {
-        const lastPosition = startPosition + runItems.length - 1;
-        const remaining = runItems.slice();
-        const ordered = new Array(runItems.length);
-        const temperature = clampFloat(this._randomness.blockShuffleTemperature, 1.4, 0.01);
-
-        const pickForPosition = (position) => {
-            const eligible = remaining.filter((item) => this._positionAllowsSong(position, item));
-            const pool = eligible.length ? eligible : remaining;
-            const ranked = pool
-                .map((item) => {
-                    const score = this._songOrderBias(item.id);
-                    return { item, score };
-                })
-                .sort((left, right) => left.score - right.score);
-
-            const bestScore = ranked[0].score;
-            const weights = ranked.map((entry) => Math.exp(-(entry.score - bestScore) / temperature));
-            const total = weights.reduce((sum, weight) => sum + weight, 0);
-            let target = this._rng() * total;
-            let chosenIndex = ranked.length - 1;
-
-            for (let index = 0; index < ranked.length; index += 1) {
-                target -= weights[index];
-                if (target <= 0) {
-                    chosenIndex = index;
-                    break;
-                }
-            }
-
-            const chosen = ranked[chosenIndex].item;
-            remaining.splice(remaining.indexOf(chosen), 1);
-            return chosen;
-        };
-
-        // Reserve edge positions first so flagged songs don't get forced into them.
-        if (startPosition === 1) {
-            ordered[0] = pickForPosition(1);
-        }
-        if (lastPosition === this._count && lastPosition !== startPosition) {
-            ordered[lastPosition - startPosition] = pickForPosition(this._count);
-        }
-
-        for (let offset = 0; offset < runItems.length; offset += 1) {
-            if (ordered[offset] !== undefined) {
-                continue;
-            }
-            ordered[offset] = pickForPosition(startPosition + offset);
-        }
-
-        return ordered;
-    }
-
-    _positionAllowsSong(position, item) {
-        if (position === 1 && item.notGoodOpener && !this._openerFilterRelaxed) {
-            return false;
-        }
-        if (position === this._count && item.notGoodCloser && !this._closerFilterRelaxed) {
-            return false;
-        }
-        return true;
-    }
-
-    _performanceSignature(performance) {
-        return Object.keys(performance)
-            .sort()
-            .map((member) => {
-                const setup = performance[member];
-                return [
-                    member,
-                    setup.instrument || "",
-                    setup.tuning || "",
-                    String(setup.capo || 0),
-                    String(setup.picking || ""),
-                ].join("|");
-            })
-            .join("::");
-    }
-
     _finalizeItems(items) {
         let state = this._initialState();
         const finalizedItems = [];
@@ -1013,6 +940,8 @@ class SetList {
                 name: item.name,
                 cover: item.cover,
                 instrumental: item.instrumental,
+                energy: item.energy,
+                positionPreference: item.positionPreference,
                 key: item.key,
                 notes: item.notes || "",
                 performance: item.performance,
@@ -1075,7 +1004,8 @@ class SetList {
     }
 
     _buildNextState(state, song, position, relaxPositionFilter = false) {
-        if (!relaxPositionFilter) {
+        const isPinnedHere = this._pinnedPositions.get(position) === song.id;
+        if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {
             if (position === 1 && song.notGoodOpener) {
                 return null;
             }
@@ -1151,7 +1081,8 @@ class SetList {
         for (let vi = 0; vi < variants.length; vi++) {
             const variant = variants[vi];
             const propTransition = this._scoreConfiguredPropsLite(prevItem, variant);
-            if (!this._isAllowedByPropRules(state, propTransition.changes, prevItem, position)) {
+            const isPinnedHere = this._pinnedPositions.get(position) === song.id;
+            if (!isPinnedHere && !this._isAllowedByPropRules(state, propTransition.changes, prevItem, position)) {
                 continue;
             }
 
@@ -1267,6 +1198,7 @@ class SetList {
 
     // Lite position scoring: returns just the numeric score
     _scorePositionLite(song, position) {
+        if (this._options.selectionPhase) return 0;
         let score = 0;
         const orderLabel = this._findOrderLabel(position);
         const orderRules = this._config.general?.order?.[orderLabel] || [];
@@ -1280,7 +1212,48 @@ class SetList {
             }
         }
 
+        score += this._scoreMusicalPosition(song, position);
+
         return score;
+    }
+
+    _targetEnergy(position) {
+        if (!this._options.setShape) {
+            return null;
+        }
+        const progress = this._count <= 1 ? 1 : (position - 1) / (this._count - 1);
+        if (this._options.setShape === "big-ends") {
+            return 5 - 3 * Math.sin(Math.PI * progress);
+        }
+        if (this._options.setShape === "alternating") {
+            return position % 2 === 1 ? 4.5 : 2.5;
+        }
+        if (this._options.setShape === "lively") {
+            return 4.5;
+        }
+        if (this._options.setShape === "none") {
+            return null;
+        }
+        return 2.5 + 2.5 * progress;
+    }
+
+    _scoreMusicalPosition(song, position) {
+        let score = 0;
+        const targetEnergy = this._targetEnergy(position);
+        if (targetEnergy !== null) {
+            score += Math.abs((song.energy || 3) - targetEnergy) * 1.5;
+        }
+
+        const preference = song.positionPreference || "anywhere";
+        if (preference === "anywhere") return score;
+        const progress = this._count <= 1 ? 1 : (position - 1) / (this._count - 1);
+        const matches =
+            (preference === "opener" && position === 1) ||
+            (preference === "closer" && position === this._count) ||
+            (preference === "early" && progress <= 0.34) ||
+            (preference === "middle" && progress > 0.25 && progress < 0.75) ||
+            (preference === "late" && progress >= 0.66);
+        return score + (matches ? -4 : 5);
     }
 
     _scoreConfiguredProps(prevItem, nextVariant) {
@@ -1397,6 +1370,8 @@ class SetList {
             }
         });
 
+        score += this._scoreMusicalPosition(song, position);
+
         return { score, notes };
     }
 
@@ -1427,6 +1402,11 @@ class SetList {
 }
 
 const DEFAULT_WEIGHTS = {
+    tuning: 4,
+    capo: 2,
+    instrument: 3,
+    technique: 1,
+    keyFlow: 2,
     positionMiss: 8,
 };
 
@@ -1444,8 +1424,54 @@ const DEFAULT_RANDOMNESS = {
 };
 
 export function generateSetlist(songs, config, options = {}) {
-    const generator = new SetList(songs, config, options);
+    const usesSelectionPreferences =
+        options.selectionVariety !== undefined || options.rotation !== undefined || options.setShape !== undefined;
+    const selectedSongs =
+        options.fixedSongIds || !usesSelectionPreferences ? songs : selectSongPool(songs, options, config);
+    const generator = new SetList(selectedSongs, config, {
+        ...options,
+        count: Math.min(options.count ?? config?.general?.count ?? 15, selectedSongs.length),
+    });
     return generator.toJSON();
+}
+
+function selectSongPool(songs, options = {}, config = {}) {
+    const count = Math.min(
+        Math.max(1, Number.parseInt(options.count, 10) || config?.general?.count || 15),
+        songs.length,
+    );
+    if (songs.length <= count) return songs.slice();
+
+    const pinnedIds = new Set((options.pinnedSongs || []).map((pin) => String(pin.id)));
+    const pinnedSongs = songs.filter((song) => pinnedIds.has(String(song.id))).slice(0, count);
+    const remainingCount = count - pinnedSongs.length;
+    if (remainingCount <= 0) return pinnedSongs;
+    const remainingSongs = songs.filter((song) => !pinnedIds.has(String(song.id)));
+
+    const variety = clampUnit((options.selectionVariety === undefined ? 50 : Number(options.selectionVariety)) / 100);
+    const selectionOptions = {
+        ...options,
+        count: remainingCount,
+        keyFlow: false,
+        setShape: "none",
+        transitionSmoothness: "adventurous",
+        selectionPhase: true,
+        pinnedSongs: [],
+        randomness: {
+            ...(options.randomness || {}),
+            songBias: 1 + variety * 12,
+            temperature: 0.35 + variety * 1.65,
+            stateJitter: variety * 3,
+            variantJitter: variety * 1.5,
+        },
+    };
+    const selectedIds = new Set(
+        new SetList(remainingSongs, config, selectionOptions).toJSON().songs.map((song) => song.id),
+    );
+    pinnedSongs.forEach((song) => {
+        selectedIds.add(String(song.id));
+    });
+    return songs.filter((song) => selectedIds.has(String(song.id)));
 }
 
 export function scoreFixedOrder(fixedSongs, config, options = {}) {

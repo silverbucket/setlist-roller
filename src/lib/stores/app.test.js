@@ -536,6 +536,48 @@ describe("incremental remote sync", () => {
         teardown();
     });
 
+    it("queues and removes songs pinned before the first roll", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Anchor" } });
+
+        store.pinSongBeforeRoll("s1");
+        expect(store.preRollPinnedSongs.map((song) => song.id)).toEqual(["s1"]);
+        expect(store.pinnedSongCount).toBe(1);
+
+        store.unpinSongBeforeRoll("s1");
+        expect(store.preRollPinnedSongs).toEqual([]);
+        expect(store.pinnedSongCount).toBe(0);
+        teardown();
+    });
+
+    it("persists pin toggles on the working setlist", async () => {
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("current-set"),
+            JSON.stringify({ seed: 1, songs: [{ songId: "s1", performance: {} }] }),
+        );
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Anchor" } });
+
+        store.toggleSetlistSongPin("s1");
+        expect(store.generatedSetlist.songs[0].pinned).toBe(true);
+        expect(store.displayedSetlist.songs[0].pinned).toBe(true);
+        expect(store.pinnedSongCount).toBe(1);
+
+        const persisted = JSON.parse(
+            globalThis.localStorage.getItem(accountSlot("user@example.com").key("current-set")),
+        );
+        expect(persisted.songs[0].pinned).toBe(true);
+        teardown();
+    });
+
     it("flips to synced after a quiet settle window and persists initialSyncDone", async () => {
         const repo = buildRepo();
         const store = createAppStore(repo);
