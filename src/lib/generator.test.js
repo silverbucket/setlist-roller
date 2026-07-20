@@ -406,6 +406,32 @@ describe("generateSetlist — basics", () => {
 // Determinism
 // ===================================================================
 describe("generateSetlist — programming preferences", () => {
+    it("scales established transition defaults when weighting config is partial", () => {
+        const songs = [
+            makeSong("Standard", {
+                members: {
+                    nick: { instruments: [{ name: "guitar", tuning: ["Standard"], capo: 0, picking: [] }] },
+                },
+            }),
+            makeSong("Drop D", {
+                members: {
+                    nick: { instruments: [{ name: "guitar", tuning: ["Drop D"], capo: 0, picking: [] }] },
+                },
+            }),
+        ];
+        const config = makeConfig({ general: { weighting: { positionMiss: 8 } } });
+
+        const result = generateSetlist(songs, config, {
+            ...deterministicOptions({ count: 2 }),
+            fixedSongIds: songs.map((song) => song.id),
+            setShape: "none",
+            transitionSmoothness: "smooth",
+            selectionVariety: 0,
+        });
+
+        expect(result.summary.score).toBe(7);
+    });
+
     it("always includes explicitly pinned songs", () => {
         const songs = simpleCatalog(8);
         songs[7].playPriority = "rest";

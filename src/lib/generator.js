@@ -241,7 +241,7 @@ class SetList {
         const smoothnessScale =
             { smooth: 1.75, balanced: 1, adventurous: 0.35 }[this._options.transitionSmoothness] ?? 1;
         ["tuning", "capo", "instrument", "technique", "keyFlow"].forEach((key) => {
-            this._weights[key] = (this._weights[key] || 0) * smoothnessScale;
+            this._weights[key] = (this._weights[key] ?? DEFAULT_WEIGHTS[key]) * smoothnessScale;
         });
         this._keyFlowEnabled = Boolean(this._options.keyFlow);
         this._show = deepMerge(this._config.show || {}, this._options.show || {});
@@ -1402,6 +1402,11 @@ class SetList {
 }
 
 const DEFAULT_WEIGHTS = {
+    tuning: 4,
+    capo: 2,
+    instrument: 3,
+    technique: 1,
+    keyFlow: 2,
     positionMiss: 8,
 };
 
