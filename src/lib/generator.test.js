@@ -405,6 +405,105 @@ describe("generateSetlist — basics", () => {
 // ===================================================================
 // Determinism
 // ===================================================================
+describe("generateSetlist — programming preferences", () => {
+    it("always includes explicitly pinned songs", () => {
+        const songs = simpleCatalog(8);
+        songs[7].playPriority = "rest";
+
+        const result = generateSetlist(songs, makeConfig(), {
+            ...deterministicOptions({ count: 4, seed: 42 }),
+            rotation: "hits",
+            selectionVariety: 0,
+            pinnedSongs: [{ id: songs[7].id, position: null }],
+        });
+
+        expect(result.songs.map((song) => song.id)).toContain(songs[7].id);
+    });
+
+    it("keeps pinned songs at their positions while rerolling the rest", () => {
+        const songs = simpleCatalog(10);
+        const options = {
+            ...deterministicOptions({ count: 6, seed: 21 }),
+            rotation: "balanced",
+            selectionVariety: 80,
+            pinnedSongs: [
+                { id: songs[2].id, position: 2 },
+                { id: songs[7].id, position: 5 },
+            ],
+        };
+
+        const first = generateSetlist(songs, makeConfig(), options);
+        const second = generateSetlist(songs, makeConfig(), { ...options, seed: 99 });
+
+        expect(first.songs[1].id).toBe(songs[2].id);
+        expect(first.songs[4].id).toBe(songs[7].id);
+        expect(second.songs[1].id).toBe(songs[2].id);
+        expect(second.songs[4].id).toBe(songs[7].id);
+        expect(second.songs.map((song) => song.id)).not.toEqual(first.songs.map((song) => song.id));
+    });
+
+    it("selects must-play and preferred songs before normal songs", () => {
+        const songs = [makeSong("Must", { id: "must" }), makeSong("Prefer", { id: "prefer" }), ...simpleCatalog(8)];
+        songs[0].playPriority = "must";
+        songs[1].playPriority = "prefer";
+
+        const result = generateSetlist(songs, makeConfig(), {
+            ...deterministicOptions({ count: 4, seed: 42 }),
+            rotation: "balanced",
+            selectionVariety: 0,
+        });
+        const ids = result.songs.map((song) => song.id);
+
+        expect(ids).toContain("must");
+        expect(ids).toContain("prefer");
+    });
+
+    it("rests a song when enough normal songs are available", () => {
+        const songs = simpleCatalog(6);
+        songs[0].playPriority = "rest";
+
+        const result = generateSetlist(songs, makeConfig(), {
+            ...deterministicOptions({ count: 4, seed: 42 }),
+            rotation: "balanced",
+            selectionVariety: 0,
+        });
+
+        expect(result.songs.map((song) => song.id)).not.toContain(songs[0].id);
+    });
+
+    it("builds from lower energy to higher energy", () => {
+        const songs = Array.from({ length: 5 }, (_, index) => {
+            const song = makeSong(`Energy ${index + 1}`);
+            song.energy = index + 1;
+            return song;
+        });
+
+        const result = generateSetlist(songs, makeConfig({ props: {} }), {
+            ...deterministicOptions({ count: 5, seed: 42 }),
+            fixedSongIds: songs.map((song) => song.id),
+            setShape: "build",
+        });
+
+        expect(result.songs[0].name).toBe("Energy 1");
+        expect(result.songs.at(-1).name).toBe("Energy 5");
+    });
+
+    it("honors explicit opener and closer preferences", () => {
+        const songs = simpleCatalog(5);
+        songs[1].positionPreference = "opener";
+        songs[3].positionPreference = "closer";
+
+        const result = generateSetlist(songs, makeConfig({ props: {} }), {
+            ...deterministicOptions({ count: 5, seed: 42 }),
+            fixedSongIds: songs.map((song) => song.id),
+            setShape: "none",
+        });
+
+        expect(result.songs[0].id).toBe(songs[1].id);
+        expect(result.songs.at(-1).id).toBe(songs[3].id);
+    });
+});
+
 describe("generateSetlist — determinism", () => {
     it("same seed produces identical output", () => {
         const songs = simpleCatalog(20);

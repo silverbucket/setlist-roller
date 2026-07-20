@@ -119,6 +119,9 @@ export function blankSong() {
         notGoodOpener: false,
         notGoodCloser: false,
         unpracticed: false,
+        playPriority: "normal",
+        energy: 3,
+        positionPreference: "anywhere",
         key: "",
         notes: "",
         schemaVersion: SCHEMA_VERSION,
@@ -158,6 +161,13 @@ export function normalizeSongRecord(song) {
         notGoodOpener: Boolean(song.notGoodOpener),
         notGoodCloser: Boolean(song.notGoodCloser),
         unpracticed: Boolean(song.unpracticed),
+        playPriority: ["must", "prefer", "normal", "rest"].includes(song.playPriority) ? song.playPriority : "normal",
+        energy: Math.max(1, Math.min(5, Number.parseInt(song.energy, 10) || 3)),
+        positionPreference: ["anywhere", "opener", "early", "middle", "late", "closer"].includes(
+            song.positionPreference,
+        )
+            ? song.positionPreference
+            : "anywhere",
         key: song.key || "",
         notes: song.notes || "",
         schemaVersion: song.schemaVersion || SCHEMA_VERSION,

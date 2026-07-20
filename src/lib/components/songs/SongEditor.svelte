@@ -295,6 +295,53 @@
                     onchange={(e) => store.updateSongField("unpracticed", e.currentTarget.checked)}
                 >Unpracticed</ChipToggle>
             </div>
+
+            <div class="song-programming-grid">
+                <label class="field">
+                    <span class="field-label">Play priority</span>
+                    <select
+                        class="field-input"
+                        value={store.editorSong.playPriority || "normal"}
+                        onchange={(e) => store.updateSongField("playPriority", e.currentTarget.value)}
+                    >
+                        <option value="must">Must play</option>
+                        <option value="prefer">Prefer</option>
+                        <option value="normal">Normal</option>
+                        <option value="rest">Rest</option>
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span class="field-label">Energy</span>
+                    <select
+                        class="field-input"
+                        value={store.editorSong.energy || 3}
+                        onchange={(e) => store.updateSongField("energy", Number(e.currentTarget.value))}
+                    >
+                        <option value="1">1 · Very low</option>
+                        <option value="2">2 · Low</option>
+                        <option value="3">3 · Medium</option>
+                        <option value="4">4 · High</option>
+                        <option value="5">5 · Peak</option>
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span class="field-label">Best position</span>
+                    <select
+                        class="field-input"
+                        value={store.editorSong.positionPreference || "anywhere"}
+                        onchange={(e) => store.updateSongField("positionPreference", e.currentTarget.value)}
+                    >
+                        <option value="anywhere">Anywhere</option>
+                        <option value="opener">Opener</option>
+                        <option value="early">Early</option>
+                        <option value="middle">Middle</option>
+                        <option value="late">Late</option>
+                        <option value="closer">Closer</option>
+                    </select>
+                </label>
+            </div>
         </section>
 
         <!-- Section 2: Members -->
@@ -676,6 +723,18 @@
         display: flex;
         gap: 0.6rem;
         flex-wrap: wrap;
+    }
+
+    .song-programming-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    @media (max-width: 620px) {
+        .song-programming-grid {
+            grid-template-columns: 1fr;
+        }
     }
 
     /* Usual-setup rows (members with no song override) */

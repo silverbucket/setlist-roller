@@ -1,7 +1,7 @@
 <script>
   import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
 
-  const { song, index, prevSong, onDragStart, onEdit, onRemove, arming = false, dragging = false } = $props();
+  const { song, index, prevSong, onDragStart, onEdit, onRemove, onTogglePin, arming = false, dragging = false } = $props();
 
   let expanded = $state(false);
 
@@ -46,7 +46,7 @@
   }
 </script>
 
-<div class="song-card" class:expanded class:dragging>
+<div class="song-card" class:expanded class:dragging class:pinned={song.pinned}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="card-main" onclick={toggleExpand} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpand(); } }} role="button" tabindex="0">
     <span
@@ -71,6 +71,14 @@
       <div class="title-row">
         <span class="position">{song.position}.</span>
         <span class="song-name">{song.name}</span>
+        <button
+          type="button"
+          class="pin-btn"
+          class:pinned={song.pinned}
+          aria-label={song.pinned ? `Unpin ${song.name}` : `Pin ${song.name}`}
+          title={song.pinned ? "Unpin song" : "Keep this song and position on reroll"}
+          onclick={(e) => { e.stopPropagation(); onTogglePin?.(song.id); }}
+        >{song.pinned ? "📌" : "○"}</button>
         {#if song.key}
           <span class="key-badge">{song.key}</span>
         {/if}
@@ -137,6 +145,11 @@
 
   .song-card.expanded {
     border-color: var(--accent-line);
+  }
+
+  .song-card.pinned {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
   }
 
   /* When the parent wrapper marks this card as dragging, lift it visually so
@@ -277,6 +290,29 @@
     max-width: 100%;
   }
 
+  .pin-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    min-height: 32px;
+    margin-left: auto;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .pin-btn.pinned {
+    border-color: var(--accent-line);
+    background: var(--paper-strong);
+    color: var(--accent);
+  }
+
   .key-badge {
     margin-left: auto;
     flex-shrink: 0;
@@ -286,6 +322,10 @@
     border-radius: 999px;
     background: var(--line);
     color: var(--ink, #182230);
+  }
+
+  .pin-btn + .key-badge {
+    margin-left: 0;
   }
 
   .change-lines {
