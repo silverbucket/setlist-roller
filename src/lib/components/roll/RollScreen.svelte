@@ -13,6 +13,8 @@
   let diceValue = $state(6);
   let landed = $state(false);
   let showAddSongPicker = $state(false);
+  let showExtendDialog = $state(false);
+  let extendCount = $state(3);
   let addSongSearch = $state("");
   let setlistSongIds = $derived(
     new Set([
@@ -29,6 +31,14 @@
     const q = addSongSearch.toLowerCase();
     return eligible.filter((s) => s.name.toLowerCase().includes(q));
   });
+  let remainingSongCount = $derived(
+    Math.max(0, (store.songs || []).length - (store.displayedSetlist?.songs || []).length)
+  );
+
+  function extendSetlist(optimizeFullSet) {
+    showExtendDialog = false;
+    store.extendSetlist(extendCount, optimizeFullSet);
+  }
 
   // Watch for generation completing with a result
   let prevGenerating = false;
@@ -657,6 +667,12 @@
 
       <div class="setlist-actions">
         <button type="button" class="save-set-btn add-song-btn" onclick={() => { showAddSongPicker = true; }}>+ Add song</button>
+        <button
+          type="button"
+          class="save-set-btn add-song-btn"
+          disabled={remainingSongCount === 0 || store.isGenerating}
+          onclick={() => { extendCount = Math.min(3, remainingSongCount); showExtendDialog = true; }}
+        >Extend setlist</button>
         {#if store.setlistLocked}
           <div class="locked-badge">🔒 Locked in</div>
           {#if store.setlistSaved}
@@ -720,6 +736,31 @@
           {/each}
         </div>
         <button type="button" class="confirm-btn cancel" onclick={() => { showAddSongPicker = false; addSongSearch = ""; }}>Cancel</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if showExtendDialog}
+    <div class="confirm-overlay" onclick={() => { showExtendDialog = false; }}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="confirm-dialog extend-dialog" onclick={(e) => e.stopPropagation()}>
+        <p class="confirm-title">Extend setlist</p>
+        <p class="confirm-desc">Add more songs without replacing anything already here.</p>
+        <label class="extend-count-field">
+          <span>Songs to add</span>
+          <NumberStepper
+            value={extendCount}
+            min={1}
+            max={remainingSongCount}
+            label="Songs to add"
+            onchange={(value) => { extendCount = value; }}
+          />
+        </label>
+        <div class="confirm-actions-stacked">
+          <button type="button" class="confirm-btn proceed" onclick={() => extendSetlist(false)}>Add to end</button>
+          <button type="button" class="confirm-btn optimize" onclick={() => extendSetlist(true)}>Add and optimize</button>
+          <button type="button" class="confirm-btn cancel" onclick={() => { showExtendDialog = false; }}>Cancel</button>
+        </div>
       </div>
     </div>
   {/if}
@@ -1603,6 +1644,17 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .extend-dialog { gap: 1rem; }
+
+  .extend-count-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--ink);
+    font-weight: 700;
   }
 
   .add-song-search {

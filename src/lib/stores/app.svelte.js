@@ -43,6 +43,11 @@ const TOAST_DURATION_MS = { default: 6000, danger: 12000 };
 //                regeneration. Lives only inside one generate() call; never
 //                stored anywhere.
 //
+//   _extendMode / _extendExistingSongs / _ignoreCurrentPins — One-generation
+//                extension context. These select append vs full optimization,
+//                carry the lean prefix, and keep existing pins out of the
+//                additions-only selection pass. Stripped before worker dispatch.
+//
 // Adding a new `_*` flag? Make sure (a) it's stripped before any upload to
 // remoteStorage, and (b) the lifetime is bounded — long-lived ephemeral flags
 // silently accumulate on the object and turn into permanent state.
@@ -1201,7 +1206,7 @@ export function createAppStore(repo) {
         // Unpracticed songs stay out of the pool unless the user opted in —
         // but songs explicitly pinned by "Optimize Order" (fixedSongIds)
         // always stay in, or the optimize pass would silently drop them.
-        const currentPins = overrideOptions._clearPins
+        const currentPins = overrideOptions._clearPins || overrideOptions._ignoreCurrentPins
             ? []
             : (generatedSetlist?.songs || [])
                   .map((entry, index) => (entry.pinned ? { id: entry.songId, position: index + 1 } : null))
@@ -1209,7 +1214,7 @@ export function createAppStore(repo) {
         const queuedPins = overrideOptions._clearPins
             ? []
             : preRollPinnedIds.map((id) => ({ id, position: null }));
-        const pinsForRoll = overrideOptions.fixedSongIds ? [] : [...currentPins, ...queuedPins];
+        const pinsForRoll = [...currentPins, ...(overrideOptions.fixedSongIds ? [] : queuedPins)];
         const fixedIds = new Set([...(overrideOptions.fixedSongIds || []), ...pinsForRoll.map((pin) => pin.id)]);
         const eligibleSongs = songs.filter(
             (s) => generationOptions.includeUnpracticed || !s.unpracticed || fixedIds.has(s.id),
@@ -1231,7 +1236,12 @@ export function createAppStore(repo) {
         const thisSession = activeSession;
         const opts = clone(generationOptions);
         Object.assign(opts, overrideOptions);
+        const extendMode = opts._extendMode || "";
+        const extendExistingSongs = clone(opts._extendExistingSongs || []);
         delete opts._clearPins;
+        delete opts._ignoreCurrentPins;
+        delete opts._extendMode;
+        delete opts._extendExistingSongs;
         if (pinsForRoll.length) {
             opts.pinnedSongs = pinsForRoll;
             const lastPinnedPosition = Math.max(0, ...currentPins.map((pin) => pin.position));
@@ -1270,6 +1280,32 @@ export function createAppStore(repo) {
             }
             const pinnedIds = new Set(pinsForRoll.map((pin) => pin.id));
             const lean = leanFromGeneratorResult(result);
+            if (extendMode === "optimize") {
+                const combinedIds = [...extendExistingSongs.map((entry) => entry.songId), ...lean.songs.map((entry) => entry.songId)];
+                const combinedCatalogSongs = combinedIds.map((id) => songsById.get(id)).filter(Boolean);
+                const combinedCovers = combinedCatalogSongs.filter((song) => song.cover).length;
+                const combinedInstrumentals = combinedCatalogSongs.filter((song) => song.instrumental).length;
+                isGenerating = false;
+                generate({
+                    fixedSongIds: combinedIds,
+                    count: combinedIds.length,
+                    excludedSongIds: [],
+                    maxCovers: Math.max(combinedCovers, generationOptions.maxCovers),
+                    maxInstrumentals: Math.max(combinedInstrumentals, generationOptions.maxInstrumentals),
+                    _keepLock: setlistLocked,
+                });
+                return;
+            }
+            if (extendMode === "append") {
+                generatedSetlist = {
+                    ...lean,
+                    songs: [...extendExistingSongs, ...lean.songs],
+                };
+                setlistSaved = false;
+                persistCurrentSetlist();
+                toastInfo(`Added ${lean.songs.length} song${lean.songs.length === 1 ? "" : "s"} to the set.`);
+                return;
+            }
             generatedSetlist = {
                 ...lean,
                 songs: lean.songs.map((entry) => ({ ...entry, pinned: pinnedIds.has(entry.songId) })),
@@ -1310,6 +1346,38 @@ export function createAppStore(repo) {
                 "Critical fumble — try again?",
             ]));
         };
+    }
+
+    function extendSetlist(addCount, optimizeFullSet = false) {
+        if (isGenerating || !generatedSetlist || !displayedSetlist) return;
+        const existingSongs = clone(generatedSetlist.songs);
+        const existingIds = new Set(existingSongs.map((entry) => entry.songId));
+        const remainingSongs = songs.filter(
+            (song) => !existingIds.has(song.id) && (generationOptions.includeUnpracticed || !song.unpracticed),
+        );
+        const requested = Math.max(1, Number.parseInt(addCount, 10) || 1);
+        const count = Math.min(requested, remainingSongs.length);
+        if (!count) {
+            toastWarn("Every available song is already in this set.");
+            return;
+        }
+        if (count < requested) {
+            toastWarn(`Only ${count} song${count === 1 ? " is" : "s are"} available to add.`);
+        }
+        const currentSongs = displayedSetlist.songs;
+        const currentCovers = currentSongs.filter((song) => song.cover).length;
+        const currentInstrumentals = currentSongs.filter((song) => song.instrumental).length;
+        const remainingLimit = (limit, used) => (limit < 0 ? -1 : Math.max(0, limit - used));
+        generate({
+            count,
+            excludedSongIds: [...existingIds],
+            maxCovers: remainingLimit(generationOptions.maxCovers, currentCovers),
+            maxInstrumentals: remainingLimit(generationOptions.maxInstrumentals, currentInstrumentals),
+            pinnedSongs: [],
+            _ignoreCurrentPins: true,
+            _extendMode: optimizeFullSet ? "optimize" : "append",
+            _extendExistingSongs: existingSongs,
+        });
     }
 
     function lockSetlist() {
@@ -2791,6 +2859,7 @@ export function createAppStore(repo) {
         disconnectStorage,
         finishFirstRun,
         requestRoll,
+        extendSetlist,
         confirmFreshRoll,
         confirmOptimizeOrder,
         cancelRoll,

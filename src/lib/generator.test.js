@@ -1584,6 +1584,28 @@ describe("generateSetlist — edge cases", () => {
 // fixedSongIds
 // ---------------------------------------------------------------------------
 
+describe("generateSetlist — excludedSongIds", () => {
+    const catalog = Array.from({ length: 8 }, (_, i) => makeSong(`Song ${i + 1}`));
+
+    it("never selects excluded songs", () => {
+        const excludedSongIds = ["song-1", "song-2", "song-3"];
+        const result = generateSetlist(catalog, makeConfig(), deterministicOptions({ count: 4, excludedSongIds }));
+
+        expect(result.songs).toHaveLength(4);
+        expect(result.songs.map((song) => song.id)).not.toEqual(expect.arrayContaining(excludedSongIds));
+    });
+
+    it("clamps the result to the remaining catalog", () => {
+        const result = generateSetlist(
+            catalog,
+            makeConfig(),
+            deterministicOptions({ count: 6, excludedSongIds: catalog.slice(0, 6).map((song) => song.id) }),
+        );
+
+        expect(result.songs.map((song) => song.id).sort()).toEqual(["song-7", "song-8"]);
+    });
+});
+
 describe("generateSetlist — fixedSongIds", () => {
     const catalog = Array.from({ length: 10 }, (_, i) => makeSong(`Song ${i + 1}`));
 
