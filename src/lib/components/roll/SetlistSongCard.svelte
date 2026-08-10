@@ -1,7 +1,7 @@
 <script>
   import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
 
-  const { song, index, prevSong, onDragStart, onEdit, onRemove, onTogglePin, arming = false, dragging = false } = $props();
+  const { song, index, prevSong, onDragStart, onEdit, onSwap, onRemove, onTogglePin, arming = false, dragging = false } = $props();
 
   let expanded = $state(false);
 
@@ -122,6 +122,10 @@
       <button type="button" class="edit-btn" onclick={(e) => { e.stopPropagation(); if (onEdit) onEdit(song.id); expanded = false; }}>
         <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         Edit song
+      </button>
+      <button type="button" class="edit-btn" onclick={(e) => { e.stopPropagation(); onSwap?.(index); expanded = false; }}>
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="m18 7-3 3"/><path d="M17 17H6l3 3"/><path d="m6 17 3-3"/></svg>
+        Swap
       </button>
       <button type="button" class="edit-btn remove-btn" onclick={(e) => { e.stopPropagation(); if (onRemove) onRemove(index); expanded = false; }}>
         <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>

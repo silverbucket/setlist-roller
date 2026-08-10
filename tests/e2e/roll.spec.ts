@@ -173,6 +173,43 @@ test.describe("Roll screen — generation flow", () => {
         expect(new Set(extended).size).toBe(extended.length);
     });
 
+    test("swapping a song replaces it in the same position", async ({ page, app }) => {
+        await app.seed(seedWithCatalog());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(4);
+        await roll.setSeed(17);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+        const original = await roll.getSetlistSongNames();
+        const replacement = [
+            "Africa",
+            "Bohemian Rhapsody",
+            "Creep",
+            "Don't Stop Believin",
+            "Enter Sandman",
+            "Fade to Black",
+            "Going Home",
+            "Hey Jude",
+            "Imagine",
+            "Jolene",
+        ].find((name) => !original.includes(name));
+
+        expect(replacement).toBeTruthy();
+        if (!replacement) throw new Error("Expected an unused catalog song");
+        await roll.swapSong(original[1], replacement);
+
+        const swapped = await roll.getSetlistSongNames();
+        expect(swapped).toEqual([original[0], replacement, ...original.slice(2)]);
+        await expect(
+            roll.setlistSongs
+                .filter({ hasText: replacement })
+                .getByRole("button", { name: `Unpin ${replacement}`, exact: true }),
+        ).toBeVisible();
+    });
+
     test("extending with optimization retains the combined song selection", async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();

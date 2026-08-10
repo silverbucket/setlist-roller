@@ -13,6 +13,7 @@
   let diceValue = $state(6);
   let landed = $state(false);
   let showAddSongPicker = $state(false);
+  let swapSongIndex = $state(null);
   let showExtendDialog = $state(false);
   let extendCount = $state(3);
   let addSongSearch = $state("");
@@ -149,6 +150,12 @@
       store.openSong(catalogSong);
       store.navigate("songs");
     }
+  }
+
+  function closeSongPicker() {
+    showAddSongPicker = false;
+    swapSongIndex = null;
+    addSongSearch = "";
   }
 
   // ---- drag-to-reorder state ----
@@ -654,6 +661,7 @@
               prevSong={i > 0 ? store.displayedSetlist.songs[i - 1] : null}
               onDragStart={handleDragStart}
               onEdit={handleEditSong}
+              onSwap={(idx) => { swapSongIndex = idx; showAddSongPicker = true; }}
               onRemove={(idx) => store.removeSetlistSong(idx)}
               onTogglePin={store.toggleSetlistSongPin}
               arming={dragArmingIndex === i}
@@ -707,10 +715,10 @@
   {/if}
 
   {#if showAddSongPicker}
-    <div class="confirm-overlay" onclick={() => { showAddSongPicker = false; }}>
+    <div class="confirm-overlay" onclick={closeSongPicker}>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="confirm-dialog add-song-dialog" onclick={(e) => e.stopPropagation()}>
-        <p class="confirm-title">Add a song</p>
+        <p class="confirm-title">{swapSongIndex === null ? "Add a song" : "Swap song"}</p>
         <input
           class="add-song-search"
           type="text"
@@ -725,10 +733,10 @@
               class:in-setlist={inSetlist}
               disabled={inSetlist}
               onclick={() => {
-                if (store.displayedSetlist) store.addSetlistSong(song.id);
+                if (swapSongIndex !== null) store.swapSetlistSong(swapSongIndex, song.id);
+                else if (store.displayedSetlist) store.addSetlistSong(song.id);
                 else store.pinSongBeforeRoll(song.id);
-                showAddSongPicker = false;
-                addSongSearch = "";
+                closeSongPicker();
               }}
             >
               {song.name}
@@ -739,7 +747,7 @@
             <p class="add-song-empty">No songs available</p>
           {/each}
         </div>
-        <button type="button" class="confirm-btn cancel" onclick={() => { showAddSongPicker = false; addSongSearch = ""; }}>Cancel</button>
+        <button type="button" class="confirm-btn cancel" onclick={closeSongPicker}>Cancel</button>
       </div>
     </div>
   {/if}

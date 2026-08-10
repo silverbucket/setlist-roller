@@ -136,6 +136,15 @@ export class RollPage {
         await this.addSongDialog.getByRole("button", { name: songName, exact: false }).first().click();
     }
 
+    async swapSong(currentSongName: string, replacementSongName: string) {
+        const card = this.setlistSongs.filter({ hasText: currentSongName });
+        await card.locator(".card-main").click();
+        await card.getByRole("button", { name: "Swap" }).click();
+        await expect(this.addSongDialog).toBeVisible();
+        await this.addSongSearch.fill(replacementSongName);
+        await this.addSongDialog.getByRole("button", { name: replacementSongName, exact: false }).click();
+    }
+
     async extendSetlist(count: number, optimize = false) {
         const before = await this.getSetlistSongCount();
         await this.extendButton.click();
