@@ -203,6 +203,11 @@ test.describe("Roll screen — generation flow", () => {
 
         const swapped = await roll.getSetlistSongNames();
         expect(swapped).toEqual([original[0], replacement, ...original.slice(2)]);
+        await expect(
+            roll.setlistSongs
+                .filter({ hasText: replacement })
+                .getByRole("button", { name: `Unpin ${replacement}`, exact: true }),
+        ).toBeVisible();
     });
 
     test("extending with optimization retains the combined song selection", async ({ page, app }) => {

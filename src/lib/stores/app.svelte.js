@@ -1607,7 +1607,7 @@ export function createAppStore(repo) {
         list[rawIndex] = {
             songId: replacementSongId,
             performance,
-            pinned: list[rawIndex].pinned,
+            pinned: true,
         };
         generatedSetlist = { ...generatedSetlist, songs: list };
         setlistSaved = false;
