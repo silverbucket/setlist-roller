@@ -152,6 +152,66 @@ test.describe("Roll screen — generation flow", () => {
         const second = await roll.getSetlistSongNames();
         expect(second).toEqual(first);
     });
+
+    test("extending a setlist appends new songs without changing the existing order", async ({ page, app }) => {
+        await app.seed(seedWithCatalog());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(4);
+        await roll.setSeed(17);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+        const original = await roll.getSetlistSongNames();
+
+        await roll.extendSetlist(3);
+
+        const extended = await roll.getSetlistSongNames();
+        expect(extended).toHaveLength(7);
+        expect(extended.slice(0, original.length)).toEqual(original);
+        expect(new Set(extended).size).toBe(extended.length);
+    });
+
+    test("extending with optimization retains the combined song selection", async ({ page, app }) => {
+        await app.seed(seedWithCatalog());
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(4);
+        await roll.setSeed(23);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+        const original = await roll.getSetlistSongNames();
+
+        await roll.extendSetlist(2, true);
+
+        const extended = await roll.getSetlistSongNames();
+        expect(extended).toHaveLength(6);
+        expect(extended).toEqual(expect.arrayContaining(original));
+        expect(new Set(extended).size).toBe(extended.length);
+    });
+
+    test("extension is disabled when only unpracticed songs remain", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: {
+                    practiced: makeSong({ id: "practiced", name: "Ready Song" }),
+                    unpracticed: makeSong({ id: "unpracticed", name: "Needs Practice", unpracticed: true }),
+                },
+            }),
+        );
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(1);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+
+        await expect(roll.extendButton).toBeDisabled();
+    });
 });
 
 test.describe("Roll screen — settings drawer", () => {

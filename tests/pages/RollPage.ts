@@ -30,6 +30,8 @@ export class RollPage {
     readonly confirmDialog: Locator;
     readonly addSongDialog: Locator;
     readonly addSongSearch: Locator;
+    readonly extendButton: Locator;
+    readonly extendDialog: Locator;
 
     constructor(page: Page) {
         this.page = page;
@@ -67,6 +69,8 @@ export class RollPage {
         this.confirmDialog = page.locator(".confirm-dialog");
         this.addSongDialog = page.locator(".add-song-dialog");
         this.addSongSearch = this.addSongDialog.getByPlaceholder("Search songs...");
+        this.extendButton = this.screen.getByRole("button", { name: "Extend setlist" });
+        this.extendDialog = page.locator(".extend-dialog");
     }
 
     async setSongCount(count: number) {
@@ -130,6 +134,19 @@ export class RollPage {
         await expect(this.addSongDialog).toBeVisible();
         await this.addSongSearch.fill(songName);
         await this.addSongDialog.getByRole("button", { name: songName, exact: false }).first().click();
+    }
+
+    async extendSetlist(count: number, optimize = false) {
+        const before = await this.getSetlistSongCount();
+        await this.extendButton.click();
+        await expect(this.extendDialog).toBeVisible();
+        await this.extendDialog
+            .getByRole("group", { name: "Songs to add" })
+            .getByRole("spinbutton")
+            .fill(String(count));
+        await this.extendDialog.getByRole("button", { name: optimize ? "Add and optimize" : "Add to end" }).click();
+        await expect(this.extendDialog).not.toBeVisible();
+        await expect(this.setlistSongs).toHaveCount(before + count, { timeout: 15_000 });
     }
 
     async pinBeforeRoll(songName: string) {

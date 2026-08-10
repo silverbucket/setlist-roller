@@ -1424,10 +1424,14 @@ const DEFAULT_RANDOMNESS = {
 };
 
 export function generateSetlist(songs, config, options = {}) {
+    const excludedIds = new Set((options.excludedSongIds || []).map(String));
+    const eligibleSongs = excludedIds.size ? songs.filter((song) => !excludedIds.has(String(song.id))) : songs;
     const usesSelectionPreferences =
         options.selectionVariety !== undefined || options.rotation !== undefined || options.setShape !== undefined;
     const selectedSongs =
-        options.fixedSongIds || !usesSelectionPreferences ? songs : selectSongPool(songs, options, config);
+        options.fixedSongIds || !usesSelectionPreferences
+            ? eligibleSongs
+            : selectSongPool(eligibleSongs, options, config);
     const generator = new SetList(selectedSongs, config, {
         ...options,
         count: Math.min(options.count ?? config?.general?.count ?? 15, selectedSongs.length),
