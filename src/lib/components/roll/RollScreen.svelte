@@ -32,7 +32,11 @@
     return eligible.filter((s) => s.name.toLowerCase().includes(q));
   });
   let remainingSongCount = $derived(
-    Math.max(0, (store.songs || []).length - (store.displayedSetlist?.songs || []).length)
+    (store.songs || []).filter(
+      (song) =>
+        !setlistSongIds.has(song.id) &&
+        (store.generationOptions.includeUnpracticed || !song.unpracticed)
+    ).length
   );
 
   function extendSetlist(optimizeFullSet) {

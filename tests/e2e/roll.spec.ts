@@ -192,6 +192,26 @@ test.describe("Roll screen — generation flow", () => {
         expect(extended).toEqual(expect.arrayContaining(original));
         expect(new Set(extended).size).toBe(extended.length);
     });
+
+    test("extension is disabled when only unpracticed songs remain", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: {
+                    practiced: makeSong({ id: "practiced", name: "Ready Song" }),
+                    unpracticed: makeSong({ id: "unpracticed", name: "Needs Practice", unpracticed: true }),
+                },
+            }),
+        );
+        await app.goto();
+        await app.waitForReady();
+        await new AppShell(page).gotoRoll();
+        const roll = new RollPage(page);
+        await roll.setSongCount(1);
+        await roll.clickRoll();
+        await roll.waitForRollResult();
+
+        await expect(roll.extendButton).toBeDisabled();
+    });
 });
 
 test.describe("Roll screen — settings drawer", () => {
