@@ -1591,6 +1591,29 @@ export function createAppStore(repo) {
         persistCurrentSetlist();
     }
 
+    function swapSetlistSong(index, replacementSongId) {
+        if (!generatedSetlist || !displayedSetlist) return;
+        if (generatedSetlist.songs.some((entry) => entry.songId === replacementSongId)) return;
+        const currentSongId = displayedSetlist.songs[index]?.id;
+        const replacement = songsById.get(replacementSongId);
+        if (!currentSongId || !replacement) return;
+        const rawIndex = generatedSetlist.songs.findIndex((entry) => entry.songId === currentSongId);
+        if (rawIndex === -1) return;
+        const performance = buildDefaultPerformance(
+            { ...replacement, members: resolveSongMembers(replacement, bandMembers) },
+            generationOptions?.show || {},
+        );
+        const list = [...generatedSetlist.songs];
+        list[rawIndex] = {
+            songId: replacementSongId,
+            performance,
+            pinned: list[rawIndex].pinned,
+        };
+        generatedSetlist = { ...generatedSetlist, songs: list };
+        setlistSaved = false;
+        persistCurrentSetlist();
+    }
+
     function pinSongBeforeRoll(songId) {
         if (generatedSetlist || !songsById.has(songId) || preRollPinnedIds.includes(songId)) return;
         preRollPinnedIds = [...preRollPinnedIds, songId];
@@ -2871,6 +2894,7 @@ export function createAppStore(repo) {
         reorderSetlistSong,
         removeSetlistSong,
         addSetlistSong,
+        swapSetlistSong,
         pinSongBeforeRoll,
         unpinSongBeforeRoll,
         toggleSetlistSongPin,
