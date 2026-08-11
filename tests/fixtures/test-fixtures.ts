@@ -57,6 +57,7 @@ export type AppStateSnapshot = {
     savedSetlists: unknown[];
     bandMembers: Record<string, unknown>;
     appConfig: Record<string, unknown> | null;
+    editorSong: Record<string, unknown> | null;
     generatedSetlist: Record<string, unknown> | null;
     setlistLocked: boolean;
     setlistSaved: boolean;
@@ -312,6 +313,7 @@ export const test = base.extend<{ app: AppContext }>({
                         savedSetlists: JSON.parse(JSON.stringify(s.savedSetlists)),
                         bandMembers: JSON.parse(JSON.stringify(s.bandMembers)),
                         appConfig: JSON.parse(JSON.stringify(s.appConfig || null)),
+                        editorSong: JSON.parse(JSON.stringify(s.editorSong || null)),
                         generatedSetlist: s.generatedSetlist ? JSON.parse(JSON.stringify(s.generatedSetlist)) : null,
                         setlistLocked: s.setlistLocked as boolean,
                         setlistSaved: s.setlistSaved as boolean,
