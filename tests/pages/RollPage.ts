@@ -166,7 +166,9 @@ export class RollPage {
     }
 
     pinButton(songName: string) {
-        return this.setlistSongs.filter({ hasText: songName }).getByRole("button", { name: `Pin ${songName}` });
+        return this.setlistSongs
+            .filter({ hasText: songName })
+            .getByRole("button", { name: `Pin ${songName}`, exact: true });
     }
 
     async closeAddSongDialog() {
