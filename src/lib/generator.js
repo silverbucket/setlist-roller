@@ -1020,6 +1020,7 @@ class SetList {
         };
     }
 
+    /** Build candidate beam states for one song at one setlist position. */
     _buildNextState(state, song, position, relaxPositionFilter = false, relaxTransitionRules = false) {
         const isPinnedHere = this._pinnedPositions.get(position) === song.id;
         if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {
@@ -1081,6 +1082,7 @@ class SetList {
         };
     }
 
+    /** Choose the best playable setup variant, with an optional transition-rule fallback. */
     _findBestVariant(state, song, position, relaxTransitionRules = false) {
         const prevItem = state.lastItem;
         let best = null;

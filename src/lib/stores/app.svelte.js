@@ -112,6 +112,7 @@ export function createAppStore(repo) {
     let loadError = $state("");
     let busyMessage = $state("");
     let toastMessages = $state([]);
+    let toastDismissTimer = null;
     // True once the active account's local mirror has been read into memory.
     // The UI renders as soon as an account is active; this only guards the
     // brief (<50 ms) window before local data lands, so empty-state CTAs
@@ -530,6 +531,24 @@ export function createAppStore(repo) {
     }
 
     // ---- toast ----
+    /** Start the dwell timer for the first queued non-sticky toast. */
+    function scheduleToastDismissal() {
+        if (toastDismissTimer !== null) {
+            clearTimeout(toastDismissTimer);
+            toastDismissTimer = null;
+        }
+        const activeToast = toastMessages[0];
+        if (!activeToast || activeToast.sticky) return;
+        const duration =
+            activeToast.tone === TOAST_TONE.DANGER ? TOAST_DURATION_MS.danger : TOAST_DURATION_MS.default;
+        toastDismissTimer = setTimeout(() => {
+            toastDismissTimer = null;
+            toastMessages = toastMessages.filter((toast) => toast.id !== activeToast.id);
+            scheduleToastDismissal();
+        }, duration);
+    }
+
+    /** Add a toast to the FIFO display queue without replacing the active message. */
     function addToast(message, tone, options = {}) {
         // Unknown tones fall back to INFO instead of silently rendering as the
         // default style with no semantic class (e.g. "warn" vs "warning").
@@ -541,15 +560,16 @@ export function createAppStore(repo) {
             options.action && typeof options.action.onClick === "function"
                 ? { label: options.action.label || "OK", onClick: options.action.onClick }
                 : null;
-        toastMessages = [{ id, message, tone: validTone, action, sticky: !!options.sticky }];
-        if (options.sticky) return;
-        const duration = validTone === TOAST_TONE.DANGER ? TOAST_DURATION_MS.danger : TOAST_DURATION_MS.default;
-        setTimeout(() => {
-            toastMessages = toastMessages.filter((t) => t.id !== id);
-        }, duration);
+        const queueWasEmpty = toastMessages.length === 0;
+        toastMessages = [...toastMessages, { id, message, tone: validTone, action, sticky: !!options.sticky }];
+        if (queueWasEmpty) scheduleToastDismissal();
     }
+
+    /** Remove a toast and start the next queued toast's full dwell period. */
     function dismissToast(id) {
+        const wasActive = toastMessages[0]?.id === id;
         toastMessages = toastMessages.filter((t) => t.id !== id);
+        if (wasActive) scheduleToastDismissal();
     }
 
     // ---- destructive confirm ----
