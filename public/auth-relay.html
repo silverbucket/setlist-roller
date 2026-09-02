@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- OAuth relay CSP (#79). Tighter than the app shell: this page only
+         posts OAuth params back to the opener and has no network fetches.
+         Script is external (auth-relay.js) so script-src stays 'self'. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'"
+    />
     <title>Setlist Roller Login</title>
     <style>
       :root {
@@ -45,34 +52,6 @@
       <h1>Returning to Setlist Roller</h1>
       <p id="message">Finishing login and handing control back to the installed app.</p>
     </main>
-    <script>
-      (() => {
-        const params = {};
-        const query = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-
-        for (const [key, value] of query.entries()) {
-          params[key] = value;
-        }
-        for (const [key, value] of hashParams.entries()) {
-          params[key] = value;
-        }
-
-        const message = document.getElementById("message");
-        if (!window.opener) {
-          message.textContent = "Login finished in Safari, but this page cannot hand the result back to the installed app. Return to the home-screen app and retry there, or keep using Safari for login.";
-          return;
-        }
-
-        window.opener.postMessage({
-          type: "setlist-roller-auth-result",
-          attemptId: params.attempt || "",
-          params,
-        }, window.location.origin);
-
-        message.textContent = "Login finished. This window can be closed.";
-        window.setTimeout(() => window.close(), 300);
-      })();
-    </script>
+    <script src="/auth-relay.js"></script>
   </body>
 </html>
