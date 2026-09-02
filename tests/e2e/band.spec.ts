@@ -300,7 +300,8 @@ test.describe("Band screen — footer", () => {
 
         const band = new BandPage(page);
         await expect(band.footer).toBeVisible();
-        await expect(band.footer).toContainText("Setlist Roller");
+        await expect(band.footer).toContainText(/Setlist Roller v\d+\.\d+\.\d+/);
+        await expect(band.footer.locator("time")).toContainText(/^Deployed .+ UTC$/);
         await expect(band.footer.getByRole("link", { name: "GitHub" })).toBeVisible();
     });
 });
