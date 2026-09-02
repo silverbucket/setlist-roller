@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const AUTH_RELAY_HTML = join(import.meta.dirname, "public/auth-relay.html");
-const AUTH_RELAY_JS = join(import.meta.dirname, "public/auth-relay.js");
+const PROJECT_ROOT = fileURLToPath(new URL(".", import.meta.url));
+const AUTH_RELAY_HTML = join(PROJECT_ROOT, "public/auth-relay.html");
+const AUTH_RELAY_JS = join(PROJECT_ROOT, "public/auth-relay.js");
 
 function stripHtmlComments(html) {
     return html.replace(/<!--[\s\S]*?-->/g, "");

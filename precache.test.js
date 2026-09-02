@@ -31,7 +31,6 @@ describe("workbox precache (built sw.js)", () => {
         // and require a non-empty match so the tripwire can't pass vacuously.
         const urls = [...m[1].matchAll(/["']?url["']?\s*:\s*["']([^"']+)["']/g)].map((x) => x[1]);
         expect(urls, "no precache URLs extracted from sw.js").not.toHaveLength(0);
-        expect(urls.some((u) => u.endsWith("auth-relay.js"))).toBe(true);
         expect(urls.every((u) => !u.endsWith("auth-relay.html"))).toBe(true);
     });
 

@@ -2,15 +2,16 @@
 // script (not inline) so auth-relay.html can carry a strict CSP with
 // script-src 'self' and no inline allowances or hashes.
 (() => {
-    const params = {};
+    const params = Object.create(null);
     const query = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const unsafeKeys = new Set(["__proto__", "constructor", "prototype"]);
 
     for (const [key, value] of query.entries()) {
-        params[key] = value;
+        if (!unsafeKeys.has(key)) params[key] = value;
     }
     for (const [key, value] of hashParams.entries()) {
-        params[key] = value;
+        if (!unsafeKeys.has(key)) params[key] = value;
     }
 
     const message = document.getElementById("message");
