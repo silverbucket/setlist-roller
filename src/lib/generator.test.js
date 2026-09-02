@@ -1653,6 +1653,65 @@ describe("generateSetlist — fixedSongIds", () => {
         const resultIds = result.songs.map((s) => s.id).sort();
         expect(resultIds).toEqual([...fixedIds].sort());
     });
+
+    it("keeps the requested count when maxChanges makes a complete strict ordering impossible", () => {
+        const songs = Array.from({ length: 19 }, (_, index) =>
+            makeSong(`Song ${index + 1}`, {
+                members: {
+                    nick: {
+                        instruments: [{ name: `instrument-${index + 1}`, tuning: ["Standard"], capo: 0, picking: [] }],
+                    },
+                },
+            }),
+        );
+        const config = makeConfig({
+            props: {
+                instruments: {
+                    kind: "instrumentSet",
+                    weightKey: "instrument",
+                    minStreak: 1,
+                    maxChanges: 15,
+                },
+            },
+        });
+
+        const result = generateSetlist(songs, config, deterministicOptions({ count: 19 }));
+
+        expect(result.songs).toHaveLength(19);
+        expect(result.songs.map((song) => song.id).sort()).toEqual(songs.map((song) => song.id).sort());
+        expect(result.summary.transitionRulesRelaxed).toBe(true);
+    });
+
+    it("keeps every fixed song when maxChanges makes a complete strict ordering impossible", () => {
+        const songs = Array.from({ length: 19 }, (_, index) =>
+            makeSong(`Song ${index + 1}`, {
+                members: {
+                    nick: {
+                        instruments: [{ name: `instrument-${index + 1}`, tuning: ["Standard"], capo: 0, picking: [] }],
+                    },
+                },
+            }),
+        );
+        const config = makeConfig({
+            props: {
+                instruments: {
+                    kind: "instrumentSet",
+                    weightKey: "instrument",
+                    minStreak: 1,
+                    maxChanges: 15,
+                },
+            },
+        });
+
+        const result = generateSetlist(songs, config, {
+            ...deterministicOptions({ count: 19 }),
+            fixedSongIds: songs.map((song) => song.id),
+        });
+
+        expect(result.songs).toHaveLength(19);
+        expect(result.songs.map((song) => song.id).sort()).toEqual(songs.map((song) => song.id).sort());
+        expect(result.summary.transitionRulesRelaxed).toBe(true);
+    });
 });
 
 // ---------------------------------------------------------------------------

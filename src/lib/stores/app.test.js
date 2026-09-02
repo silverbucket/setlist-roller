@@ -24,24 +24,27 @@ describe("normalizeAuthToken", () => {
 });
 
 describe("toasts", () => {
-    it("keeps only the latest toast and ignores stale dismiss timers", () => {
+    it("queues consecutive toasts and gives each its full dwell time", () => {
         vi.useFakeTimers();
         const store = createAppStore({});
 
         store.toastInfo("First message");
         store.toastError("Latest message");
 
-        expect(store.toastMessages).toHaveLength(1);
+        expect(store.toastMessages).toHaveLength(2);
         expect(store.toastMessages[0]).toMatchObject({
-            message: "Latest message",
-            tone: "danger",
+            message: "First message",
+            tone: "info",
         });
 
         vi.advanceTimersByTime(6000);
         expect(store.toastMessages).toHaveLength(1);
         expect(store.toastMessages[0]?.message).toBe("Latest message");
 
-        vi.advanceTimersByTime(6000);
+        vi.advanceTimersByTime(11999);
+        expect(store.toastMessages).toHaveLength(1);
+
+        vi.advanceTimersByTime(1);
         expect(store.toastMessages).toHaveLength(0);
     });
 });

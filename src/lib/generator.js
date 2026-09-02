@@ -761,6 +761,7 @@ class SetList {
         this._minimumPotentialTotals = minimumPotentialContext.totals;
         this._minimumGroupCapabilitiesBySongId = minimumPotentialContext.groupCapabilitiesBySongId;
         this._minimumsRelaxed = false;
+        this._transitionRulesRelaxed = false;
         this._openerFilterRelaxed = false;
         this._closerFilterRelaxed = false;
         let states = [this._initialState()];
@@ -769,7 +770,7 @@ class SetList {
             const nextStates = [];
             const fallbackStates = [];
 
-            const expand = (relaxPositionFilter) => {
+            const expand = (relaxPositionFilter, relaxTransitionRules = false) => {
                 for (let si = 0; si < states.length; si++) {
                     const state = states[si];
                     for (let ci = 0; ci < catalog.length; ci++) {
@@ -783,7 +784,13 @@ class SetList {
                             continue;
                         }
 
-                        const result = this._buildNextState(state, song, position, relaxPositionFilter);
+                        const result = this._buildNextState(
+                            state,
+                            song,
+                            position,
+                            relaxPositionFilter,
+                            relaxTransitionRules,
+                        );
                         if (!result) {
                             continue;
                         }
@@ -808,6 +815,15 @@ class SetList {
                     this._closerFilterRelaxed = true;
                 }
                 expand(true);
+            }
+
+            // A hard transition rule (most commonly maxChanges) can make the
+            // final positions mathematically impossible. Never silently
+            // return fewer songs than requested; keep filling the set with
+            // that rule treated as a preference.
+            if (!nextStates.length && !fallbackStates.length) {
+                this._transitionRulesRelaxed = true;
+                expand(isEdgeSlot, true);
             }
 
             const pool = nextStates.length ? nextStates : fallbackStates;
@@ -997,13 +1013,15 @@ class SetList {
                 changes: state.changeTotals,
                 anxiety,
                 minimumsRelaxed: Boolean(this._minimumsRelaxed),
+                transitionRulesRelaxed: Boolean(this._transitionRulesRelaxed),
                 openerFilterRelaxed: Boolean(this._openerFilterRelaxed),
                 closerFilterRelaxed: Boolean(this._closerFilterRelaxed),
             },
         };
     }
 
-    _buildNextState(state, song, position, relaxPositionFilter = false) {
+    /** Build candidate beam states for one song at one setlist position. */
+    _buildNextState(state, song, position, relaxPositionFilter = false, relaxTransitionRules = false) {
         const isPinnedHere = this._pinnedPositions.get(position) === song.id;
         if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {
             if (position === 1 && song.notGoodOpener) {
@@ -1024,7 +1042,7 @@ class SetList {
             return null;
         }
 
-        const bestVariant = this._findBestVariant(state, song, position);
+        const bestVariant = this._findBestVariant(state, song, position, relaxTransitionRules);
         if (!bestVariant.feasible && !bestVariant.fallback) {
             return null;
         }
@@ -1064,7 +1082,8 @@ class SetList {
         };
     }
 
-    _findBestVariant(state, song, position) {
+    /** Choose the best playable setup variant, with an optional transition-rule fallback. */
+    _findBestVariant(state, song, position, relaxTransitionRules = false) {
         const prevItem = state.lastItem;
         let best = null;
         let bestScore = Infinity;
@@ -1082,7 +1101,11 @@ class SetList {
             const variant = variants[vi];
             const propTransition = this._scoreConfiguredPropsLite(prevItem, variant);
             const isPinnedHere = this._pinnedPositions.get(position) === song.id;
-            if (!isPinnedHere && !this._isAllowedByPropRules(state, propTransition.changes, prevItem, position)) {
+            if (
+                !relaxTransitionRules &&
+                !isPinnedHere &&
+                !this._isAllowedByPropRules(state, propTransition.changes, prevItem, position)
+            ) {
                 continue;
             }
 
