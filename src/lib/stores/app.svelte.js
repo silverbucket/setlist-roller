@@ -1223,6 +1223,18 @@ export function createAppStore(repo) {
             toastError("Every song is unpracticed. Time to rehearse!");
             return;
         }
+        const requestedCount = Number.parseInt(overrideOptions.count ?? generationOptions.count, 10);
+        if (
+            !overrideOptions.fixedSongIds &&
+            Number.isFinite(requestedCount) &&
+            requestedCount > eligibleSongs.length &&
+            eligibleSongs.length < songs.length
+        ) {
+            const excludedCount = songs.length - eligibleSongs.length;
+            toastWarn(
+                `Only ${eligibleSongs.length} songs are eligible. Enable “Allow unpracticed” to include the other ${excludedCount}.`,
+            );
+        }
 
         terminateWorker();
         // A new generation produces fresh content; any prior "loaded from
@@ -1318,7 +1330,11 @@ export function createAppStore(repo) {
                 setlistSaved = false;
             }
             persistCurrentSetlist();
-            if (result.summary?.minimumsRelaxed || !validateConstraintMinimums(result)) {
+            if (
+                result.summary?.minimumsRelaxed ||
+                result.summary?.transitionRulesRelaxed ||
+                !validateConstraintMinimums(result)
+            ) {
                 toastWarn("Couldn't meet every demand, but it got close.");
             }
             if (result.summary?.openerFilterRelaxed) {
