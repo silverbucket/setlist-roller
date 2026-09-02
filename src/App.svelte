@@ -161,6 +161,10 @@
                     oninput={(e) => store.connectAddress = e.currentTarget.value}
                     placeholder="you@example.com"
                     autocomplete="off"
+                    autocapitalize="none"
+                    autocorrect="off"
+                    spellcheck="false"
+                    inputmode="email"
                     onkeydown={(e) => { if (e.key === "Enter") store.connectStorage(); }}
                 />
             </label>

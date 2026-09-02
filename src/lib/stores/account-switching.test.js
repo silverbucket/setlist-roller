@@ -234,6 +234,17 @@ describe("connectToAccount — re-entry guard", () => {
     });
 });
 
+describe("connectStorage — address normalization", () => {
+    it("lowercases the address before connecting (mobile autocapitalize)", () => {
+        const repo = buildStubRepo();
+        const store = createAppStore(repo);
+        store.init();
+        store.connectAddress = "  Nick@Example.COM ";
+        store.connectStorage();
+        expect(repo.connect).toHaveBeenCalledWith("nick@example.com", undefined);
+    });
+});
+
 describe("connectToAccount — cold path (not currently connected)", () => {
     it("calls repo.connect with the saved token when not connected", async () => {
         saveKnownAccount("user-a@example.com", { bandName: "A" }, "saved-token-a");

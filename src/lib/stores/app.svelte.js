@@ -912,7 +912,13 @@ export function createAppStore(repo) {
 
     // ---- connection ----
     function connectStorage(token) {
-        const trimmed = connectAddress.trim();
+        // Lowercase the whole address: hosts are case-insensitive by DNS, and
+        // while acct: local parts are technically case-sensitive, providers
+        // only issue lowercase usernames in practice — whereas a stray
+        // capital (mobile autocapitalize) breaks WebFinger lookup AND forks
+        // the local identity (accountSlot hashes the raw string, the
+        // known-accounts registry matches it exactly).
+        const trimmed = connectAddress.trim().toLowerCase();
         if (!trimmed) {
             toastError("Put in a remoteStorage address first.");
             return;
