@@ -27,7 +27,10 @@ describe("workbox precache (built sw.js)", () => {
     it("does not include auth-relay.html", () => {
         const m = swJs.match(/precacheAndRoute\(\[([\s\S]*?)\]/);
         expect(m, "precache array missing from sw.js").toBeTruthy();
-        const urls = [...m[1].matchAll(/url:"([^"]+)"/g)].map((x) => x[1]);
+        // Tolerate quoted/unquoted keys and either quote style from the emitter,
+        // and require a non-empty match so the tripwire can't pass vacuously.
+        const urls = [...m[1].matchAll(/["']?url["']?\s*:\s*["']([^"']+)["']/g)].map((x) => x[1]);
+        expect(urls, "no precache URLs extracted from sw.js").not.toHaveLength(0);
         expect(urls.every((u) => !u.includes("auth-relay"))).toBe(true);
     });
 
