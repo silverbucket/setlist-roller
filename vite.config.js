@@ -49,12 +49,14 @@ function cspPlugin() {
 
 // Staging builds (vite build --mode staging, via npm run build:staging and
 // .github/workflows/staging.yml) trade a few bytes for debuggability:
-// sourcemaps, preserved function/class names in stack traces, a "-staging"
-// version suffix, and a renamed PWA manifest so the installed staging app is
+// sourcemaps, preserved function/class names in stack traces, a build-number
+// version, and a renamed PWA manifest so the installed staging app is
 // distinguishable from production on a home screen. The app itself reads
 // import.meta.env.MODE to show its staging badge.
 export default defineConfig(({ mode }) => {
     const isStaging = mode === "staging";
+    const appVersion = isStaging ? `staging ${process.env.DEPLOY_BUILD_NUMBER || "local"}` : `v${pkg.version}`;
+    const deployedAt = process.env.DEPLOYED_AT || new Date().toISOString();
     return {
         plugins: [
             svelte(),
@@ -119,7 +121,8 @@ export default defineConfig(({ mode }) => {
             }),
         ],
         define: {
-            __APP_VERSION__: JSON.stringify(isStaging ? `${pkg.version}-staging` : pkg.version),
+            __APP_VERSION__: JSON.stringify(appVersion),
+            __DEPLOYED_AT__: JSON.stringify(deployedAt),
         },
         build: {
             // Sourcemaps on staging so errors in the deployed bundle map

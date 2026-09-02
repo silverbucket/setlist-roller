@@ -3,6 +3,7 @@
     import { DEFAULT_DIE_COLOR } from "../../utils.js";
 
     const store = getContext("app");
+    const deployedAtDisplay = __DEPLOYED_AT__.replace("T", " ").replace("Z", " UTC");
 
     // Local drafts for the inline add inputs. Purely per-screen UI state —
     // these used to live in the global store and leaked between screens.
@@ -507,7 +508,8 @@
         </div>
 
         <footer class="app-footer">
-            <span class="app-footer-name">Setlist Roller v{__APP_VERSION__}</span>
+            <span class="app-footer-name">Setlist Roller {__APP_VERSION__}</span>
+            <time class="app-footer-deployed" datetime={__DEPLOYED_AT__}>Deployed {deployedAtDisplay}</time>
             <span class="app-footer-copy">&copy; Nick Jennings</span>
             <a class="app-footer-link" href="https://github.com/silverbucket/setlist-roller" target="_blank" rel="noopener">GitHub</a>
         </footer>
