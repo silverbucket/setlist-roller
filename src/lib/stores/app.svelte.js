@@ -1,6 +1,6 @@
 import { accountSlot, consumeKnownAccountsCorrupted, getAccountToken, getKnownAccounts, removeKnownAccountEntry, saveKnownAccount } from "../accounts.js";
 import { CONFIG_SECTIONS } from "../config-meta.js";
-import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, sortSongs } from "../defaults.js";
+import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, songsReferencingKeepApart, sortSongs, syncKeepApartLinks } from "../defaults.js";
 import { buildDefaultPerformance, scoreFixedOrder } from "../generator.js";
 import GeneratorWorker from "../generator.worker.js?worker";
 import { pruneStaleKeys, sortKeys } from "../keys.js";
@@ -1369,6 +1369,9 @@ export function createAppStore(repo) {
             if (result.summary?.closerFilterRelaxed) {
                 toastWarn("No valid closer found in catalog.");
             }
+            if (result.summary?.keepApartRelaxed) {
+                toastWarn("Two songs you keep apart ended up together. No other order fit.");
+            }
             const n = generatedSetlist.songs.length;
             toastInfo(randomFrom([
                 `🎲 The dice have spoken. ${n} songs.`,
@@ -1952,6 +1955,12 @@ export function createAppStore(repo) {
             }));
             if (!sessionAlive()) return;
             upsertSongLocal(saved);
+            // "Keep apart" is symmetric: mirror the link on the other songs.
+            for (const other of syncKeepApartLinks(saved, songs)) {
+                const savedOther = await withSync("Saving song", () => repo.putSong(other));
+                if (!sessionAlive()) return;
+                upsertSongLocal(savedOther);
+            }
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
 
@@ -1987,6 +1996,11 @@ export function createAppStore(repo) {
             await withSync("Removing song", () => repo.deleteSong(song.id));
             if (!sessionAlive()) return;
             removeSongLocal(song.id);
+            for (const other of songsReferencingKeepApart(song.id, songs)) {
+                const savedOther = await withSync("Saving song", () => repo.putSong(other));
+                if (!sessionAlive()) return;
+                upsertSongLocal(savedOther);
+            }
             if (editorSong?.id === song.id) closeEditor();
             toastInfo(`Deleted "${song.name}".`);
         } catch (error) {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { memberDefaultRig, normalizeSongRecord, resolveSongMembers, rigEqualsDefault } from "./defaults.js";
+import {
+    memberDefaultRig,
+    normalizeSongRecord,
+    resolveSongMembers,
+    rigEqualsDefault,
+    songsReferencingKeepApart,
+    syncKeepApartLinks,
+} from "./defaults.js";
 
 const NICK = {
     instruments: [
@@ -147,5 +154,36 @@ describe("normalizeSongRecord — member setups", () => {
             capo: 4,
             picking: ["Pick"],
         });
+    });
+});
+
+describe("keepApartFrom", () => {
+    it("normalizes to a deduplicated string list without self-reference", () => {
+        const song = normalizeSongRecord({ id: "a", name: "A", keepApartFrom: ["b", "b", "a", 7, "", null] });
+        expect(song.keepApartFrom).toEqual(["b", "7"]);
+        expect(normalizeSongRecord({ id: "a", name: "A" }).keepApartFrom).toEqual([]);
+    });
+
+    it("syncKeepApartLinks adds and removes back-references", () => {
+        const catalog = [
+            { id: "a", name: "A", keepApartFrom: ["b"] },
+            { id: "b", name: "B", keepApartFrom: ["a"] },
+            { id: "c", name: "C", keepApartFrom: [] },
+        ];
+        const touched = syncKeepApartLinks({ id: "a", keepApartFrom: ["c"] }, catalog);
+        expect(touched.map((s) => [s.id, s.keepApartFrom])).toEqual([
+            ["b", []],
+            ["c", ["a"]],
+        ]);
+    });
+
+    it("songsReferencingKeepApart scrubs a deleted id", () => {
+        const catalog = [
+            { id: "a", name: "A", keepApartFrom: ["b", "c"] },
+            { id: "c", name: "C", keepApartFrom: [] },
+        ];
+        const touched = songsReferencingKeepApart("b", catalog);
+        expect(touched).toHaveLength(1);
+        expect(touched[0].keepApartFrom).toEqual(["c"]);
     });
 });

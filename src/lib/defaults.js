@@ -122,6 +122,7 @@ export function blankSong() {
         playPriority: "normal",
         energy: 3,
         positionPreference: "anywhere",
+        keepApartFrom: [],
         key: "",
         notes: "",
         schemaVersion: SCHEMA_VERSION,
@@ -151,6 +152,57 @@ function normalizeSongMembers(members) {
     return normalized;
 }
 
+/**
+ * Song ids this song must never sit next to. Deduplicated, stringified, and
+ * never self-referential. Stored symmetrically (see syncKeepApartLinks).
+ */
+function normalizeKeepApartFrom(value, selfId) {
+    const self = String(selfId ?? "");
+    const seen = new Set();
+    for (const id of Array.isArray(value) ? value : []) {
+        const str = String(id ?? "").trim();
+        if (str && str !== self) seen.add(str);
+    }
+    return [...seen];
+}
+
+/**
+ * Given a song about to be saved and the current catalog, return the other
+ * songs whose keepApartFrom lists must change so the relation stays
+ * symmetric: songs newly listed gain a back-reference, songs no longer
+ * listed lose theirs. Returned songs are fresh copies with updatedAt unset
+ * so the caller's repo.putSong stamps them.
+ */
+export function syncKeepApartLinks(song, catalog) {
+    const id = String(song.id);
+    const wanted = new Set(normalizeKeepApartFrom(song.keepApartFrom, id));
+    const touched = [];
+    for (const other of catalog || []) {
+        if (String(other.id) === id) continue;
+        const list = normalizeKeepApartFrom(other.keepApartFrom, other.id);
+        const has = list.includes(id);
+        if (wanted.has(String(other.id)) && !has) {
+            touched.push({ ...other, keepApartFrom: [...list, id] });
+        } else if (!wanted.has(String(other.id)) && has) {
+            touched.push({ ...other, keepApartFrom: list.filter((x) => x !== id) });
+        }
+    }
+    return touched;
+}
+
+/**
+ * Songs that reference a deleted song id and need that reference scrubbed.
+ */
+export function songsReferencingKeepApart(deletedId, catalog) {
+    const id = String(deletedId);
+    return (catalog || [])
+        .filter((other) => normalizeKeepApartFrom(other.keepApartFrom, other.id).includes(id))
+        .map((other) => ({
+            ...other,
+            keepApartFrom: normalizeKeepApartFrom(other.keepApartFrom, other.id).filter((x) => x !== id),
+        }));
+}
+
 export function normalizeSongRecord(song) {
     const timestamp = song.createdAt || nowIso();
     return {
@@ -168,6 +220,7 @@ export function normalizeSongRecord(song) {
         )
             ? song.positionPreference
             : "anywhere",
+        keepApartFrom: normalizeKeepApartFrom(song.keepApartFrom, song.id),
         key: song.key || "",
         notes: song.notes || "",
         schemaVersion: song.schemaVersion || SCHEMA_VERSION,

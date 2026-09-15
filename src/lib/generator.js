@@ -98,6 +98,31 @@ function compareStates(left, right) {
     return (left._tiebreaker || 0) - (right._tiebreaker || 0);
 }
 
+/**
+ * Mark adjacent items whose songs are flagged "keep apart". Sets
+ * `keepApartConflict` on both items of each offending pair and returns the
+ * number of pairs. `songsById` supplies keepApartFrom when the items lack it.
+ */
+function annotateKeepApartConflicts(items, songsById) {
+    const listFor = (item) => {
+        const own = Array.isArray(item.keepApartFrom) ? item.keepApartFrom : null;
+        const src = own || songsById?.get(String(item.id))?.keepApartFrom || [];
+        return src.map(String);
+    };
+    let pairs = 0;
+    for (const item of items) item.keepApartConflict = false;
+    for (let i = 1; i < items.length; i += 1) {
+        const prev = items[i - 1];
+        const next = items[i];
+        if (listFor(next).includes(String(prev.id)) || listFor(prev).includes(String(next.id))) {
+            prev.keepApartConflict = true;
+            next.keepApartConflict = true;
+            pairs += 1;
+        }
+    }
+    return pairs;
+}
+
 class SongsCatalog {
     constructor(list = []) {
         this._songs = list;
@@ -215,6 +240,7 @@ class SongsCatalog {
             playPriority: song.playPriority || "normal",
             energy: Math.max(1, Math.min(5, Number(song.energy) || 3)),
             positionPreference: song.positionPreference || "anywhere",
+            keepApartFrom: Array.isArray(song.keepApartFrom) ? song.keepApartFrom.map(String) : [],
             key: song.key || null,
             notes: song.notes || "",
             performance,
@@ -260,6 +286,7 @@ class SetList {
             });
             this._count = Math.min(this._options.count, this._catalog.length);
         }
+        this._songsById = new Map(this._catalog.map((song) => [String(song.id), song]));
         this._songBiasById = this._buildSongBiases(this._catalog);
         this._minConstraints = this._buildMinConstraints();
         this._minimumGroups = this._buildMinimumGroups();
@@ -1003,6 +1030,7 @@ class SetList {
         });
 
         const anxiety = computeAnxiety(finalizedItems, this._config);
+        const keepApartConflicts = annotateKeepApartConflicts(finalizedItems, this._songsById);
 
         return {
             items: finalizedItems,
@@ -1012,6 +1040,7 @@ class SetList {
                 instrumentals: state.instrumentalCount,
                 changes: state.changeTotals,
                 anxiety,
+                keepApartRelaxed: keepApartConflicts > 0,
                 minimumsRelaxed: Boolean(this._minimumsRelaxed),
                 transitionRulesRelaxed: Boolean(this._transitionRulesRelaxed),
                 openerFilterRelaxed: Boolean(this._openerFilterRelaxed),
@@ -1021,8 +1050,25 @@ class SetList {
     }
 
     /** Build candidate beam states for one song at one setlist position. */
+    _keptApart(prevItem, song) {
+        if (!prevItem) return false;
+        const prevId = String(prevItem.id);
+        const nextId = String(song.id);
+        const a = Array.isArray(song.keepApartFrom) ? song.keepApartFrom : [];
+        if (a.some((id) => String(id) === prevId)) return true;
+        // Lists are stored symmetrically, but tolerate a one-sided record.
+        const prevSong = this._songsById?.get(prevId);
+        const b = Array.isArray(prevSong?.keepApartFrom) ? prevSong.keepApartFrom : [];
+        return b.some((id) => String(id) === nextId);
+    }
+
     _buildNextState(state, song, position, relaxPositionFilter = false, relaxTransitionRules = false) {
         const isPinnedHere = this._pinnedPositions.get(position) === song.id;
+        // Hard adjacency rule: never seat two "keep apart" songs side by side.
+        // Only the last-resort expansion (relaxTransitionRules) may ignore it.
+        if (!relaxTransitionRules && this._keptApart(state.lastItem, song)) {
+            return null;
+        }
         if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {
             if (position === 1 && song.notGoodOpener) {
                 return null;
@@ -1578,6 +1624,7 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
             instrumental: song.instrumental,
             key: song.key,
             notes: song.notes || "",
+            keepApartFrom: Array.isArray(song.keepApartFrom) ? song.keepApartFrom.map(String) : [],
             performance: song.performance,
             position: index + 1,
             incrementalScore,
@@ -1590,6 +1637,7 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
     });
 
     const anxiety = computeAnxiety(items, config);
+    const keepApartConflicts = annotateKeepApartConflicts(items, null);
 
     return {
         songs: items,
@@ -1598,6 +1646,7 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
             covers: coverCount,
             instrumentals: instrumentalCount,
             anxiety,
+            keepApartConflicts,
         },
     };
 }
