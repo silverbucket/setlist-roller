@@ -1,5 +1,5 @@
 <script>
-  import { getContext } from "svelte";
+  import { getContext, tick } from "svelte";
   import { anxietyLabel } from "../../anxiety.js";
   import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
 
@@ -18,6 +18,8 @@
   let performedDate = $state("");
   let performedVenue = $state("");
   let confirmingHistoryDeleteId = $state(null);
+  let confirmDialogEl = $state(null);
+  let confirmationReturnFocus = null;
   let draftSetlists = $derived(store.displayedSavedSetlists?.filter((setlist) => !setlist.performedAt) ?? []);
   let performedSetlists = $derived(
     [...(store.displayedSavedSetlists?.filter((setlist) => setlist.performedAt) ?? [])]
@@ -36,7 +38,7 @@
     editName = saved.name || "";
     // Convert ISO to YYYY-MM-DD for date input
     const date = saved.performedAt || saved.savedAt;
-    editDate = date ? date.slice(0, 10) : "";
+    editDate = date ? dateInputValue(date) : "";
     editVenue = saved.venue || "";
   }
 
@@ -45,9 +47,12 @@
     if (!editingId) return;
     const saved = store.displayedSavedSetlists?.find((setlist) => setlist.id === editingId);
     const dateField = saved?.performedAt ? "performedAt" : "savedAt";
+    const editedDate = editDate
+      ? (saved?.performedAt ? editDate : new Date(`${editDate}T12:00:00`).toISOString())
+      : saved?.[dateField];
     store.updateSavedSetlist(editingId, {
       name: editName.trim() || "Untitled Set",
-      [dateField]: editDate ? new Date(`${editDate}T12:00:00`).toISOString() : new Date().toISOString(),
+      [dateField]: editedDate,
       venue: editVenue.trim() || null,
     });
     editingId = null;
@@ -74,6 +79,7 @@
     e.stopPropagation();
     const saved = store.displayedSavedSetlists?.find((setlist) => setlist.id === id);
     if (saved?.performedAt) {
+      confirmationReturnFocus = e.currentTarget;
       confirmingHistoryDeleteId = id;
       return;
     }
@@ -92,8 +98,9 @@
 
   function startMarkPerformed(e, saved) {
     e.stopPropagation();
+    confirmationReturnFocus = e.currentTarget;
     markingPerformedId = saved.id;
-    performedDate = new Date().toISOString().slice(0, 10);
+    performedDate = dateInputValue(new Date());
     performedVenue = saved.venue || "";
   }
 
@@ -101,7 +108,7 @@
     if (!markingPerformedId || !performedDate) return;
     const saved = await store.markSetlistPerformed(
       markingPerformedId,
-      new Date(`${performedDate}T12:00:00`).toISOString(),
+      performedDate,
       performedVenue.trim() || null,
     );
     if (!saved) return;
@@ -117,8 +124,8 @@
 
   async function confirmHistoryDelete() {
     if (!confirmingHistoryDeleteId) return;
-    await store.removeSavedSetlist(confirmingHistoryDeleteId);
-    confirmingHistoryDeleteId = null;
+    const removed = await store.removeSavedSetlist(confirmingHistoryDeleteId);
+    if (removed) confirmingHistoryDeleteId = null;
   }
 
   async function moveToDrafts(e, saved) {
@@ -180,9 +187,62 @@
 
   function formatDate(iso) {
     if (!iso) return "";
-    const d = new Date(iso);
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00`) : new Date(iso);
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   }
+
+  function dateInputValue(value) {
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function closeConfirmation() {
+    if (markingPerformedId) cancelMarkPerformed();
+    else confirmingHistoryDeleteId = null;
+  }
+
+  function confirmationKeydown(e) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeConfirmation();
+      return;
+    }
+    if (e.key !== "Tab" || !confirmDialogEl) return;
+    const focusable = [...confirmDialogEl.querySelectorAll('button:not([disabled]), input:not([disabled])')];
+    if (!focusable.length) {
+      e.preventDefault();
+      confirmDialogEl.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!confirmDialogEl.contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  $effect(() => {
+    if (!markingPerformedId && !confirmingHistoryDeleteId) return;
+    const returnFocus = confirmationReturnFocus || document.activeElement;
+    window.addEventListener("keydown", confirmationKeydown);
+    tick().then(() => confirmDialogEl?.querySelector("input, button")?.focus());
+    return () => {
+      window.removeEventListener("keydown", confirmationKeydown);
+      if (returnFocus && document.body.contains(returnFocus)) returnFocus.focus();
+      confirmationReturnFocus = null;
+    };
+  });
 
   // Transition notes — same logic as SetlistSongCard
   function getChanges(song, prevSong, memberName) {
@@ -231,9 +291,9 @@
 <div class="saved-screen">
   <h2 class="screen-title">Setlists</h2>
 
-  <div class="list-tabs" role="tablist" aria-label="Setlist status">
-    <button type="button" role="tab" aria-selected={activeList === "drafts"} class:active={activeList === "drafts"} onclick={() => activeList = "drafts"}>Drafts <span>{draftSetlists.length}</span></button>
-    <button type="button" role="tab" aria-selected={activeList === "performed"} class:active={activeList === "performed"} onclick={() => activeList = "performed"}>Performed <span>{performedSetlists.length}</span></button>
+  <div class="list-tabs" aria-label="Setlist status">
+    <button type="button" aria-pressed={activeList === "drafts"} class:active={activeList === "drafts"} onclick={() => activeList = "drafts"}>Drafts <span>{draftSetlists.length}</span></button>
+    <button type="button" aria-pressed={activeList === "performed"} class:active={activeList === "performed"} onclick={() => activeList = "performed"}>Performed <span>{performedSetlists.length}</span></button>
   </div>
 
   {#if !visibleSetlists.length}
@@ -353,9 +413,9 @@
 
 {#if markingPerformedId}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="presentation" onclick={cancelMarkPerformed}>
+  <div class="modal-backdrop confirmation-backdrop" role="presentation" onclick={cancelMarkPerformed}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="performed-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+    <div class="confirm-sheet" bind:this={confirmDialogEl} role="dialog" aria-modal="true" aria-labelledby="performed-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <h2 id="performed-title">Mark as performed?</h2>
       <p>This preserves the setlist as a record of the show.</p>
       <label for="performed-date">Show date</label>
@@ -372,9 +432,9 @@
 
 {#if confirmingHistoryDeleteId}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="presentation" onclick={() => confirmingHistoryDeleteId = null}>
+  <div class="modal-backdrop confirmation-backdrop" role="presentation" onclick={() => confirmingHistoryDeleteId = null}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="history-delete-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+    <div class="confirm-sheet" bind:this={confirmDialogEl} role="alertdialog" aria-modal="true" aria-labelledby="history-delete-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <h2 id="history-delete-title">Delete performed setlist?</h2>
       <p>This setlist is part of your show history. Deleting it permanently removes that record.</p>
       <div class="confirm-actions">
@@ -663,6 +723,10 @@
   .modal-btn.danger {
     background: var(--danger, #b91c1c);
     color: var(--on-accent);
+  }
+
+  .confirmation-backdrop {
+    z-index: 400;
   }
 
   /* ---- Modal ---- */

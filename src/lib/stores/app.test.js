@@ -1221,6 +1221,28 @@ describe("generated setlist names", () => {
         randomSpy.mockRestore();
         teardown();
     });
+});
+
+describe("performed setlist history", () => {
+    let restoreEnv;
+
+    beforeEach(() => {
+        restoreEnv = installBrowserEnv();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        restoreEnv();
+    });
+
+    async function bootStore(repo, { settled = false } = {}) {
+        if (settled) await markCatalogSettled();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        return { store, teardown };
+    }
 
     it("marks a draft as performed and can move it back to drafts", async () => {
         const repo = buildRepo();
@@ -1284,6 +1306,58 @@ describe("generated setlist names", () => {
         expect(repo.putSetlist.mock.calls[0][0]).toMatchObject({ songs: [{ songId: "s1", performance: {} }] });
         expect(repo.putSetlist.mock.calls[0][0].id).not.toBe("performed");
         expect(repo.putSetlist.mock.calls[0][0].performedAt).toBeUndefined();
+        teardown();
+    });
+
+    it("forks a new draft when the loaded setlist becomes performed remotely", async () => {
+        const repo = buildRepo();
+        repo.putSetlist = vi.fn(async (entry) => entry);
+        const { store, teardown } = await bootStore(repo, { settled: true });
+        repo.fireChange({ relativePath: "songs/s1", origin: "remote", newValue: { id: "s1", name: "Encore" } });
+        const draft = {
+            id: "draft",
+            name: "Tonight",
+            savedAt: "2026-09-10T12:00:00.000Z",
+            schemaVersion: 2,
+            songs: [{ songId: "s1", performance: {} }],
+        };
+        repo.fireChange({ relativePath: "setlists/draft", origin: "remote", newValue: draft });
+        store.loadSavedSetlist("draft");
+        repo.fireChange({
+            relativePath: "setlists/draft",
+            origin: "remote",
+            newValue: { ...draft, performedAt: "2026-09-12", venue: "The Comet" },
+        });
+
+        await store.saveCurrentSetlist();
+
+        expect(repo.putSetlist).toHaveBeenCalledTimes(1);
+        expect(repo.putSetlist.mock.calls[0][0].id).not.toBe("draft");
+        expect(repo.putSetlist.mock.calls[0][0].performedAt).toBeUndefined();
+        teardown();
+    });
+
+    it("reports a failed performed-setlist deletion", async () => {
+        const repo = buildRepo();
+        repo.deleteSetlist = vi.fn(async () => {
+            throw new Error("offline");
+        });
+        const { store, teardown } = await bootStore(repo);
+        repo.fireChange({
+            relativePath: "setlists/show",
+            origin: "remote",
+            newValue: {
+                id: "show",
+                name: "Past Show",
+                savedAt: "2026-09-10T12:00:00.000Z",
+                performedAt: "2026-09-12",
+                schemaVersion: 2,
+                songs: [],
+            },
+        });
+
+        await expect(store.removeSavedSetlist("show")).resolves.toBe(false);
+        expect(store.savedSetlists).toHaveLength(1);
         teardown();
     });
 });
