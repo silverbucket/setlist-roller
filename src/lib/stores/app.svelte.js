@@ -1952,6 +1952,30 @@ export function createAppStore(repo) {
         return false;
     }
 
+    /**
+     * Write each partner record in turn, applying successes locally as they
+     * land. Returns the names of partners whose write failed, or null when
+     * the session changed mid-way (the caller must stop touching state).
+     */
+    async function writeKeepApartPartners(partners, sessionAlive) {
+        const failed = [];
+        for (const other of partners) {
+            try {
+                const savedOther = await withSync("Saving song", () => repo.putSong(other));
+                if (!sessionAlive()) return null;
+                upsertSongLocal(savedOther);
+            } catch {
+                if (!sessionAlive()) return null;
+                failed.push(other.name || other.id);
+            }
+        }
+        return failed;
+    }
+
+    function quoteList(names) {
+        return names.map((name) => `"${name}"`).join(", ");
+    }
+
     async function saveSong() {
         if (!editorSong || !String(editorSong.name || "").trim()) {
             toastError("Songs need names.");
@@ -1980,17 +2004,26 @@ export function createAppStore(repo) {
             }));
             if (!sessionAlive()) return;
             upsertSongLocal(saved);
-            // "Keep apart" is symmetric: mirror the link on the other songs.
-            for (const other of syncKeepApartLinks(saved, songs)) {
-                const savedOther = await withSync("Saving song", () => repo.putSong(other));
-                if (!sessionAlive()) return;
-                upsertSongLocal(savedOther);
-            }
+            // "Keep apart" is symmetric: mirror the link on the partner songs.
+            // remoteStorage has no multi-document transactions, so this is
+            // best-effort per record (same policy as the member-rename
+            // cascade). A missed partner leaves a one-sided link, which the
+            // generator and scorer already honour; re-saving this song
+            // re-runs the diff and repairs it.
+            const failedPartners = await writeKeepApartPartners(syncKeepApartLinks(saved, songs), sessionAlive);
+            if (failedPartners === null) return;
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
 
             closeEditor();
-            toastInfo(`Saved "${saved.name}".`);
+            if (failedPartners.length) {
+                toastWarn(
+                    `Saved "${saved.name}", but couldn't update keep-apart on ${quoteList(failedPartners)}. ` +
+                        "The rule still applies; re-save this song to retry.",
+                );
+            } else {
+                toastInfo(`Saved "${saved.name}".`);
+            }
         } catch (error) {
             toastError(error?.message || "Could not save.");
         } finally {
@@ -2030,13 +2063,16 @@ export function createAppStore(repo) {
             await withSync("Removing song", () => repo.deleteSong(song.id));
             if (!sessionAlive()) return;
             removeSongLocal(song.id);
-            for (const other of songsReferencingKeepApart(song.id, songs)) {
-                const savedOther = await withSync("Saving song", () => repo.putSong(other));
-                if (!sessionAlive()) return;
-                upsertSongLocal(savedOther);
-            }
+            // Best-effort scrub of partner references; see saveSong. A
+            // stale id is inert (unknown ids are ignored everywhere).
+            const failedPartners = await writeKeepApartPartners(songsReferencingKeepApart(song.id, songs), sessionAlive);
+            if (failedPartners === null) return;
             if (editorSong?.id === song.id) closeEditor();
-            toastInfo(`Deleted "${song.name}".`);
+            if (failedPartners.length) {
+                toastWarn(`Deleted "${song.name}", but couldn't clear its keep-apart link on ${quoteList(failedPartners)}.`);
+            } else {
+                toastInfo(`Deleted "${song.name}".`);
+            }
         } catch (error) {
             toastError(error?.message || "Could not delete.");
         } finally {

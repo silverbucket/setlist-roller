@@ -450,6 +450,39 @@ describe("keep-apart cascade guard", () => {
             teardown();
         });
 
+        it("saveSong keeps the primary write and reports a failed partner write", async () => {
+            const repo = buildRepo();
+            repo.putSong = vi.fn(async (s) => {
+                if (s.id === "s2") throw new Error("offline");
+                return s;
+            });
+            const { store, teardown } = await bootStore(repo, { settled: true });
+
+            for (const [id, name] of [
+                ["s1", "Alpha"],
+                ["s2", "Beta"],
+                ["s3", "Gamma"],
+            ]) {
+                repo.fireChange({ relativePath: `songs/${id}`, origin: "remote", newValue: { id, name } });
+            }
+            await settle();
+
+            store.openSong(store.songs.find((s) => s.id === "s1"));
+            store.updateSongField("keepApartFrom", ["s2", "s3"]);
+            await store.saveSong();
+
+            // Primary and the healthy partner landed; the failed one is
+            // reported, the editor closed, and the loop did not abort early.
+            expect(repo.putSong).toHaveBeenCalledTimes(3);
+            expect(store.songs.find((s) => s.id === "s1")?.keepApartFrom).toEqual(["s2", "s3"]);
+            expect(store.songs.find((s) => s.id === "s3")?.keepApartFrom).toEqual(["s1"]);
+            expect(store.songs.find((s) => s.id === "s2")?.keepApartFrom).toEqual([]);
+            expect(store.editorSong).toBeNull();
+            expect(store.toastMessages.at(-1)).toMatchObject({ tone: "warning" });
+            expect(store.toastMessages.at(-1)?.message).toContain('"Beta"');
+            teardown();
+        });
+
         it("saveSong cascades keep-apart links once settled", async () => {
             const repo = buildRepo();
             repo.putSong = vi.fn(async (s) => s);
