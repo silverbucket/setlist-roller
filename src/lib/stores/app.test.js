@@ -370,6 +370,25 @@ describe("keep-apart cascade guard", () => {
             return { store, teardown };
         }
 
+        it("clamps numeric config fields to their declared bounds", async () => {
+            const repo = buildRepo();
+            const { store, teardown } = await bootStore(repo);
+            const field = { path: "props.tuning.returnPenalty", type: "number", min: 0, max: 10 };
+            repo.fireChange({
+                relativePath: "settings/app-config",
+                origin: "remote",
+                newValue: { bandName: "Test", schemaVersion: 2 },
+            });
+            await settle();
+
+            store.updateConfigField(field, -1);
+            expect(store.appConfig.props.tuning.returnPenalty).toBe(0);
+            store.updateConfigField(field, 11);
+            expect(store.appConfig.props.tuning.returnPenalty).toBe(10);
+
+            teardown();
+        });
+
         it("deleteSong guard reads links from the catalog record, not the caller's object", async () => {
             const repo = buildRepo();
             repo.deleteSong = vi.fn(async () => {});

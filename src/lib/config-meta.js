@@ -114,6 +114,15 @@ export const CONFIG_SECTIONS = [
                     "Once a tuning is set, the generator must play at least this many songs before switching. Set to 0 to allow changes at any time.",
             },
             {
+                path: "props.tuning.returnPenalty",
+                label: "Tuning return penalty",
+                type: "number",
+                min: 0,
+                max: 10,
+                description:
+                    "Extra cost for returning to a tuning used earlier in the set. Repeated returns cost progressively more; set to 0 to remove this extra return cost.",
+            },
+            {
                 path: "props.tuning.allowChangeOnLastSong",
                 label: "Tuning can change on closer",
                 type: "boolean",

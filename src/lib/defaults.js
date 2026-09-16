@@ -47,6 +47,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
             kind: "instrumentField",
             field: "tuning",
             minStreak: 1,
+            returnPenalty: 2,
             allowChangeOnLastSong: true,
         },
         capo: {
@@ -328,6 +329,11 @@ export function normalizeAppConfig(config) {
     if (normalized.ui.dieColor != null && !/^#[0-9a-fA-F]{6}$/.test(normalized.ui.dieColor)) {
         normalized.ui.dieColor = null;
     }
+
+    const returnPenalty = Number(normalized.props?.tuning?.returnPenalty);
+    normalized.props.tuning.returnPenalty = Number.isFinite(returnPenalty)
+        ? Math.min(10, Math.max(0, returnPenalty))
+        : DEFAULT_CONFIG_TEMPLATE.props.tuning.returnPenalty;
 
     return normalized;
 }

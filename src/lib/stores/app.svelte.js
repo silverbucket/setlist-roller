@@ -2236,7 +2236,11 @@ export function createAppStore(repo) {
         }
         const field = fieldOrPath;
         let next = rawValue;
-        if (field.type === "number") next = Number(rawValue);
+        if (field.type === "number") {
+            next = Number(rawValue);
+            if (Number.isFinite(field.min)) next = Math.max(field.min, next);
+            if (Number.isFinite(field.max)) next = Math.min(field.max, next);
+        }
         else if (field.type === "boolean") next = Boolean(rawValue);
         else if (field.type === "list") next = parseDelimitedList(rawValue);
         else if (field.type === "order-rule") {
