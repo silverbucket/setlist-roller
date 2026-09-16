@@ -66,27 +66,19 @@ function makeConfig(overrides = {}) {
             tuning: {
                 kind: "instrumentField",
                 field: "tuning",
-                minStreak: 2,
-                allowChangeOnLastSong: true,
             },
             capo: {
                 kind: "instrumentDelta",
                 field: "capo",
-                minStreak: 2,
-                allowChangeOnLastSong: true,
             },
             instruments: {
                 kind: "instrumentSet",
                 weightKey: "instrument",
-                minStreak: 2,
-                allowChangeOnLastSong: true,
             },
             picking: {
                 kind: "instrumentField",
                 field: "picking",
                 weightKey: "technique",
-                minStreak: 1,
-                allowChangeOnLastSong: true,
             },
         },
         show: overrides.show || { members: {} },
@@ -152,124 +144,6 @@ function twoTuningCatalog(count, memberName = "nick") {
             },
         }),
     );
-}
-
-/** Song locked to a single tuning (no variant expansion). */
-function tuningOnlySong(name, tuning, memberName = "nick") {
-    return makeSong(name, {
-        members: {
-            [memberName]: {
-                instruments: [{ name: "banjo", tuning: [tuning], capo: 0, picking: [] }],
-            },
-        },
-    });
-}
-
-/** Catalog with perTuning songs fixed to each tuning label. */
-function fixedTuningCatalog(tunings, perTuning = 6, memberName = "nick") {
-    const songs = [];
-    for (const tuning of tunings) {
-        for (let i = 1; i <= perTuning; i++) {
-            songs.push(tuningOnlySong(`${tuning} ${i}`, tuning, memberName));
-        }
-    }
-    return songs;
-}
-
-function extractMemberTunings(result, memberName = "nick") {
-    return result.songs.map((song) => song.performance[memberName]?.tuning);
-}
-
-/** Count returns to a tuning that was used earlier and then left. */
-function countTuningReturns(tunings) {
-    let returns = 0;
-    let prev = null;
-    const exited = new Set();
-    for (const tuning of tunings) {
-        if (prev !== null && tuning !== prev) {
-            exited.add(prev);
-        }
-        if (prev !== null && tuning !== prev && exited.has(tuning)) {
-            returns++;
-        }
-        prev = tuning;
-    }
-    return returns;
-}
-
-function countTuningChanges(tunings) {
-    let changes = 0;
-    for (let i = 1; i < tunings.length; i++) {
-        if (tunings[i] !== tunings[i - 1]) {
-            changes++;
-        }
-    }
-    return changes;
-}
-
-function tuningReturnConfig(overrides = {}) {
-    return makeConfig({
-        props: {
-            tuning: {
-                kind: "instrumentField",
-                field: "tuning",
-                minStreak: 1,
-                returnPenalty: 2,
-                allowChangeOnLastSong: true,
-                ...overrides.tuning,
-            },
-            ...overrides.extraProps,
-        },
-        ...overrides.config,
-    });
-}
-
-/** Lean config for tuning-behavior tests (avoids position-order side effects). */
-function leanTuningRollConfig(returnPenalty = 2) {
-    return {
-        general: {
-            count: 15,
-            weighting: { tuning: 4, capo: 2, instrument: 3, technique: 1, positionMiss: 8 },
-            randomness: {
-                shuffleCatalog: true,
-                songBias: 3,
-                variantJitter: 1.5,
-                stateJitter: 1,
-                temperature: 0.85,
-                finalChoicePool: 12,
-            },
-        },
-        props: {
-            tuning: {
-                kind: "instrumentField",
-                field: "tuning",
-                minStreak: 1,
-                returnPenalty,
-                allowChangeOnLastSong: true,
-            },
-        },
-        show: {},
-        band: {},
-    };
-}
-
-function variedRollOptions(overrides = {}) {
-    return {
-        count: overrides.count ?? 9,
-        seed: overrides.seed ?? 1,
-        beamWidth: overrides.beamWidth ?? 128,
-        show: overrides.show ?? {},
-        randomness: {
-            shuffleCatalog: true,
-            songBias: 3,
-            variantJitter: 1.5,
-            stateJitter: 1,
-            temperature: 0.85,
-            finalChoicePool: 12,
-            ...overrides.randomness,
-        },
-        ...overrides,
-    };
 }
 
 /** Generate a catalog where only the first two songs can satisfy the alternate instrument */
@@ -420,60 +294,6 @@ function overlappingInstrumentCatalog(memberName = "nick", instrumentCount = 32)
     ];
 }
 
-function anxietyPressureCatalog() {
-    return Array.from({ length: 9 }, (_, songIndex) =>
-        makeSong(`Pressure ${songIndex + 1}`, {
-            id: `pressure-${songIndex + 1}`,
-            members: {
-                mark: {
-                    instruments: [
-                        {
-                            name: "guitar",
-                            tuning: ["Standard"],
-                            capo: 0,
-                            picking: [],
-                        },
-                        {
-                            name: "guitar",
-                            tuning: ["DADDAD"],
-                            capo: 0,
-                            picking: [],
-                        },
-                        {
-                            name: "mandolin",
-                            tuning: ["Standard"],
-                            capo: 0,
-                            picking: [],
-                        },
-                    ],
-                },
-                nick: {
-                    instruments: [
-                        {
-                            name: "banjo",
-                            tuning: ["Open G"],
-                            capo: 0,
-                            picking: ["picking"],
-                        },
-                        {
-                            name: "banjo",
-                            tuning: ["Open D"],
-                            capo: 0,
-                            picking: ["clawhammer"],
-                        },
-                        {
-                            name: "guitar",
-                            tuning: ["Standard"],
-                            capo: 2,
-                            picking: ["picking"],
-                        },
-                    ],
-                },
-            },
-        }),
-    );
-}
-
 // ===================================================================
 // Basic generation
 // ===================================================================
@@ -524,7 +344,7 @@ describe("generateSetlist — basics", () => {
 // Determinism
 // ===================================================================
 describe("generateSetlist — programming preferences", () => {
-    it("scales established transition defaults when weighting config is partial", () => {
+    it("charges the default per-member tuning cost when weighting config is partial", () => {
         const songs = [
             makeSong("Standard", {
                 members: {
@@ -543,11 +363,10 @@ describe("generateSetlist — programming preferences", () => {
             ...deterministicOptions({ count: 2 }),
             fixedSongIds: songs.map((song) => song.id),
             setShape: "none",
-            transitionSmoothness: "smooth",
-            selectionVariety: 0,
         });
 
-        expect(result.summary.score).toBe(7);
+        // tuning weight 4 × "minimize" multiplier 1.5
+        expect(result.summary.score).toBe(6);
     });
 
     it("always includes explicitly pinned songs", () => {
@@ -556,8 +375,7 @@ describe("generateSetlist — programming preferences", () => {
 
         const result = generateSetlist(songs, makeConfig(), {
             ...deterministicOptions({ count: 4, seed: 42 }),
-            rotation: "hits",
-            selectionVariety: 0,
+            songMix: "hits",
             pinnedSongs: [{ id: songs[7].id, position: null }],
         });
 
@@ -568,8 +386,7 @@ describe("generateSetlist — programming preferences", () => {
         const songs = simpleCatalog(10);
         const options = {
             ...deterministicOptions({ count: 6, seed: 21 }),
-            rotation: "balanced",
-            selectionVariety: 80,
+            songMix: "balanced",
             pinnedSongs: [
                 { id: songs[2].id, position: 2 },
                 { id: songs[7].id, position: 5 },
@@ -593,8 +410,7 @@ describe("generateSetlist — programming preferences", () => {
 
         const result = generateSetlist(songs, makeConfig(), {
             ...deterministicOptions({ count: 4, seed: 42 }),
-            rotation: "balanced",
-            selectionVariety: 0,
+            songMix: "balanced",
         });
         const ids = result.songs.map((song) => song.id);
 
@@ -608,8 +424,7 @@ describe("generateSetlist — programming preferences", () => {
 
         const result = generateSetlist(songs, makeConfig(), {
             ...deterministicOptions({ count: 4, seed: 42 }),
-            rotation: "balanced",
-            selectionVariety: 0,
+            songMix: "balanced",
         });
 
         expect(result.songs.map((song) => song.id)).not.toContain(songs[0].id);
@@ -1076,402 +891,6 @@ describe("generateSetlist — change detection", () => {
 });
 
 // ===================================================================
-// Constraint enforcement — minStreak
-// ===================================================================
-describe("generateSetlist — minStreak enforcement", () => {
-    it("respects tuning minStreak=2 (no back-to-back tuning changes)", () => {
-        const songs = twoTuningCatalog(15);
-        const config = makeConfig();
-        // Run across multiple seeds
-        for (let seed = 1; seed <= 5; seed++) {
-            const result = generateSetlist(songs, config, deterministicOptions({ count: 10, seed }));
-            let consecutive = 0;
-            for (let i = 1; i < result.songs.length; i++) {
-                if (result.songs[i].propChanges.tuning?.changed) {
-                    consecutive++;
-                    // With minStreak=2, two consecutive changes should not happen
-                    expect(consecutive).toBeLessThanOrEqual(1);
-                } else {
-                    consecutive = 0;
-                }
-            }
-        }
-    });
-});
-
-describe("generateSetlist — tuning blocks", () => {
-    it("prefers grouping tuning songs instead of returning to a tuning", () => {
-        const tuningSong = (name, tuning, positionPreference) => ({
-            ...makeSong(name, {
-                members: {
-                    nick: {
-                        instruments: [{ name: "banjo", tuning: [tuning], capo: 0, picking: [] }],
-                    },
-                },
-            }),
-            positionPreference,
-        });
-        const songs = [
-            tuningSong("Open G one", "Open G", "anywhere"),
-            tuningSong("Open D", "Open D", "anywhere"),
-            tuningSong("Open G two", "Open G", "anywhere"),
-        ];
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    returnPenalty: 2,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-
-        for (let seed = 1; seed <= 10; seed++) {
-            const result = generateSetlist(songs, config, deterministicOptions({ count: 3, seed, setShape: "none" }));
-            const tunings = result.songs.map((song) => song.performance.nick.tuning);
-            expect(tunings).not.toEqual(["Open G", "Open D", "Open G"]);
-            expect(tunings).not.toEqual(["Open D", "Open G", "Open D"]);
-        }
-    });
-
-    it("allows a return when the song order requires it", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    returnPenalty: 2,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-        const result = scoreFixedOrder(
-            [
-                { id: "g-1", name: "G first", performance: performance("Open G") },
-                { id: "d", name: "D", performance: performance("Open D") },
-                { id: "g-2", name: "G return", performance: performance("Open G") },
-            ],
-            config,
-        );
-
-        expect(result.songs).toHaveLength(3);
-        expect(result.songs[2].incrementalScore).toBe(12);
-    });
-
-    it("disables return penalty when returnPenalty is 0", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    returnPenalty: 0,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-        const result = scoreFixedOrder(
-            [
-                { id: "g-1", name: "G first", performance: performance("Open G") },
-                { id: "d", name: "D", performance: performance("Open D") },
-                { id: "g-2", name: "G return", performance: performance("Open G") },
-            ],
-            config,
-        );
-
-        expect(result.songs[2].incrementalScore).toBe(4);
-    });
-
-    it("clamps direct returnPenalty config to its supported range", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const songs = [
-            { id: "g-1", performance: performance("Open G") },
-            { id: "d", performance: performance("Open D") },
-            { id: "g-2", performance: performance("Open G") },
-        ];
-
-        expect(
-            scoreFixedOrder(songs, tuningReturnConfig({ tuning: { returnPenalty: -1 } })).songs[2].incrementalScore,
-        ).toBe(4);
-        expect(
-            scoreFixedOrder(songs, tuningReturnConfig({ tuning: { returnPenalty: 11 } })).songs[2].incrementalScore,
-        ).toBe(44);
-    });
-
-    it("charges progressively more for repeated returns to the same tuning", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    returnPenalty: 2,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-        const result = scoreFixedOrder(
-            [
-                { id: "g-1", name: "G", performance: performance("Open G") },
-                { id: "d-1", name: "D", performance: performance("Open D") },
-                { id: "g-2", name: "G return 1", performance: performance("Open G") },
-                { id: "d-2", name: "D again", performance: performance("Open D") },
-                { id: "g-3", name: "G return 2", performance: performance("Open G") },
-            ],
-            config,
-        );
-
-        expect(result.songs[2].incrementalScore).toBe(12);
-        expect(result.songs[4].incrementalScore).toBe(20);
-        expect(result.songs[4].incrementalScore).toBeGreaterThan(result.songs[2].incrementalScore);
-    });
-
-    it("does not penalize returning to a tuning after an instrument switch", () => {
-        const performance = (instrument, tuning) => ({
-            nick: { instrument, tuning, capo: 0, picking: [] },
-        });
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    returnPenalty: 2,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-        const oscillate = scoreFixedOrder(
-            [
-                { id: "g-1", performance: performance("banjo", "Open G") },
-                { id: "d", performance: performance("banjo", "Open D") },
-                { id: "g-2", performance: performance("banjo", "Open G") },
-            ],
-            config,
-        );
-        const detour = scoreFixedOrder(
-            [
-                { id: "g-1", performance: performance("banjo", "Open G") },
-                { id: "guitar", performance: performance("guitar", "Standard") },
-                { id: "g-2", performance: performance("banjo", "Open G") },
-            ],
-            config,
-        );
-
-        expect(oscillate.songs[2].incrementalScore).toBe(12);
-        expect(detour.songs[2].incrementalScore).toBe(4);
-        expect(detour.songs[2].incrementalScore).toBeLessThan(oscillate.songs[2].incrementalScore);
-    });
-
-    it("normalizes empty tuning values before tracking returns", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const result = scoreFixedOrder(
-            [
-                { id: "empty-1", performance: performance(undefined) },
-                { id: "empty-2", performance: performance(null) },
-                { id: "d", performance: performance("Open D") },
-                { id: "empty-3", performance: performance([]) },
-            ],
-            tuningReturnConfig(),
-        );
-
-        expect(result.songs[1].incrementalScore).toBe(0);
-        expect(result.songs[3].incrementalScore).toBe(12);
-    });
-
-    it("avoids unnecessary tuning returns across many seeds when grouping is possible", () => {
-        const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
-        const config = tuningReturnConfig();
-        const seeds = 50;
-        let seedsWithReturns = 0;
-
-        for (let seed = 1; seed <= seeds; seed++) {
-            const result = generateSetlist(songs, config, variedRollOptions({ seed }));
-            const tunings = extractMemberTunings(result);
-            const returns = countTuningReturns(tunings);
-            if (returns > 0) {
-                seedsWithReturns++;
-            }
-            expect(countTuningChanges(tunings)).toBeLessThanOrEqual(2);
-        }
-
-        expect(seedsWithReturns).toBe(0);
-    }, 15_000);
-
-    it("keeps varied song orders while grouping tunings efficiently", () => {
-        const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
-        const config = tuningReturnConfig();
-        const seeds = 50;
-        const uniqueOrders = new Set();
-
-        for (let seed = 1; seed <= seeds; seed++) {
-            const result = generateSetlist(songs, config, variedRollOptions({ seed }));
-            uniqueOrders.add(result.songs.map((song) => song.id).join("|"));
-            expect(countTuningReturns(extractMemberTunings(result))).toBe(0);
-        }
-
-        expect(uniqueOrders.size).toBeGreaterThanOrEqual(25);
-    });
-
-    it("respects minStreak while discouraging tuning returns", () => {
-        const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
-        const config = tuningReturnConfig({ tuning: { minStreak: 2 } });
-
-        for (let seed = 1; seed <= 30; seed++) {
-            const result = generateSetlist(songs, config, variedRollOptions({ seed }));
-            let consecutiveChanges = 0;
-            for (let i = 1; i < result.songs.length; i++) {
-                if (result.songs[i].propChanges.tuning?.changed) {
-                    consecutiveChanges++;
-                    expect(consecutiveChanges).toBeLessThanOrEqual(1);
-                } else {
-                    consecutiveChanges = 0;
-                }
-            }
-            expect(countTuningReturns(extractMemberTunings(result))).toBe(0);
-        }
-    });
-
-    it("scores return-heavy fixed orders higher than grouped orders when penalized", () => {
-        const performance = (tuning) => ({
-            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
-        });
-        const grouped = [
-            { id: "g1", performance: performance("Open G") },
-            { id: "g2", performance: performance("Open G") },
-            { id: "d1", performance: performance("Open D") },
-            { id: "d2", performance: performance("Open D") },
-            { id: "c1", performance: performance("Open C") },
-            { id: "c2", performance: performance("Open C") },
-        ];
-        const returnHeavy = [
-            { id: "g1", performance: performance("Open G") },
-            { id: "d1", performance: performance("Open D") },
-            { id: "g2", performance: performance("Open G") },
-            { id: "d2", performance: performance("Open D") },
-            { id: "c1", performance: performance("Open C") },
-            { id: "c2", performance: performance("Open C") },
-        ];
-        const penalized = tuningReturnConfig();
-        const unpenalized = tuningReturnConfig({ tuning: { returnPenalty: 0 } });
-
-        const groupedScore = scoreFixedOrder(grouped, penalized).summary.score;
-        const returnHeavyPenalized = scoreFixedOrder(returnHeavy, penalized).summary.score;
-        const returnHeavyUnpenalized = scoreFixedOrder(returnHeavy, unpenalized).summary.score;
-
-        expect(returnHeavyPenalized).toBeGreaterThan(groupedScore);
-        expect(returnHeavyPenalized).toBeGreaterThan(returnHeavyUnpenalized);
-        expect(countTuningReturns(returnHeavy.map((song) => song.performance.nick.tuning))).toBe(2);
-    });
-
-    it("returnPenalty=0 allows more return-heavy orders than returnPenalty=2", () => {
-        const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
-        const show = {
-            members: {
-                nick: {
-                    allowedTunings: { banjo: ["Open G", "Open D", "Open C"] },
-                    minSongsPerTuning: { banjo: 3 },
-                },
-            },
-        };
-        const seeds = 30;
-        let seedsWithReturnsWhenPenalized = 0;
-        let seedsWithReturnsWhenUnpenalized = 0;
-        let totalReturnsWhenPenalized = 0;
-        let totalReturnsWhenUnpenalized = 0;
-
-        for (let seed = 1; seed <= seeds; seed++) {
-            const opts = variedRollOptions({ count: 9, seed, show });
-            const penalized = generateSetlist(songs, leanTuningRollConfig(2), opts);
-            const unpenalized = generateSetlist(songs, leanTuningRollConfig(0), opts);
-            const penalizedReturns = countTuningReturns(extractMemberTunings(penalized));
-            const unpenalizedReturns = countTuningReturns(extractMemberTunings(unpenalized));
-
-            if (penalizedReturns > 0) {
-                seedsWithReturnsWhenPenalized++;
-            }
-            if (unpenalizedReturns > 0) {
-                seedsWithReturnsWhenUnpenalized++;
-            }
-            totalReturnsWhenPenalized += penalizedReturns;
-            totalReturnsWhenUnpenalized += unpenalizedReturns;
-        }
-
-        expect(seedsWithReturnsWhenUnpenalized).toBe(seeds);
-        expect(seedsWithReturnsWhenPenalized).toBeLessThan(seedsWithReturnsWhenUnpenalized);
-        expect(totalReturnsWhenUnpenalized).toBeGreaterThan(totalReturnsWhenPenalized);
-    }, 15_000);
-
-    it("honors a pinned G→D→G order and applies the return penalty in scoring", () => {
-        const songs = [
-            tuningOnlySong("G first", "Open G"),
-            tuningOnlySong("D middle", "Open D"),
-            tuningOnlySong("G return", "Open G"),
-        ];
-        const config = tuningReturnConfig();
-        const result = generateSetlist(
-            songs,
-            config,
-            deterministicOptions({
-                count: 3,
-                seed: 1,
-                pinnedSongs: [
-                    { id: songs[0].id, position: 1 },
-                    { id: songs[1].id, position: 2 },
-                    { id: songs[2].id, position: 3 },
-                ],
-            }),
-        );
-
-        expect(result.songs.map((song) => song.performance.nick.tuning)).toEqual(["Open G", "Open D", "Open G"]);
-        expect(result.songs[2].incrementalScore).toBe(12);
-    });
-});
-
-// ===================================================================
-// Bug #6 regression: maxChanges enforced on last song
-// ===================================================================
-describe("generateSetlist — maxChanges on last song", () => {
-    it("maxChanges is enforced even when allowChangeOnLastSong is true", () => {
-        const songs = twoTuningCatalog(10);
-        const config = makeConfig({
-            props: {
-                tuning: {
-                    kind: "instrumentField",
-                    field: "tuning",
-                    minStreak: 1,
-                    maxChanges: 1,
-                    allowChangeOnLastSong: true,
-                },
-            },
-        });
-
-        for (let seed = 1; seed <= 10; seed++) {
-            const result = generateSetlist(songs, config, deterministicOptions({ count: 5, seed }));
-            const tuningChanges = result.songs.filter((s) => s.propChanges.tuning?.changed).length;
-            expect(tuningChanges).toBeLessThanOrEqual(1);
-        }
-    });
-});
-
-// ===================================================================
-// minSongsPerInstrument enforcement
 // ===================================================================
 describe("generateSetlist — minSongsPerInstrument", () => {
     it("both instruments appear at least min times with sufficient catalog", () => {
@@ -1730,57 +1149,151 @@ describe("generateSetlist — minSongsPerTuning", () => {
     });
 });
 
-describe("generateSetlist — chaos slider anxiety bias", () => {
-    it("keeps low chaos calmer and high chaos much more anxious on a transition-heavy catalog", () => {
-        const songs = anxietyPressureCatalog();
-        const config = makeConfig();
-        const seeds = [1, 2, 3, 4, 5, 6];
-        const lowScores = [];
-        const highScores = [];
-
-        for (const seed of seeds) {
-            const low = generateSetlist(
-                songs,
-                config,
-                deterministicOptions({
-                    count: songs.length,
-                    seed,
-                    randomness: {
-                        shuffleCatalog: false,
-                        songBias: 0,
-                        variantJitter: 0,
-                        stateJitter: 0,
-                        temperature: 0.3,
-                        finalChoicePool: 1,
-                    },
-                }),
-            );
-            const high = generateSetlist(
-                songs,
-                config,
-                deterministicOptions({
-                    count: songs.length,
-                    seed,
-                    randomness: {
-                        shuffleCatalog: false,
-                        songBias: 0,
-                        variantJitter: 0,
-                        stateJitter: 0,
-                        temperature: 2.0,
-                        finalChoicePool: 1,
-                    },
-                }),
-            );
-
-            lowScores.push(low.summary.anxiety.scaled);
-            highScores.push(high.summary.anxiety.scaled);
+// ===================================================================
+// Per-member gear changes (Demands → "Changes between songs")
+// ===================================================================
+describe("generateSetlist — per-member gear changes", () => {
+    function countMemberChanges(result, memberName) {
+        let changes = 0;
+        for (let i = 1; i < result.songs.length; i++) {
+            const prev = result.songs[i - 1].performance[memberName];
+            const next = result.songs[i].performance[memberName];
+            if (prev && next && prev.tuning !== next.tuning) changes++;
         }
+        return changes;
+    }
 
-        const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    /** Two members, each with their own independent tuning assignment. */
+    function twoMemberCatalog(size) {
+        const tunings = ["Standard", "Drop D", "DADGAD"];
+        return Array.from({ length: size }, (_, i) =>
+            makeSong(`Duo ${i + 1}`, {
+                id: `duo-${i + 1}`,
+                members: {
+                    nick: { instruments: [{ name: "guitar", tuning: [tunings[i % 3]], capo: 0, picking: [] }] },
+                    mark: {
+                        instruments: [
+                            { name: "guitar", tuning: [tunings[Math.floor(i / 3) % 3]], capo: 0, picking: [] },
+                        ],
+                    },
+                },
+            }),
+        );
+    }
 
-        expect(average(lowScores)).toBeLessThanOrEqual(3);
-        expect(average(highScores)).toBeGreaterThanOrEqual(7);
-        expect(Math.min(...highScores)).toBeGreaterThan(Math.max(...lowScores));
+    function roll(show, seed) {
+        return generateSetlist(twoMemberCatalog(27), makeConfig(), {
+            ...deterministicOptions({ count: 9, seed }),
+            setShape: "none",
+            show,
+        });
+    }
+
+    it("scores a member's changes by their own level", () => {
+        const songs = [
+            makeSong("Standard", {
+                members: { nick: { instruments: [{ name: "guitar", tuning: ["Standard"], capo: 0, picking: [] }] } },
+            }),
+            makeSong("Drop D", {
+                members: { nick: { instruments: [{ name: "guitar", tuning: ["Drop D"], capo: 0, picking: [] }] } },
+            }),
+        ];
+        const score = (gearChanges) =>
+            generateSetlist(songs, makeConfig(), {
+                ...deterministicOptions({ count: 2 }),
+                fixedSongIds: songs.map((song) => song.id),
+                setShape: "none",
+                show: { members: { nick: { gearChanges } } },
+            }).summary.score;
+
+        expect(score("free")).toBe(0);
+        expect(score("minimize")).toBe(6);
+        expect(score("avoid")).toBe(24);
+        expect(score(undefined)).toBe(6);
+    });
+
+    it("a member set to avoid changes far less than one who doesn't care", () => {
+        let avoidChanges = 0;
+        let freeChanges = 0;
+        for (let seed = 1; seed <= 10; seed++) {
+            const result = roll({ members: { nick: { gearChanges: "avoid" }, mark: { gearChanges: "free" } } }, seed);
+            avoidChanges += countMemberChanges(result, "nick");
+            freeChanges += countMemberChanges(result, "mark");
+        }
+        expect(avoidChanges).toBeLessThanOrEqual(10);
+        expect(freeChanges).toBeGreaterThan(avoidChanges * 2);
+    });
+
+    it("swapping the levels swaps who gets protected", () => {
+        let nickChanges = 0;
+        let markChanges = 0;
+        for (let seed = 1; seed <= 10; seed++) {
+            const result = roll({ members: { nick: { gearChanges: "free" }, mark: { gearChanges: "avoid" } } }, seed);
+            nickChanges += countMemberChanges(result, "nick");
+            markChanges += countMemberChanges(result, "mark");
+        }
+        expect(markChanges).toBeLessThanOrEqual(10);
+        expect(nickChanges).toBeGreaterThan(markChanges * 2);
+    });
+
+    it("selects songs with grouping in mind, not just orders them", () => {
+        // 27 songs, 9 per tuning for nick: an "avoid" roll of 9 should be
+        // able to stay in one or two tunings rather than sampling all three.
+        for (let seed = 1; seed <= 6; seed++) {
+            const result = roll({ members: { nick: { gearChanges: "avoid" }, mark: { gearChanges: "free" } } }, seed);
+            expect(countMemberChanges(result, "nick")).toBeLessThanOrEqual(1);
+        }
+    });
+
+    it("scoreFixedOrder applies the same per-member levels", () => {
+        const songs = twoTuningCatalog(2).map((song, index) => ({
+            ...song,
+            performance: {
+                nick: { instrument: "guitar", tuning: index === 0 ? "Standard" : "Drop D", capo: 0, picking: [] },
+            },
+        }));
+        const avoid = scoreFixedOrder(songs, makeConfig(), { show: { members: { nick: { gearChanges: "avoid" } } } });
+        const free = scoreFixedOrder(songs, makeConfig(), { show: { members: { nick: { gearChanges: "free" } } } });
+        expect(avoid.summary.score).toBe(24);
+        expect(free.summary.score).toBe(0);
+    });
+});
+
+// ===================================================================
+// Song mix
+// ===================================================================
+describe("generateSetlist — song mix", () => {
+    it("greatest hits leans on preferred songs, dig deeper reaches past them", () => {
+        const songs = simpleCatalog(12);
+        for (let i = 0; i < 4; i++) songs[i].playPriority = "prefer";
+        const preferredIds = new Set(songs.slice(0, 4).map((song) => song.id));
+
+        const count = (songMix) => {
+            let picked = 0;
+            for (let seed = 1; seed <= 8; seed++) {
+                const result = generateSetlist(songs, makeConfig(), {
+                    ...deterministicOptions({ count: 4, seed }),
+                    songMix,
+                });
+                picked += result.songs.filter((song) => preferredIds.has(song.id)).length;
+            }
+            return picked;
+        };
+
+        expect(count("hits")).toBeGreaterThan(count("deep"));
+    });
+
+    it("unknown mixes fall back to balanced", () => {
+        const songs = simpleCatalog(6);
+        const a = generateSetlist(songs, makeConfig(), {
+            ...deterministicOptions({ count: 4, seed: 3 }),
+            songMix: "bogus",
+        });
+        const b = generateSetlist(songs, makeConfig(), {
+            ...deterministicOptions({ count: 4, seed: 3 }),
+            songMix: "balanced",
+        });
+        expect(a.songs.map((song) => song.id)).toEqual(b.songs.map((song) => song.id));
     });
 });
 
@@ -1870,7 +1383,7 @@ describe("scoreFixedOrder", () => {
         ];
         const result = scoreFixedOrder(songs, config);
         expect(result.songs[1].propChanges.tuning.changed).toBe(true);
-        expect(result.songs[1].incrementalScore).toBe(4); // weight 4
+        expect(result.songs[1].incrementalScore).toBe(6); // weight 4 × default "minimize" 1.5
     });
 
     it("uses shared detection (array order independence)", () => {
@@ -2115,65 +1628,6 @@ describe("generateSetlist — fixedSongIds", () => {
         expect(result.songs).toHaveLength(2);
         const resultIds = result.songs.map((s) => s.id).sort();
         expect(resultIds).toEqual([...fixedIds].sort());
-    });
-
-    it("keeps the requested count when maxChanges makes a complete strict ordering impossible", () => {
-        const songs = Array.from({ length: 19 }, (_, index) =>
-            makeSong(`Song ${index + 1}`, {
-                members: {
-                    nick: {
-                        instruments: [{ name: `instrument-${index + 1}`, tuning: ["Standard"], capo: 0, picking: [] }],
-                    },
-                },
-            }),
-        );
-        const config = makeConfig({
-            props: {
-                instruments: {
-                    kind: "instrumentSet",
-                    weightKey: "instrument",
-                    minStreak: 1,
-                    maxChanges: 15,
-                },
-            },
-        });
-
-        const result = generateSetlist(songs, config, deterministicOptions({ count: 19 }));
-
-        expect(result.songs).toHaveLength(19);
-        expect(result.songs.map((song) => song.id).sort()).toEqual(songs.map((song) => song.id).sort());
-        expect(result.summary.transitionRulesRelaxed).toBe(true);
-    });
-
-    it("keeps every fixed song when maxChanges makes a complete strict ordering impossible", () => {
-        const songs = Array.from({ length: 19 }, (_, index) =>
-            makeSong(`Song ${index + 1}`, {
-                members: {
-                    nick: {
-                        instruments: [{ name: `instrument-${index + 1}`, tuning: ["Standard"], capo: 0, picking: [] }],
-                    },
-                },
-            }),
-        );
-        const config = makeConfig({
-            props: {
-                instruments: {
-                    kind: "instrumentSet",
-                    weightKey: "instrument",
-                    minStreak: 1,
-                    maxChanges: 15,
-                },
-            },
-        });
-
-        const result = generateSetlist(songs, config, {
-            ...deterministicOptions({ count: 19 }),
-            fixedSongIds: songs.map((song) => song.id),
-        });
-
-        expect(result.songs).toHaveLength(19);
-        expect(result.songs.map((song) => song.id).sort()).toEqual(songs.map((song) => song.id).sort());
-        expect(result.summary.transitionRulesRelaxed).toBe(true);
     });
 });
 
@@ -2443,127 +1897,11 @@ describe("notes field", () => {
 });
 
 // ===================================================================
-// Regression: cascading P1/P2 lock (opener predictability)
+// Regression: opener predictability
 //
-// When order.second prefers non-cover songs AND minStreak≥2 forces P2
-// into the same tuning cluster as P1, having a single non-cover song
-// in one cluster creates a structural lock: the generator exploits the
-// P2 cover bonus by always choosing that cluster at P1, collapsing the
-// opener to a single song.
+// A single non-cover song in one tuning cluster must not turn the
+// opener into a foregone conclusion.
 // ===================================================================
-describe("generateSetlist — cascading P1/P2 lock regression", () => {
-    /** Build a catalog that replicates the structural conditions of the bug:
-     *  - one non-cover, notGoodOpener song in tuning-A ("Anchor")
-     *  - one eligible opener in tuning-A ("Only Opener A")
-     *  - several eligible openers in tuning-B ("Opener B 1..N")
-     *  With the buggy config (cover pref at P2 + minStreak=2), "Only Opener A"
-     *  dominates near-100% of rolls because Anchor gives tuning-A a 10-pt P2 bonus
-     *  and minStreak locks P1 into the same cluster.
-     */
-    function buildLockCatalog(memberName = "nick") {
-        const tuningA = [{ name: "banjo", tuning: ["double"], capo: 2, picking: [] }];
-        const tuningB = [{ name: "banjo", tuning: ["standard"], capo: 0, picking: [] }];
-        const members = (instruments) => ({ [memberName]: { instruments } });
-
-        return [
-            // The only non-cover song — lives in tuning-A, not a good opener
-            makeSong("Anchor", { cover: false, notGoodOpener: true, members: members(tuningA) }),
-            // The only eligible opener in tuning-A — becomes dominant under the bug
-            makeSong("Only Opener A", { cover: true, members: members(tuningA) }),
-            // Several eligible openers in tuning-B
-            ...Array.from({ length: 8 }, (_, i) =>
-                makeSong(`Opener B ${i + 1}`, { cover: true, members: members(tuningB) }),
-            ),
-            // Filler songs to pad the setlist
-            ...Array.from({ length: 4 }, (_, i) =>
-                makeSong(`Filler ${i + 1}`, { cover: true, members: members(tuningB) }),
-            ),
-        ];
-    }
-
-    it("with cover pref at P2 and minStreak=2, opener collapses onto a single song", () => {
-        const songs = buildLockCatalog();
-        const buggyConfig = makeConfig({
-            general: {
-                order: {
-                    first: [
-                        ["notGoodOpener", false],
-                        ["cover", false],
-                        ["instrumental", false],
-                    ],
-                    second: [
-                        ["cover", false],
-                        ["instrumental", false],
-                    ],
-                    penultimate: [],
-                    last: [["notGoodCloser", false]],
-                },
-            },
-            props: {
-                tuning: { kind: "instrumentField", field: "tuning", minStreak: 2, allowChangeOnLastSong: true },
-                capo: { kind: "instrumentDelta", field: "capo", minStreak: 2, allowChangeOnLastSong: true },
-            },
-        });
-
-        const openerCounts = {};
-        for (let seed = 1; seed <= 30; seed++) {
-            const result = generateSetlist(songs, buggyConfig, {
-                count: 9,
-                seed,
-                beamWidth: 128,
-                randomness: { temperature: 1.7, shuffleCatalog: false, songBias: 0, variantJitter: 0, stateJitter: 0 },
-            });
-            const opener = result.songs[0]?.name;
-            openerCounts[opener] = (openerCounts[opener] || 0) + 1;
-        }
-        const dominance = (openerCounts["Only Opener A"] || 0) / 30;
-        // Under the buggy config the structural lock should be clearly visible
-        expect(dominance).toBeGreaterThan(0.7);
-    });
-
-    it("with no cover pref at P2 and minStreak=1, opener does not collapse onto a single song", () => {
-        const songs = buildLockCatalog();
-        const fixedConfig = makeConfig({
-            general: {
-                order: {
-                    first: [
-                        ["notGoodOpener", false],
-                        ["cover", false],
-                        ["instrumental", false],
-                    ],
-                    second: [],
-                    penultimate: [],
-                    last: [["notGoodCloser", false]],
-                },
-            },
-            props: {
-                tuning: { kind: "instrumentField", field: "tuning", minStreak: 1, allowChangeOnLastSong: true },
-                capo: { kind: "instrumentDelta", field: "capo", minStreak: 1, allowChangeOnLastSong: true },
-            },
-        });
-
-        const openerCounts = {};
-        for (let seed = 1; seed <= 30; seed++) {
-            const result = generateSetlist(songs, fixedConfig, {
-                count: 9,
-                seed,
-                beamWidth: 128,
-                // songBias must be non-zero so that different seeds actually produce
-                // different openers; the structural lock test above shows that without
-                // the bug the bias alone is sufficient to vary selection.
-                randomness: { temperature: 1.7, shuffleCatalog: false, songBias: 3, variantJitter: 0, stateJitter: 0 },
-            });
-            const opener = result.songs[0]?.name;
-            openerCounts[opener] = (openerCounts[opener] || 0) + 1;
-        }
-        const uniqueOpeners = Object.keys(openerCounts).length;
-        const maxDominance = Math.max(...Object.values(openerCounts)) / 30;
-        // Should see multiple different openers, none dominating heavily
-        expect(uniqueOpeners).toBeGreaterThanOrEqual(3);
-        expect(maxDominance).toBeLessThanOrEqual(0.5);
-    });
-});
-
 describe("generateSetlist — opener diversity", () => {
     it("does not collapse opener onto a single song when one tuning is in the minority", () => {
         // 5 songs in Drop D tuning (key of D), 15 songs in Standard tuning (various keys)

@@ -3,6 +3,7 @@ import {
     DEFAULT_APP_CONFIG,
     memberDefaultRig,
     normalizeAppConfig,
+    normalizeGearChanges,
     normalizeSongRecord,
     resolveSongMembers,
     rigEqualsDefault,
@@ -11,28 +12,29 @@ import {
 } from "./defaults.js";
 
 describe("default app config", () => {
-    it("discourages returning to a tuning without forbidding it", () => {
-        expect(DEFAULT_APP_CONFIG.props.tuning.returnPenalty).toBe(2);
+    it("has no per-prop transition knobs (tolerance is set per member when rolling)", () => {
+        for (const rule of Object.values(DEFAULT_APP_CONFIG.props)) {
+            expect(rule.minStreak).toBeUndefined();
+            expect(rule.returnPenalty).toBeUndefined();
+            expect(rule.allowChangeOnLastSong).toBeUndefined();
+        }
     });
 
-    it("preserves returnPenalty through normalizeAppConfig", () => {
+    it("keeps stale transition knobs from older configs without reviving them as defaults", () => {
         const normalized = normalizeAppConfig({
-            props: { tuning: { returnPenalty: 5 } },
+            bandName: "Test Band",
+            props: { tuning: { returnPenalty: 5, minStreak: 3 } },
         });
         expect(normalized.props.tuning.returnPenalty).toBe(5);
+        expect(normalized.props.tuning.minStreak).toBe(3);
+        expect(normalized.props.capo.minStreak).toBeUndefined();
     });
 
-    it("keeps default returnPenalty when omitted from stored config", () => {
-        const normalized = normalizeAppConfig({ bandName: "Test Band" });
-        expect(normalized.props.tuning.returnPenalty).toBe(2);
-    });
-
-    it("clamps returnPenalty to its supported range", () => {
-        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: -1 } } }).props.tuning.returnPenalty).toBe(0);
-        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: 11 } } }).props.tuning.returnPenalty).toBe(10);
-        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: "invalid" } } }).props.tuning.returnPenalty).toBe(
-            2,
-        );
+    it("normalizes gear-change levels", () => {
+        expect(normalizeGearChanges("avoid")).toBe("avoid");
+        expect(normalizeGearChanges("free")).toBe("free");
+        expect(normalizeGearChanges("bogus")).toBe("minimize");
+        expect(normalizeGearChanges(undefined)).toBe("minimize");
     });
 });
 

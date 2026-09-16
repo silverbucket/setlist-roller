@@ -373,7 +373,7 @@ describe("keep-apart cascade guard", () => {
         it("clamps numeric config fields to their declared bounds", async () => {
             const repo = buildRepo();
             const { store, teardown } = await bootStore(repo);
-            const field = { path: "props.tuning.returnPenalty", type: "number", min: 0, max: 10 };
+            const field = { path: "general.count", type: "number", min: 1, max: 30 };
             repo.fireChange({
                 relativePath: "settings/app-config",
                 origin: "remote",
@@ -382,9 +382,9 @@ describe("keep-apart cascade guard", () => {
             await settle();
 
             store.updateConfigField(field, -1);
-            expect(store.appConfig.props.tuning.returnPenalty).toBe(0);
-            store.updateConfigField(field, 11);
-            expect(store.appConfig.props.tuning.returnPenalty).toBe(10);
+            expect(store.appConfig.general.count).toBe(1);
+            store.updateConfigField(field, 31);
+            expect(store.appConfig.general.count).toBe(30);
 
             teardown();
         });

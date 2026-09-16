@@ -2,6 +2,19 @@ import { clone, deepMerge, nowIso, sortByName, uid } from "./utils.js";
 
 export const SCHEMA_VERSION = 2;
 
+/**
+ * How much a band member minds changing gear (tuning, instrument, capo,
+ * technique) between songs. Set per member in the roll screen's Demands tab
+ * (stored under show.members[name].gearChanges); the roller scales that
+ * member's transition costs accordingly.
+ */
+export const GEAR_CHANGE_LEVELS = ["avoid", "minimize", "free"];
+export const DEFAULT_GEAR_CHANGES = "minimize";
+
+export function normalizeGearChanges(value) {
+    return GEAR_CHANGE_LEVELS.includes(value) ? value : DEFAULT_GEAR_CHANGES;
+}
+
 const DEFAULT_CONFIG_TEMPLATE = {
     general: {
         count: 9,
@@ -46,28 +59,19 @@ const DEFAULT_CONFIG_TEMPLATE = {
         tuning: {
             kind: "instrumentField",
             field: "tuning",
-            minStreak: 1,
-            returnPenalty: 2,
-            allowChangeOnLastSong: true,
         },
         capo: {
             kind: "instrumentDelta",
             field: "capo",
-            minStreak: 1,
-            allowChangeOnLastSong: true,
         },
         instruments: {
             kind: "instrumentSet",
             weightKey: "instrument",
-            minStreak: 2,
-            allowChangeOnLastSong: true,
         },
         picking: {
             kind: "instrumentField",
             field: "picking",
             weightKey: "technique",
-            minStreak: 1,
-            allowChangeOnLastSong: true,
         },
     },
 };
@@ -330,10 +334,9 @@ export function normalizeAppConfig(config) {
         normalized.ui.dieColor = null;
     }
 
-    const returnPenalty = Number(normalized.props?.tuning?.returnPenalty);
-    normalized.props.tuning.returnPenalty = Number.isFinite(returnPenalty)
-        ? Math.min(10, Math.max(0, returnPenalty))
-        : DEFAULT_CONFIG_TEMPLATE.props.tuning.returnPenalty;
+    // Older configs may still carry per-prop transition knobs (min streaks,
+    // return penalties, closer exceptions). They are left in place but no
+    // longer read: gear-change tolerance is set per member when rolling.
 
     return normalized;
 }
