@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildDefaultPerformance, generateSetlist, scoreFixedOrder } from "./generator.js";
+import { buildDefaultPerformance, generateSetlist, normalizeSongMix, scoreFixedOrder } from "./generator.js";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -380,6 +380,25 @@ describe("generateSetlist — programming preferences", () => {
         });
 
         expect(result.songs.map((song) => song.id)).toContain(songs[7].id);
+    });
+
+    it("keeps a floating pin when a fixed-position pin takes the last slot", () => {
+        // A two-song set: the floating pin can't open (notGoodOpener) and
+        // the closer slot is reserved. The only way to honour both pins is
+        // to relax the opener filter for the floating one — dropping it
+        // in favour of a free song is not an option.
+        const songs = simpleCatalog(6);
+        songs[3].notGoodOpener = true;
+        for (let seed = 1; seed <= 6; seed++) {
+            const result = generateSetlist(songs, makeConfig(), {
+                ...deterministicOptions({ count: 2, seed }),
+                pinnedSongs: [
+                    { id: songs[3].id, position: null },
+                    { id: songs[0].id, position: 2 },
+                ],
+            });
+            expect(result.songs.map((song) => song.id)).toEqual([songs[3].id, songs[0].id]);
+        }
     });
 
     it("keeps pinned songs at their positions while rerolling the rest", () => {
@@ -1245,6 +1264,32 @@ describe("generateSetlist — per-member gear changes", () => {
         }
     });
 
+    it("ignores legacy general.weighting from older configs", () => {
+        const songs = [
+            makeSong("Standard", {
+                members: { nick: { instruments: [{ name: "guitar", tuning: ["Standard"], capo: 0, picking: [] }] } },
+            }),
+            makeSong("Drop D", {
+                members: { nick: { instruments: [{ name: "guitar", tuning: ["Drop D"], capo: 0, picking: [] }] } },
+            }),
+        ];
+        const legacy = makeConfig({ general: { weighting: { tuning: 0 } } });
+        const options = {
+            ...deterministicOptions({ count: 2 }),
+            fixedSongIds: songs.map((song) => song.id),
+            setShape: "none",
+            show: { members: { nick: { gearChanges: "avoid" } } },
+        };
+        expect(generateSetlist(songs, legacy, options).summary.score).toBe(24);
+        const fixed = songs.map((song, index) => ({
+            ...song,
+            performance: {
+                nick: { instrument: "guitar", tuning: index === 0 ? "Standard" : "Drop D", capo: 0, picking: [] },
+            },
+        }));
+        expect(scoreFixedOrder(fixed, legacy, { show: options.show }).summary.score).toBe(24);
+    });
+
     it("scoreFixedOrder applies the same per-member levels", () => {
         const songs = twoTuningCatalog(2).map((song, index) => ({
             ...song,
@@ -1319,6 +1364,12 @@ describe("generateSetlist — song mix", () => {
         };
 
         expect(count("hits")).toBeGreaterThan(count("deep"));
+    });
+
+    it("inherited object names are not valid mixes", () => {
+        expect(normalizeSongMix("constructor")).toBe("balanced");
+        expect(normalizeSongMix("toString")).toBe("balanced");
+        expect(normalizeSongMix("hits")).toBe("hits");
     });
 
     it("unknown mixes fall back to balanced", () => {

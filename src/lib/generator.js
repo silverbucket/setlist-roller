@@ -47,7 +47,7 @@ const SONG_MIX_PRESETS = {
 };
 
 export function normalizeSongMix(value) {
-    return value in SONG_MIX_PRESETS ? value : "balanced";
+    return Object.hasOwn(SONG_MIX_PRESETS, value) ? value : "balanced";
 }
 
 function clampFloat(value, fallback, minimum) {
@@ -275,7 +275,11 @@ class SetList {
         this._songs = new SongsCatalog(songs);
         this._propNames = Object.keys(this._config.props || {});
         this._propConfig = this._config.props || {};
-        this._weights = merge(DEFAULT_WEIGHTS, this._config.general?.weighting || {});
+        // Base transition weights are fixed. Older configs may still carry
+        // general.weighting from the removed Transition Costs screen; honoring
+        // it would let a hidden, uneditable value override the per-member
+        // gear-change level the user actually sets.
+        this._weights = { ...DEFAULT_WEIGHTS };
         this._options = this._normalizeOptions(options);
         this._pinnedPositions = new Map(
             (this._options.pinnedSongs || [])
@@ -879,14 +883,22 @@ class SetList {
         this._summary = finalized.summary;
     }
 
-    /** True when placing a non-pinned song here still leaves room for every unplaced floating pin. */
+    /**
+     * True when placing a non-pinned song here still leaves room for every
+     * unplaced floating pin. Positions after this one that are reserved by
+     * a fixed-position pin don't count as room.
+     */
     _roomForFloatingPins(state, position) {
         if (!this._floatingPins.size) return true;
         let unplaced = 0;
         for (const id of this._floatingPins) {
             if (!state.usedIds[id]) unplaced += 1;
         }
-        return this._count - position >= unplaced;
+        let reserved = 0;
+        for (const fixedPosition of this._pinnedPositions.keys()) {
+            if (fixedPosition > position && fixedPosition <= this._count) reserved += 1;
+        }
+        return this._count - position - reserved >= unplaced;
     }
 
     _selectBeamStates(nextStates) {
@@ -1498,7 +1510,7 @@ export function generateSetlist(songs, config, options = {}) {
 }
 
 export function scoreFixedOrder(fixedSongs, config, options = {}) {
-    const weights = Object.assign({}, DEFAULT_WEIGHTS, config?.general?.weighting || {});
+    const weights = { ...DEFAULT_WEIGHTS };
     const propNames = Object.keys(config?.props || {});
     const propConfig = config?.props || {};
     const keyFlowEnabled = Boolean(options.keyFlow);
