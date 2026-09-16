@@ -186,4 +186,25 @@ describe("keepApartFrom", () => {
         expect(touched).toHaveLength(1);
         expect(touched[0].keepApartFrom).toEqual(["c"]);
     });
+
+    it("syncKeepApartLinks returns nothing when links are already symmetric", () => {
+        const catalog = [
+            { id: "a", name: "A", keepApartFrom: ["b"] },
+            { id: "b", name: "B", keepApartFrom: ["a"] },
+        ];
+        expect(syncKeepApartLinks({ id: "a", keepApartFrom: ["b"] }, catalog)).toEqual([]);
+    });
+
+    it("songsReferencingKeepApart scrubs every song that referenced the deleted id", () => {
+        const catalog = [
+            { id: "a", name: "A", keepApartFrom: ["gone"] },
+            { id: "b", name: "B", keepApartFrom: ["gone", "c"] },
+            { id: "c", name: "C", keepApartFrom: ["b"] },
+        ];
+        const touched = songsReferencingKeepApart("gone", catalog);
+        expect(touched.map((s) => [s.id, s.keepApartFrom])).toEqual([
+            ["a", []],
+            ["b", ["c"]],
+        ]);
+    });
 });

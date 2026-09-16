@@ -2235,4 +2235,73 @@ describe("scoreFixedOrder — keep apart", () => {
         expect(result.summary.keepApartConflicts).toBe(0);
         expect(result.songs.some((s) => s.keepApartConflict)).toBe(false);
     });
+
+    it("flags conflicts from a one-sided keepApartFrom list", () => {
+        const songs = [makeSong("Alpha"), makeSong("Beta")];
+        songs[0].keepApartFrom = ["beta"];
+        const result = scoreFixedOrder(songs, makeConfig());
+        expect(result.summary.keepApartConflicts).toBe(1);
+        expect(result.songs.map((s) => s.keepApartConflict)).toEqual([true, true]);
+    });
+});
+
+describe("generateSetlist — keep apart regression", () => {
+    it("only enforces direct keep-apart pairs, not transitive separation", () => {
+        const songs = [makeSong("Alpha"), makeSong("Gamma"), makeSong("Beta"), makeSong("Delta"), makeSong("Epsilon")];
+        songs[0].keepApartFrom = ["gamma"];
+        songs[1].keepApartFrom = ["beta"];
+        const config = makeConfig({ general: { count: 5 } });
+        let sawAlphaBetaAdjacent = false;
+        for (let seed = 1; seed <= 30; seed += 1) {
+            const result = generateSetlist(songs, config, { seed, count: 5 });
+            expect(result.summary.keepApartRelaxed).toBe(false);
+            const ids = result.songs.map((s) => s.id);
+            for (let i = 1; i < ids.length; i += 1) {
+                const pair = [ids[i - 1], ids[i]].sort().join("|");
+                expect(pair).not.toBe("alpha|gamma");
+                expect(pair).not.toBe("beta|gamma");
+                if (pair === "alpha|beta") sawAlphaBetaAdjacent = true;
+            }
+        }
+        expect(sawAlphaBetaAdjacent).toBe(true);
+    });
+
+    it("flags conflicts when pinned positions force keep-apart songs adjacent", () => {
+        const songs = [makeSong("Alpha"), makeSong("Beta"), makeSong("Gamma"), makeSong("Delta")];
+        songs[0].keepApartFrom = ["beta"];
+        songs[1].keepApartFrom = ["alpha"];
+        const result = generateSetlist(songs, makeConfig({ general: { count: 4 } }), {
+            seed: 1,
+            count: 4,
+            pinnedSongs: [
+                { id: "alpha", position: 1 },
+                { id: "beta", position: 2 },
+            ],
+        });
+        expect(result.songs[0].id).toBe("alpha");
+        expect(result.songs[1].id).toBe("beta");
+        expect(result.summary.keepApartRelaxed).toBe(true);
+        expect(result.songs[0].keepApartConflict).toBe(true);
+        expect(result.songs[1].keepApartConflict).toBe(true);
+    });
+
+    it("counts multiple adjacent conflict pairs in a relaxed setlist", () => {
+        const songs = [makeSong("Alpha"), makeSong("Beta"), makeSong("Gamma"), makeSong("Delta")];
+        songs[0].keepApartFrom = ["beta"];
+        songs[1].keepApartFrom = ["alpha"];
+        songs[2].keepApartFrom = ["delta"];
+        songs[3].keepApartFrom = ["gamma"];
+        const result = generateSetlist(songs, makeConfig({ general: { count: 4 } }), {
+            seed: 9,
+            count: 4,
+            pinnedSongs: [
+                { id: "alpha", position: 1 },
+                { id: "beta", position: 2 },
+                { id: "gamma", position: 3 },
+                { id: "delta", position: 4 },
+            ],
+        });
+        expect(result.summary.keepApartRelaxed).toBe(true);
+        expect(result.songs.filter((s) => s.keepApartConflict)).toHaveLength(4);
+    });
 });
