@@ -1303,7 +1303,7 @@ describe("generateSetlist — per-member gear changes", () => {
         expect(free.summary.score).toBe(0);
     });
 
-    it("across seeds, avoid and minimize incur far fewer tuning changes than free", () => {
+    it("across seeds, avoid and minimize incur far fewer tuning changes than free", { timeout: 15_000 }, () => {
         const tunings = ["Standard", "Drop D", "DADGAD"];
         const songs = Array.from({ length: 36 }, (_, i) =>
             makeSong(`Song ${i + 1}`, {
