@@ -5,8 +5,8 @@ import { RollPage } from "../pages/RollPage";
 import { SavedPage } from "../pages/SavedPage";
 
 /**
- * Saved screen ("Greatest Hits") — list of saved setlists, view/edit/load/
- * delete actions, plus the print modal.
+ * Saved screen — draft and performed setlists, view/edit/load/delete actions,
+ * plus the print modal.
  */
 function setlistFixture(overrides: Partial<SeedSetlist> = {}): SeedSetlist {
     return {
@@ -38,7 +38,7 @@ test.describe("Saved screen — empty state", { tag: ["@smoke"] }, () => {
         await new AppShell(page).gotoSaved();
 
         const saved = new SavedPage(page);
-        await expect(saved.emptyState).toContainText("Nothing saved yet");
+        await expect(saved.emptyState).toContainText("No drafts");
     });
 });
 
@@ -82,6 +82,48 @@ test.describe("Saved screen — list", () => {
         const names = await saved.savedCards.locator(".saved-name").allInnerTexts();
         expect(names).toEqual(["New Show", "Old Show"]);
     });
+
+    test("separates drafts from performed setlists", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: fixtureCatalogSongs(),
+                setlists: {
+                    draft: setlistFixture({ id: "draft", name: "Rehearsal Copy" }),
+                    show: setlistFixture({
+                        id: "show",
+                        name: "The Comet",
+                        performedAt: "2024-09-20T12:00:00.000Z",
+                    }),
+                },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSaved();
+
+        const saved = new SavedPage(page);
+        await expect(saved.cardByName("Rehearsal Copy")).toBeVisible();
+        await expect(saved.cardByName("The Comet")).toHaveCount(0);
+        await saved.screen.getByRole("button", { name: "Performed 1" }).click();
+        await expect(saved.cardByName("The Comet")).toBeVisible();
+        await expect(saved.cardByName("Rehearsal Copy")).toHaveCount(0);
+    });
+
+    test("marks a draft as performed", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: fixtureCatalogSongs(),
+                setlists: { show: setlistFixture({ id: "show", name: "The Comet" }) },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSaved();
+
+        const saved = new SavedPage(page);
+        await saved.markPerformed("The Comet", "2024-09-20", "The Troubadour");
+        await expect(saved.screen.getByRole("button", { name: "Performed 1" })).toHaveAttribute("aria-pressed", "true");
+        await expect(saved.cardByName("The Comet")).toContainText("Sep 20, 2024");
+        await expect(saved.cardByName("The Comet")).toContainText("The Troubadour");
+    });
 });
 
 test.describe("Saved screen — view modal", () => {
@@ -116,7 +158,7 @@ test.describe("Saved screen — view modal", () => {
         await saved.closeCard();
     });
 
-    test("Load to Roll button loads the setlist into the Roll screen", { tag: ["@smoke"] }, async ({ page, app }) => {
+    test("Edit setlist button loads the draft into the Roll screen", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(
             buildSeed({
                 songs: fixtureCatalogSongs(),
@@ -130,7 +172,7 @@ test.describe("Saved screen — view modal", () => {
         const saved = new SavedPage(page);
         await saved.loadToRoll("Loadable");
 
-        // After Load to Roll the user is moved to the Roll tab.
+        // Editing moves the user to the Roll tab.
         await shell.expectActiveView("roll");
         const roll = new RollPage(page);
         const songs = await roll.getSetlistSongNames();
@@ -171,6 +213,46 @@ test.describe("Saved screen — edit", () => {
         await saved.fillEditName("Stable", "Discarded");
         await saved.cancelEdit("Stable");
         await expect(saved.cardByName("Stable")).toBeVisible();
+    });
+
+    test("clearing a performed date preserves the existing show date", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                setlists: {
+                    show: setlistFixture({ id: "show", name: "Past Show", performedAt: "2024-09-20" }),
+                },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSaved();
+
+        const saved = new SavedPage(page);
+        await saved.screen.getByRole("button", { name: "Performed 1" }).click();
+        await saved.startEdit("Past Show");
+        await saved.savedCards.locator('input[type="date"]').fill("");
+        await saved.saveEdit("Past Show");
+        await expect(saved.cardByName("Past Show")).toContainText("Sep 20, 2024");
+    });
+});
+
+test.describe("Saved screen — confirmation accessibility", () => {
+    test("performed confirmation traps focus, closes on Escape, and restores focus", async ({ page, app }) => {
+        await app.seed(buildSeed({ setlists: { show: setlistFixture({ id: "show", name: "Tonight" }) } }));
+        await app.goto();
+        await new AppShell(page).gotoSaved();
+
+        const saved = new SavedPage(page);
+        const trigger = saved.cardByName("Tonight").getByRole("button", { name: "Mark performed" });
+        await trigger.click();
+        const dialog = page.getByRole("dialog", { name: "Mark as performed?" });
+        await expect(dialog.getByLabel("Show date")).toBeFocused();
+
+        await dialog.getByRole("button", { name: "Mark as performed" }).focus();
+        await page.keyboard.press("Tab");
+        await expect(dialog.getByLabel("Show date")).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(trigger).toBeFocused();
     });
 });
 
@@ -218,6 +300,28 @@ test.describe("Saved screen — delete with confirm", () => {
         const saved = new SavedPage(page);
         await saved.cancelDelete("Reprieve");
         await expect(saved.cardByName("Reprieve")).toBeVisible();
+    });
+
+    test("performed setlists require a history warning before deletion", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                setlists: {
+                    show: setlistFixture({
+                        id: "show",
+                        name: "Historic Show",
+                        performedAt: "2024-09-20T12:00:00.000Z",
+                        venue: "The Troubadour",
+                    }),
+                },
+            }),
+        );
+        await app.goto();
+        await new AppShell(page).gotoSaved();
+
+        const saved = new SavedPage(page);
+        await saved.screen.getByRole("button", { name: "Performed 1" }).click();
+        await saved.deletePerformed("Historic Show");
+        await expect(saved.cardByName("Historic Show")).toHaveCount(0);
     });
 });
 

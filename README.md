@@ -40,7 +40,7 @@ Saved setlists live on your device. Export everything as a backup file anytime. 
 - **Demands** — limit which instruments or tunings show up in a set
 - **Variety slider** — control how adventurous the setlist gets
 - **Drag to reorder** — move songs around after the roll
-- **Greatest Hits** — save and revisit your best setlists
+- **Setlist history** — keep drafts separate from setlists performed at shows
 - **Export/import** — back up everything, restore on any device
 - **Works on your phone** — built for the stage, not the studio desk
 

@@ -330,7 +330,7 @@ test.describe("Roll screen — lock / save / re-roll", () => {
         await expect(roll.lockedBadge).toBeVisible();
     });
 
-    test("saving a locked setlist adds it to Greatest Hits", { tag: ["@smoke"] }, async ({ page, app }) => {
+    test("saving a locked setlist adds it to drafts", { tag: ["@smoke"] }, async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();
         await app.waitForReady();

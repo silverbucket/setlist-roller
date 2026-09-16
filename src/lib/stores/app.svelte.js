@@ -1465,7 +1465,7 @@ export function createAppStore(repo) {
         // place instead of creating a duplicate with a new id and name.
         if (loadedSavedId) {
             const existing = currentSaved.find((s) => s.id === loadedSavedId);
-            if (existing) {
+            if (existing && !existing.performedAt) {
                 await updateSavedSetlist(loadedSavedId, {
                     savedAt: nowIso(),
                     seed: generatedSetlist.seed,
@@ -1478,7 +1478,8 @@ export function createAppStore(repo) {
                 setlistSaved = true;
                 return;
             }
-            // Saved entry no longer exists (deleted elsewhere) — fall through.
+            // Saved entry no longer exists or became performed elsewhere —
+            // fall through and create a fresh draft.
             loadedSavedId = "";
         }
 
@@ -1533,25 +1534,45 @@ export function createAppStore(repo) {
         const sessionAlive = sessionGuard();
         try {
             await withSync("Removing setlist", () => repo.deleteSetlist(id));
-            if (!sessionAlive()) return;
+            if (!sessionAlive()) return false;
             removeSetlistLocal(id);
+            return true;
         } catch (error) {
             toastError(error?.message || "Could not remove setlist.");
+            return false;
         }
     }
 
     async function updateSavedSetlist(id, fields) {
         const existing = savedSetlists.find((s) => s.id === id);
-        if (!existing) return;
+        if (!existing) return null;
         const merged = { ...existing, ...fields };
         const sessionAlive = sessionGuard();
         try {
             const saved = await withSync("Updating setlist", () => repo.putSetlist(clone(merged)));
-            if (!sessionAlive()) return;
+            if (!sessionAlive()) return null;
             upsertSetlistLocal(saved);
+            return saved;
         } catch (error) {
             toastError(error?.message || "Could not update setlist.");
+            return null;
         }
+    }
+
+    async function markSetlistPerformed(id, performedAt, venue = null) {
+        const existing = savedSetlists.find((s) => s.id === id);
+        if (!existing || !performedAt) return null;
+        const saved = await updateSavedSetlist(id, { performedAt, venue });
+        if (saved) toastInfo(`Marked "${existing.name || "Untitled Set"}" as performed.`);
+        return saved;
+    }
+
+    async function moveSetlistToDrafts(id) {
+        const existing = savedSetlists.find((s) => s.id === id);
+        if (!existing) return null;
+        const saved = await updateSavedSetlist(id, { performedAt: null });
+        if (saved) toastInfo(`Moved "${existing.name || "Untitled Set"}" to drafts.`);
+        return saved;
     }
 
     function loadSavedSetlist(id) {
@@ -1580,8 +1601,10 @@ export function createAppStore(repo) {
                 songs,
             };
             setlistLocked = true;
-            setlistSaved = true;
-            loadedSavedId = id;
+            // Performed sets are immutable history. Loading one starts a new
+            // draft instead of linking future saves back to the performed copy.
+            setlistSaved = !saved.performedAt;
+            loadedSavedId = saved.performedAt ? "" : id;
             persistCurrentSetlist();
         }
         if (dropped > 0) {
@@ -3067,6 +3090,8 @@ export function createAppStore(repo) {
         saveCurrentSetlist,
         removeSavedSetlist,
         updateSavedSetlist,
+        markSetlistPerformed,
+        moveSetlistToDrafts,
         loadSavedSetlist,
         reorderSetlistSong,
         removeSetlistSong,
