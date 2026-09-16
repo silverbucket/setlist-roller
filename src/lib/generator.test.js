@@ -437,6 +437,37 @@ describe("generateSetlist — programming preferences", () => {
         expect(ids).toContain("prefer");
     });
 
+    it("must-play songs are guaranteed without being dragged to the front", () => {
+        const songs = simpleCatalog(30);
+        songs[5].playPriority = "must";
+        songs[5].positionPreference = "closer";
+        for (let seed = 1; seed <= 6; seed++) {
+            const result = generateSetlist(songs, makeConfig(), {
+                ...deterministicOptions({ count: 9, seed }),
+                songMix: "balanced",
+            });
+            const ids = result.songs.map((song) => song.id);
+            expect(ids.indexOf(songs[5].id)).toBe(8);
+        }
+    });
+
+    it("applies no selection bias when the song set is fixed (Optimize Order)", () => {
+        const songs = simpleCatalog(12);
+        songs[5].playPriority = "must";
+        songs[5].positionPreference = "closer";
+        const fixedSongIds = songs.slice(0, 10).map((song) => song.id);
+        for (let seed = 1; seed <= 6; seed++) {
+            const result = generateSetlist(songs, makeConfig(), {
+                ...deterministicOptions({ count: 10, seed }),
+                songMix: "balanced",
+                fixedSongIds,
+            });
+            const ids = result.songs.map((song) => song.id);
+            expect(ids).toHaveLength(10);
+            expect(ids[9]).toBe(songs[5].id);
+        }
+    });
+
     it("rests a song when enough normal songs are available", () => {
         const songs = simpleCatalog(6);
         songs[0].playPriority = "rest";

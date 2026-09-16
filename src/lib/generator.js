@@ -38,12 +38,16 @@ export function gearChangeMultiplier(level) {
     return GEAR_CHANGE_MULTIPLIERS[normalizeGearChanges(level)];
 }
 
-/** Song-mix presets: how strongly play priority steers selection, and how much per-song luck is mixed in. */
+/**
+ * Song-mix presets: how strongly play priority steers selection, and how
+ * much per-song luck is mixed in. "Must play" songs are guaranteed a slot
+ * separately (see _guaranteedIds), so they carry only the "prefer" pull.
+ */
 const SONG_MIX_PRESETS = {
-    hits: { jitter: 2, must: -100, prefer: -16, normal: 2, rest: 30 },
-    balanced: { jitter: 3, must: -100, prefer: -8, normal: 0, rest: 24 },
-    deep: { jitter: 4, must: -100, prefer: -2, normal: -4, rest: 16 },
-    surprise: { jitter: 10, must: -100, prefer: -4, normal: 0, rest: 8 },
+    hits: { jitter: 2, prefer: -16, normal: 2, rest: 30 },
+    balanced: { jitter: 3, prefer: -8, normal: 0, rest: 24 },
+    deep: { jitter: 4, prefer: -2, normal: -4, rest: 16 },
+    surprise: { jitter: 10, prefer: -4, normal: 0, rest: 8 },
 };
 
 export function normalizeSongMix(value) {
@@ -307,14 +311,21 @@ class SetList {
             this._count = Math.min(this._options.count, this._catalog.length);
         }
         this._songsById = new Map(this._catalog.map((song) => [String(song.id), song]));
-        // Pins without a position ("play this tonight, anywhere") are
-        // guaranteed a slot: the beam never lets the remaining positions
-        // drop below the number of such pins still unplaced.
-        this._floatingPins = new Set(
-            (this._options.pinnedSongs || [])
-                .map((pin) => String(pin.id))
-                .filter((id) => !this._pinnedPositionById.has(id) && this._songsById.has(id)),
-        );
+        // Pins without a position ("play this tonight, anywhere") and
+        // must-play songs are guaranteed a slot: the beam never lets the
+        // remaining positions drop below the number still unplaced. This is
+        // a capacity rule, not a score, so it doesn't push them to the front.
+        // With fixedSongIds every song is in by construction.
+        this._guaranteedIds = new Set();
+        if (!this._options.fixedSongIds) {
+            for (const pin of this._options.pinnedSongs || []) {
+                const id = String(pin.id);
+                if (!this._pinnedPositionById.has(id) && this._songsById.has(id)) this._guaranteedIds.add(id);
+            }
+            for (const song of this._catalog) {
+                if (song.playPriority === "must") this._guaranteedIds.add(String(song.id));
+            }
+        }
         // When appending to an existing set, the caller passes the current
         // tail so the first new song respects keep-apart across the seam.
         this._precedingSong = this._options.precedingSong || null;
@@ -386,17 +397,21 @@ class SetList {
      * where it costs the band the least.
      */
     _buildSongBiases(songs) {
+        // A per-song bias is constant wherever the song lands, but the beam
+        // prunes prefixes, so any bias also nudges a song earlier or later.
+        // When the song set is fixed (Optimize Order) there is nothing to
+        // select, so no bias at all: position and transitions decide.
+        if (this._options.fixedSongIds) return {};
         const preset = SONG_MIX_PRESETS[normalizeSongMix(this._options.songMix)];
         // The mix decides how much luck is mixed in; callers (tests, tools)
         // may still pin it explicitly through options.randomness.songBias.
         const explicit = this._options.randomness?.songBias;
         const magnitude = explicit === undefined ? preset.jitter : clampFloat(explicit, preset.jitter, 0);
         return songs.reduce((result, song) => {
-            // Pinned songs are in regardless; a strong pull lets the beam
-            // seat them where they cost the band the least.
-            const preferenceBias = this._floatingPins.has(song.id)
-                ? -100
-                : (preset[song.playPriority || "normal"] ?? 0);
+            // Guaranteed songs (pins, must-play) are in regardless, so they
+            // carry no selection pull at all: position preference and
+            // transitions alone decide where they land.
+            const preferenceBias = this._guaranteedIds.has(song.id) ? 0 : (preset[song.playPriority || "normal"] ?? 0);
             result[song.id] = preferenceBias + this._randomJitter(magnitude);
             return result;
         }, {});
@@ -826,7 +841,7 @@ class SetList {
                         if ((pinnedId && song.id !== pinnedId) || (songPinnedAt && songPinnedAt !== position)) {
                             continue;
                         }
-                        if (!this._floatingPins.has(song.id) && !this._roomForFloatingPins(state, position)) {
+                        if (!this._guaranteedIds.has(song.id) && !this._roomForGuaranteed(state, position)) {
                             continue;
                         }
 
@@ -884,14 +899,14 @@ class SetList {
     }
 
     /**
-     * True when placing a non-pinned song here still leaves room for every
-     * unplaced floating pin. Positions after this one that are reserved by
-     * a fixed-position pin don't count as room.
+     * True when placing a non-guaranteed song here still leaves room for
+     * every unplaced guaranteed song (floating pins, must-play). Positions
+     * after this one that are reserved by a fixed-position pin don't count.
      */
-    _roomForFloatingPins(state, position) {
-        if (!this._floatingPins.size) return true;
+    _roomForGuaranteed(state, position) {
+        if (!this._guaranteedIds.size) return true;
         let unplaced = 0;
-        for (const id of this._floatingPins) {
+        for (const id of this._guaranteedIds) {
             if (!state.usedIds[id]) unplaced += 1;
         }
         let reserved = 0;
