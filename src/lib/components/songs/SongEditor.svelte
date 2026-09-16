@@ -24,6 +24,35 @@
     let tuningDrafts = $state({});
     let techniqueDrafts = $state({});
 
+    // "Keep apart from" picker state.
+    let showKeepApartPicker = $state(false);
+    let keepApartSearch = $state("");
+    let keepApartSongs = $derived.by(() => {
+        const ids = store.editorSong?.keepApartFrom || [];
+        const byId = new Map((store.songs || []).map((s) => [s.id, s]));
+        return ids.map((id) => byId.get(id)).filter(Boolean);
+    });
+    let keepApartCandidates = $derived.by(() => {
+        const selfId = store.editorSong?.id;
+        const chosen = new Set(store.editorSong?.keepApartFrom || []);
+        const q = keepApartSearch.trim().toLowerCase();
+        return (store.songs || []).filter(
+            (s) => s.id !== selfId && !chosen.has(s.id) && (!q || s.name.toLowerCase().includes(q)),
+        );
+    });
+
+    function addKeepApart(id) {
+        const current = store.editorSong?.keepApartFrom || [];
+        if (!current.includes(id)) store.updateSongField("keepApartFrom", [...current, id]);
+        showKeepApartPicker = false;
+        keepApartSearch = "";
+    }
+
+    function removeKeepApart(id) {
+        const current = store.editorSong?.keepApartFrom || [];
+        store.updateSongField("keepApartFrom", current.filter((x) => x !== id));
+    }
+
     let nameInput = $state();
     $effect(() => {
         if (isNewSong && nameInput) nameInput.focus();
@@ -289,6 +318,29 @@
                 >Not a good closer</ChipToggle>
             </div>
 
+            <div class="field">
+                <span class="field-label">Keep apart from</span>
+                <div class="chip-row keep-apart-row">
+                    {#each keepApartSongs as other (other.id)}
+                        <span class="keep-apart-chip">
+                            {other.name}
+                            <button
+                                type="button"
+                                class="keep-apart-remove"
+                                aria-label={`Stop keeping apart from ${other.name}`}
+                                onclick={() => removeKeepApart(other.id)}
+                            >×</button>
+                        </span>
+                    {/each}
+                    <button
+                        type="button"
+                        class="keep-apart-add"
+                        onclick={() => { showKeepApartPicker = true; }}
+                    >+ Add song</button>
+                </div>
+                <span class="field-hint">These songs will never be placed next to this one.</span>
+            </div>
+
             <div class="toggle-row">
                 <ChipToggle
                     checked={store.editorSong.unpracticed}
@@ -552,7 +604,187 @@
     </div>
 </div>
 
+{#if showKeepApartPicker}
+    <div class="picker-overlay" onclick={() => { showKeepApartPicker = false; keepApartSearch = ""; }}>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="picker-dialog" onclick={(e) => e.stopPropagation()}>
+            <p class="picker-title">Keep apart from…</p>
+            <input
+                class="picker-search"
+                type="text"
+                placeholder="Search songs..."
+                bind:value={keepApartSearch}
+            />
+            <div class="picker-list">
+                {#each keepApartCandidates as song (song.id)}
+                    <button type="button" class="picker-item" onclick={() => addKeepApart(song.id)}>
+                        {song.name}
+                    </button>
+                {:else}
+                    <p class="picker-empty">No other songs to choose from</p>
+                {/each}
+            </div>
+            <button
+                type="button"
+                class="picker-cancel"
+                onclick={() => { showKeepApartPicker = false; keepApartSearch = ""; }}
+            >Cancel</button>
+        </div>
+    </div>
+{/if}
+
 <style>
+    .field-hint {
+        font-size: 0.78rem;
+        color: var(--muted, #6b7a8d);
+    }
+
+    .keep-apart-row {
+        align-items: center;
+    }
+
+    .keep-apart-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 2.4rem;
+        padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+        border-radius: 999px;
+        background: var(--accent-soft, rgba(225, 91, 55, 0.12));
+        border: 1px solid var(--accent-line, rgba(225, 91, 55, 0.24));
+        color: var(--accent-strong, #c64724);
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .keep-apart-remove {
+        display: inline-grid;
+        place-items: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        touch-action: manipulation;
+    }
+
+    .keep-apart-remove:active {
+        background: var(--hover-strong, rgba(0, 0, 0, 0.08));
+    }
+
+    .keep-apart-add {
+        min-height: 2.4rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+        border: 1px dashed var(--line-strong, rgba(27, 49, 80, 0.2));
+        background: transparent;
+        color: var(--ink, #182230);
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        touch-action: manipulation;
+    }
+
+    .keep-apart-add:active {
+        background: var(--hover, rgba(0, 0, 0, 0.04));
+    }
+
+    .picker-overlay {
+        position: fixed;
+        inset: 0;
+        background: var(--overlay);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 60;
+        padding: 1rem;
+    }
+
+    .picker-dialog {
+        width: min(100%, 320px);
+        max-height: 70vh;
+        padding: 1.5rem;
+        background: var(--paper-strong, #fff);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl, 16px);
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .picker-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--ink, #182230);
+    }
+
+    .picker-search {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
+        border-radius: var(--radius-md, 12px);
+        /* iOS zooms inputs <16px on focus — keep at 16px to prevent zoom. See app.css. */
+        font-size: 16px;
+        outline: none;
+        box-sizing: border-box;
+        background: var(--surface);
+        color: var(--ink, #182230);
+    }
+
+    .picker-search:focus {
+        border-color: var(--accent, #e15b37);
+    }
+
+    .picker-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        overflow-y: auto;
+        max-height: 40vh;
+    }
+
+    .picker-item {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line, rgba(27, 49, 80, 0.08));
+        border-radius: var(--radius-md, 12px);
+        background: var(--surface);
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--ink, #182230);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .picker-item:active {
+        background: var(--accent-soft);
+    }
+
+    .picker-empty {
+        font-size: 0.85rem;
+        color: var(--muted, #8a95a5);
+        text-align: center;
+        padding: 1rem;
+        margin: 0;
+    }
+
+    .picker-cancel {
+        min-height: 2.6rem;
+        border: none;
+        border-radius: var(--radius-md, 12px);
+        background: transparent;
+        color: var(--muted, #6b7a8d);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
     .editor-overlay {
         position: fixed;
         inset: 0;

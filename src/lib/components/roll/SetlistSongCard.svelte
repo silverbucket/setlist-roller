@@ -79,6 +79,13 @@
           title={song.pinned ? "Unpin song" : "Keep this song and position on reroll"}
           onclick={(e) => { e.stopPropagation(); onTogglePin?.(song.id); }}
         >{song.pinned ? "📌" : "○"}</button>
+        {#if song.keepApartConflict}
+          <span
+            class="conflict-badge"
+            title="Next to a song it should be kept apart from"
+            aria-label="Next to a song it should be kept apart from"
+          >⚠ apart</span>
+        {/if}
         {#if song.key}
           <span class="key-badge">{song.key}</span>
         {/if}
@@ -329,6 +336,22 @@
   }
 
   .pin-btn + .key-badge {
+    margin-left: 0;
+  }
+
+  .conflict-badge {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: var(--warning-soft, rgba(255, 160, 40, 0.12));
+    color: var(--toast-warning, #7a5c10);
+    white-space: nowrap;
+  }
+
+  .conflict-badge + .key-badge {
     margin-left: 0;
   }
 

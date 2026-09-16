@@ -1,6 +1,6 @@
 import { accountSlot, consumeKnownAccountsCorrupted, getAccountToken, getKnownAccounts, removeKnownAccountEntry, saveKnownAccount } from "../accounts.js";
 import { CONFIG_SECTIONS } from "../config-meta.js";
-import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, sortSongs } from "../defaults.js";
+import { blankSong, DEFAULT_APP_CONFIG, memberDefaultRig, normalizeAppConfig, normalizeMemberRecord, normalizeSongRecord, resolveSongMembers, rigEqualsDefault, songsReferencingKeepApart, sortSongs, syncKeepApartLinks } from "../defaults.js";
 import { buildDefaultPerformance, scoreFixedOrder } from "../generator.js";
 import GeneratorWorker from "../generator.worker.js?worker";
 import { pruneStaleKeys, sortKeys } from "../keys.js";
@@ -1369,6 +1369,9 @@ export function createAppStore(repo) {
             if (result.summary?.closerFilterRelaxed) {
                 toastWarn("No valid closer found in catalog.");
             }
+            if (result.summary?.keepApartRelaxed) {
+                toastWarn("Two songs you keep apart ended up together. No other order fit.");
+            }
             const n = generatedSetlist.songs.length;
             toastInfo(randomFrom([
                 `🎲 The dice have spoken. ${n} songs.`,
@@ -1410,9 +1413,13 @@ export function createAppStore(repo) {
         const currentCovers = currentSongs.filter((song) => song.cover).length;
         const currentInstrumentals = currentSongs.filter((song) => song.instrumental).length;
         const remainingLimit = (limit, used) => (limit < 0 ? -1 : Math.max(0, limit - used));
+        // Appending: the first new song sits right after the current tail,
+        // so hand the generator that tail for the keep-apart adjacency rule.
+        const tail = optimizeFullSet ? null : songsById.get(existingSongs.at(-1)?.songId);
         generate({
             count,
             excludedSongIds: [...existingIds],
+            precedingSong: tail ? { id: tail.id, keepApartFrom: tail.keepApartFrom || [] } : undefined,
             maxCovers: remainingLimit(generationOptions.maxCovers, currentCovers),
             maxInstrumentals: remainingLimit(generationOptions.maxInstrumentals, currentInstrumentals),
             pinnedSongs: [],
@@ -1932,9 +1939,54 @@ export function createAppStore(repo) {
         });
     }
 
+    /**
+     * True when saving/deleting `song` must touch other catalog records to
+     * keep the symmetric "keep apart" relation consistent. Because links are
+     * stored on both songs, the song's own list names every partner.
+     */
+    function keepApartCascadeNeeded(song, previous = null) {
+        const next = new Set(song?.keepApartFrom || []);
+        const prev = new Set(previous?.keepApartFrom || []);
+        if (next.size !== prev.size) return true;
+        for (const id of next) if (!prev.has(id)) return true;
+        return false;
+    }
+
+    /**
+     * Write each partner record in turn, applying successes locally as they
+     * land. Returns the names of partners whose write failed, or null when
+     * the session changed mid-way (the caller must stop touching state).
+     */
+    async function writeKeepApartPartners(partners, sessionAlive) {
+        const failed = [];
+        for (const other of partners) {
+            try {
+                const savedOther = await withSync("Saving song", () => repo.putSong(other));
+                if (!sessionAlive()) return null;
+                upsertSongLocal(savedOther);
+            } catch {
+                if (!sessionAlive()) return null;
+                failed.push(other.name || other.id);
+            }
+        }
+        return failed;
+    }
+
+    function quoteList(names) {
+        return names.map((name) => `"${name}"`).join(", ");
+    }
+
     async function saveSong() {
         if (!editorSong || !String(editorSong.name || "").trim()) {
             toastError("Songs need names.");
+            return;
+        }
+        // The keep-apart cascade writes back-references onto partner songs.
+        // Until the account's first sync has settled, the in-memory catalog
+        // may be partial and a partner could be missed — refuse rather than
+        // leave the relation one-sided (same policy as renameBandMember).
+        if (!catalogSettled && keepApartCascadeNeeded(editorSong, songsById.get(editorSong.id))) {
+            toastWarn("Still syncing your catalog — try saving the keep-apart change again in a moment.");
             return;
         }
         const sessionAlive = sessionGuard();
@@ -1952,11 +2004,26 @@ export function createAppStore(repo) {
             }));
             if (!sessionAlive()) return;
             upsertSongLocal(saved);
+            // "Keep apart" is symmetric: mirror the link on the partner songs.
+            // remoteStorage has no multi-document transactions, so this is
+            // best-effort per record (same policy as the member-rename
+            // cascade). A missed partner leaves a one-sided link, which the
+            // generator and scorer already honour; re-saving this song
+            // re-runs the diff and repairs it.
+            const failedPartners = await writeKeepApartPartners(syncKeepApartLinks(saved, songs), sessionAlive);
+            if (failedPartners === null) return;
             // No manual setlist sync needed: displayedSetlist re-derives from
             // the catalog automatically when `songs` changes.
 
             closeEditor();
-            toastInfo(`Saved "${saved.name}".`);
+            if (failedPartners.length) {
+                toastWarn(
+                    `Saved "${saved.name}", but couldn't update keep-apart on ${quoteList(failedPartners)}. ` +
+                        "The rule still applies; re-save this song to retry.",
+                );
+            } else {
+                toastInfo(`Saved "${saved.name}".`);
+            }
         } catch (error) {
             toastError(error?.message || "Could not save.");
         } finally {
@@ -1981,14 +2048,31 @@ export function createAppStore(repo) {
             confirmLabel: "Delete",
         });
         if (!confirmed) return;
+        // Deleting a song scrubs its id from every partner's keepApartFrom.
+        // With a partial catalog (first sync still running) a partner not
+        // yet loaded would keep a stale reference, so wait for settle.
+        // Consult the catalog record, not the caller's object: a bare
+        // `{ id, name }` from a list row must not sidestep the guard.
+        if (!catalogSettled && keepApartCascadeNeeded(songsById.get(String(song.id)) ?? song)) {
+            toastWarn("Still syncing your catalog — try deleting again in a moment.");
+            return;
+        }
         const sessionAlive = sessionGuard();
         try {
             busyMessage = `Deleting "${song.name}"...`;
             await withSync("Removing song", () => repo.deleteSong(song.id));
             if (!sessionAlive()) return;
             removeSongLocal(song.id);
+            // Best-effort scrub of partner references; see saveSong. A
+            // stale id is inert (unknown ids are ignored everywhere).
+            const failedPartners = await writeKeepApartPartners(songsReferencingKeepApart(song.id, songs), sessionAlive);
+            if (failedPartners === null) return;
             if (editorSong?.id === song.id) closeEditor();
-            toastInfo(`Deleted "${song.name}".`);
+            if (failedPartners.length) {
+                toastWarn(`Deleted "${song.name}", but couldn't clear its keep-apart link on ${quoteList(failedPartners)}.`);
+            } else {
+                toastInfo(`Deleted "${song.name}".`);
+            }
         } catch (error) {
             toastError(error?.message || "Could not delete.");
         } finally {
