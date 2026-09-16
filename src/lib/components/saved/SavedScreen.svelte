@@ -12,6 +12,18 @@
   let editingId = $state(null);
   let editName = $state("");
   let editDate = $state("");
+  let editVenue = $state("");
+  let activeList = $state("drafts");
+  let markingPerformedId = $state(null);
+  let performedDate = $state("");
+  let performedVenue = $state("");
+  let confirmingHistoryDeleteId = $state(null);
+  let draftSetlists = $derived(store.displayedSavedSetlists?.filter((setlist) => !setlist.performedAt) ?? []);
+  let performedSetlists = $derived(
+    [...(store.displayedSavedSetlists?.filter((setlist) => setlist.performedAt) ?? [])]
+      .sort((a, b) => b.performedAt.localeCompare(a.performedAt))
+  );
+  let visibleSetlists = $derived(activeList === "drafts" ? draftSetlists : performedSetlists);
 
   function handleView(saved) {
     if (editingId) return;
@@ -23,15 +35,20 @@
     editingId = saved.id;
     editName = saved.name || "";
     // Convert ISO to YYYY-MM-DD for date input
-    editDate = saved.savedAt ? saved.savedAt.slice(0, 10) : "";
+    const date = saved.performedAt || saved.savedAt;
+    editDate = date ? date.slice(0, 10) : "";
+    editVenue = saved.venue || "";
   }
 
   function saveEdit(e) {
     if (e) e.stopPropagation();
     if (!editingId) return;
+    const saved = store.displayedSavedSetlists?.find((setlist) => setlist.id === editingId);
+    const dateField = saved?.performedAt ? "performedAt" : "savedAt";
     store.updateSavedSetlist(editingId, {
       name: editName.trim() || "Untitled Set",
-      savedAt: editDate ? new Date(`${editDate}T12:00:00`).toISOString() : new Date().toISOString(),
+      [dateField]: editDate ? new Date(`${editDate}T12:00:00`).toISOString() : new Date().toISOString(),
+      venue: editVenue.trim() || null,
     });
     editingId = null;
   }
@@ -55,6 +72,11 @@
 
   function handleRemove(e, id) {
     e.stopPropagation();
+    const saved = store.displayedSavedSetlists?.find((setlist) => setlist.id === id);
+    if (saved?.performedAt) {
+      confirmingHistoryDeleteId = id;
+      return;
+    }
     if (confirmingRemoveId === id) {
       store.removeSavedSetlist(id);
       confirmingRemoveId = null;
@@ -66,6 +88,44 @@
   function cancelRemove(e) {
     e.stopPropagation();
     confirmingRemoveId = null;
+  }
+
+  function startMarkPerformed(e, saved) {
+    e.stopPropagation();
+    markingPerformedId = saved.id;
+    performedDate = new Date().toISOString().slice(0, 10);
+    performedVenue = saved.venue || "";
+  }
+
+  async function confirmMarkPerformed() {
+    if (!markingPerformedId || !performedDate) return;
+    const saved = await store.markSetlistPerformed(
+      markingPerformedId,
+      new Date(`${performedDate}T12:00:00`).toISOString(),
+      performedVenue.trim() || null,
+    );
+    if (!saved) return;
+    markingPerformedId = null;
+    performedVenue = "";
+    activeList = "performed";
+  }
+
+  function cancelMarkPerformed() {
+    markingPerformedId = null;
+    performedVenue = "";
+  }
+
+  async function confirmHistoryDelete() {
+    if (!confirmingHistoryDeleteId) return;
+    await store.removeSavedSetlist(confirmingHistoryDeleteId);
+    confirmingHistoryDeleteId = null;
+  }
+
+  async function moveToDrafts(e, saved) {
+    e.stopPropagation();
+    const updated = await store.moveSetlistToDrafts(saved.id);
+    if (!updated) return;
+    activeList = "drafts";
   }
 
   let printEl = $state(null);
@@ -169,16 +229,21 @@
 </script>
 
 <div class="saved-screen">
-  <h2 class="screen-title">Greatest Hits</h2>
+  <h2 class="screen-title">Setlists</h2>
 
-  {#if !store.displayedSavedSetlists?.length}
+  <div class="list-tabs" role="tablist" aria-label="Setlist status">
+    <button type="button" role="tab" aria-selected={activeList === "drafts"} class:active={activeList === "drafts"} onclick={() => activeList = "drafts"}>Drafts <span>{draftSetlists.length}</span></button>
+    <button type="button" role="tab" aria-selected={activeList === "performed"} class:active={activeList === "performed"} onclick={() => activeList = "performed"}>Performed <span>{performedSetlists.length}</span></button>
+  </div>
+
+  {#if !visibleSetlists.length}
     <div class="empty-state">
-      <p class="empty-title">Nothing saved yet</p>
-      <p class="empty-sub">Roll a setlist you love, lock it in, then save it here for safekeeping.</p>
+      <p class="empty-title">{activeList === "drafts" ? "No drafts" : "No performed setlists"}</p>
+      <p class="empty-sub">{activeList === "drafts" ? "Save a setlist to keep working on it with the band." : "Mark a draft as performed after you use it at a show."}</p>
     </div>
   {:else}
     <div class="saved-list">
-      {#each store.displayedSavedSetlists as saved}
+      {#each visibleSetlists as saved}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="saved-card" onclick={() => handleView(saved)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') handleView(saved); }}>
           {#if editingId === saved.id}
@@ -186,6 +251,9 @@
             <div class="edit-form" onclick={(e) => e.stopPropagation()}>
               <input class="edit-input" type="text" bind:value={editName} placeholder="Setlist name" onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }} />
               <input class="edit-input date" type="date" bind:value={editDate} />
+              {#if saved.performedAt}
+                <input class="edit-input" type="text" bind:value={editVenue} placeholder="Venue (optional)" />
+              {/if}
               <div class="edit-actions">
                 <button type="button" class="card-btn save" onclick={saveEdit}>Save</button>
                 <button type="button" class="card-btn cancel" onclick={cancelEdit}>Cancel</button>
@@ -194,14 +262,20 @@
           {:else}
             <div class="saved-top">
               <span class="saved-name">{saved.name || `Set #${saved.songs?.length || "?"}`}</span>
-              <span class="saved-date">{formatDate(saved.savedAt)}</span>
+              <span class="saved-date">{formatDate(saved.performedAt || saved.savedAt)}</span>
             </div>
             <div class="saved-meta">
               <span>{saved.songs?.length || 0} songs</span>
+              {#if saved.venue}<span>{saved.venue}</span>{/if}
             </div>
             <div class="saved-card-actions">
               <button type="button" class="card-btn edit" onclick={(e) => startEdit(e, saved)}>Edit</button>
-              <button type="button" class="card-btn load" onclick={(e) => handleLoad(e, saved.id)}>Load</button>
+              <button type="button" class="card-btn load" onclick={(e) => handleLoad(e, saved.id)}>{saved.performedAt ? "Use as draft" : "Open"}</button>
+              {#if saved.performedAt}
+                <button type="button" class="card-btn status" onclick={(e) => moveToDrafts(e, saved)}>Move to drafts</button>
+              {:else}
+                <button type="button" class="card-btn status" onclick={(e) => startMarkPerformed(e, saved)}>Mark performed</button>
+              {/if}
               <span class="action-spacer"></span>
               {#if confirmingRemoveId === saved.id}
                 <button type="button" class="card-btn confirm-delete" onclick={(e) => handleRemove(e, saved.id)}>Delete?</button>
@@ -226,7 +300,7 @@
           <div class="print-top">
             <button type="button" class="modal-close no-print" onclick={handleClose} aria-label="Close">&times;</button>
             <h2 class="print-band">{store.appTitle.replace(/ — Setlist Roller$/, "")}</h2>
-            <p class="print-subtitle">{viewingSet.name || "Setlist"} &middot; {formatDate(viewingSet.savedAt)}</p>
+            <p class="print-subtitle">{viewingSet.name || "Setlist"} &middot; {viewingSet.performedAt ? `Performed ${formatDate(viewingSet.performedAt)}${viewingSet.venue ? ` at ${viewingSet.venue}` : ""}` : `Draft updated ${formatDate(viewingSet.savedAt)}`}</p>
           </div>
 
           <div class="print-songs">
@@ -271,7 +345,41 @@
 
       <div class="modal-actions">
         <button type="button" class="modal-btn" onclick={handlePrint}>Print / Export PDF</button>
-        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>Load to Roll</button>
+        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>{viewingSet.performedAt ? "Use as new draft" : "Edit setlist"}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if markingPerformedId}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="modal-backdrop" role="presentation" onclick={cancelMarkPerformed}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="performed-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <h2 id="performed-title">Mark as performed?</h2>
+      <p>This preserves the setlist as a record of the show.</p>
+      <label for="performed-date">Show date</label>
+      <input id="performed-date" type="date" bind:value={performedDate} />
+      <label for="performed-venue">Venue <span class="optional">Optional</span></label>
+      <input id="performed-venue" type="text" bind:value={performedVenue} placeholder="Venue name" />
+      <div class="confirm-actions">
+        <button type="button" class="modal-btn" onclick={cancelMarkPerformed}>Cancel</button>
+        <button type="button" class="modal-btn primary" onclick={confirmMarkPerformed}>Mark as performed</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if confirmingHistoryDeleteId}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="modal-backdrop" role="presentation" onclick={() => confirmingHistoryDeleteId = null}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="history-delete-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <h2 id="history-delete-title">Delete performed setlist?</h2>
+      <p>This setlist is part of your show history. Deleting it permanently removes that record.</p>
+      <div class="confirm-actions">
+        <button type="button" class="modal-btn" onclick={() => confirmingHistoryDeleteId = null}>Keep history</button>
+        <button type="button" class="modal-btn danger" onclick={confirmHistoryDelete}>Delete permanently</button>
       </div>
     </div>
   </div>
@@ -290,6 +398,36 @@
     font-size: 1.1rem;
     font-weight: 800;
     color: var(--ink, #182230);
+  }
+
+  .list-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 0.25rem;
+    border-radius: var(--radius-lg, 16px);
+    background: var(--hover);
+  }
+
+  .list-tabs button {
+    min-height: 44px;
+    border: 0;
+    border-radius: var(--radius-md, 12px);
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 750;
+    cursor: pointer;
+  }
+
+  .list-tabs button.active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 4px rgba(20, 30, 45, 0.12);
+  }
+
+  .list-tabs span {
+    margin-left: 0.2rem;
+    color: var(--muted);
   }
 
   .empty-state {
@@ -423,6 +561,11 @@
     border: 1px solid var(--line);
   }
 
+  .card-btn.status {
+    background: none;
+    color: var(--accent);
+  }
+
   .card-btn.save {
     background: #1f8f61;
     color: var(--on-accent);
@@ -465,6 +608,61 @@
   .edit-actions {
     display: flex;
     gap: 0.35rem;
+  }
+
+  .confirm-sheet {
+    width: min(100%, 380px);
+    padding: 1.25rem;
+    border-radius: var(--radius-xl, 20px);
+    background: var(--paper-strong);
+    box-shadow: var(--shadow);
+    color: var(--ink);
+  }
+
+  .confirm-sheet h2 {
+    margin-bottom: 0.35rem;
+    font-size: 1.1rem;
+  }
+
+  .confirm-sheet p {
+    margin-bottom: 1rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .confirm-sheet label {
+    display: block;
+    margin: 0.85rem 0 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .confirm-sheet .optional {
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .confirm-sheet input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md, 12px);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 16px;
+  }
+
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .modal-btn.danger {
+    background: var(--danger, #b91c1c);
+    color: var(--on-accent);
   }
 
   /* ---- Modal ---- */

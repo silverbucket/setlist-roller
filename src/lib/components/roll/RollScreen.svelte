@@ -700,7 +700,7 @@
           {#if store.setlistSaved}
             <div class="saved-badge">✓ Saved</div>
           {:else}
-            <button type="button" class="save-set-btn secondary" onclick={handleSaveSetlist}>Save to Greatest Hits</button>
+            <button type="button" class="save-set-btn secondary" onclick={handleSaveSetlist}>Save draft</button>
           {/if}
         {:else}
           <button type="button" class="save-set-btn" onclick={handleLock}>Lock it in 🔒</button>

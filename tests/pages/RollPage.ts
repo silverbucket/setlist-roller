@@ -65,7 +65,7 @@ export class RollPage {
         this.lockButton = this.screen.getByRole("button", { name: /Lock it in/ });
         this.lockedBadge = this.screen.locator(".locked-badge");
         this.savedBadge = this.screen.locator(".saved-badge");
-        this.saveToHitsButton = this.screen.getByRole("button", { name: "Save to Greatest Hits" });
+        this.saveToHitsButton = this.screen.getByRole("button", { name: "Save draft" });
         this.onboardingCard = this.screen.locator(".onboarding-card");
         this.idleNudge = this.screen.locator(".idle-nudge");
         this.confirmDialog = page.locator(".confirm-dialog");

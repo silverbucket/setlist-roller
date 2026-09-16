@@ -1,8 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
- * Saved screen ("Greatest Hits") — list of saved setlists with view, edit,
- * load, and delete actions, plus the print modal.
+ * Saved screen — draft and performed setlists with view, edit, load, and
+ * delete actions, plus the print modal.
  */
 export class SavedPage {
     readonly page: Page;
@@ -28,7 +28,7 @@ export class SavedPage {
         this.modalActions = this.modal.locator(".modal-actions");
         this.modalCloseButton = this.modal.getByRole("button", { name: "Close" });
         this.printButton = this.modal.getByRole("button", { name: /Print/ });
-        this.loadToRollButton = this.modal.getByRole("button", { name: "Load to Roll" });
+        this.loadToRollButton = this.modal.getByRole("button", { name: /Edit setlist|Use as new draft/ });
     }
 
     cardByName(name: string): Locator {
@@ -76,7 +76,24 @@ export class SavedPage {
     }
 
     async loadSavedFromCard(name: string) {
-        await this.cardByName(name).getByRole("button", { name: "Load" }).click();
+        await this.cardByName(name)
+            .getByRole("button", { name: /Open|Use as draft/ })
+            .click();
+    }
+
+    async markPerformed(name: string, date: string, venue?: string) {
+        await this.cardByName(name).getByRole("button", { name: "Mark performed" }).click();
+        const dialog = this.page.getByRole("dialog", { name: "Mark as performed?" });
+        await dialog.getByLabel("Show date").fill(date);
+        if (venue) await dialog.getByLabel(/Venue/).fill(venue);
+        await dialog.getByRole("button", { name: "Mark as performed" }).click();
+    }
+
+    async deletePerformed(name: string) {
+        await this.cardByName(name).getByRole("button", { name: "Remove" }).click();
+        const dialog = this.page.getByRole("alertdialog", { name: "Delete performed setlist?" });
+        await expect(dialog).toContainText("part of your show history");
+        await dialog.getByRole("button", { name: "Delete permanently" }).click();
     }
 
     async deleteSaved(name: string) {

@@ -1221,4 +1221,69 @@ describe("generated setlist names", () => {
         randomSpy.mockRestore();
         teardown();
     });
+
+    it("marks a draft as performed and can move it back to drafts", async () => {
+        const repo = buildRepo();
+        repo.putSetlist = vi.fn(async (entry) => entry);
+        const { store, teardown } = await bootStore(repo);
+        repo.fireChange({
+            relativePath: "setlists/show",
+            origin: "remote",
+            newValue: {
+                id: "show",
+                name: "Friday Show",
+                savedAt: "2026-09-10T12:00:00.000Z",
+                schemaVersion: 2,
+                songs: [],
+            },
+        });
+
+        await store.markSetlistPerformed("show", "2026-09-12T12:00:00.000Z", "The Comet");
+        expect(repo.putSetlist).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                id: "show",
+                performedAt: "2026-09-12T12:00:00.000Z",
+                venue: "The Comet",
+            }),
+        );
+        expect(store.savedSetlists[0].performedAt).toBe("2026-09-12T12:00:00.000Z");
+
+        await store.moveSetlistToDrafts("show");
+        expect(repo.putSetlist).toHaveBeenLastCalledWith(expect.objectContaining({ id: "show", performedAt: null }));
+        expect(store.savedSetlists[0].performedAt).toBeNull();
+        teardown();
+    });
+
+    it("loads a performed setlist as a new draft instead of overwriting it", async () => {
+        const repo = buildRepo();
+        repo.putSetlist = vi.fn(async (entry) => entry);
+        const { store, teardown } = await bootStore(repo, { settled: true });
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Encore" },
+        });
+        repo.fireChange({
+            relativePath: "setlists/performed",
+            origin: "remote",
+            newValue: {
+                id: "performed",
+                name: "Past Show",
+                savedAt: "2026-09-10T12:00:00.000Z",
+                performedAt: "2026-09-12T12:00:00.000Z",
+                schemaVersion: 2,
+                songs: [{ songId: "s1", performance: {} }],
+            },
+        });
+
+        store.loadSavedSetlist("performed");
+        expect(store.setlistSaved).toBe(false);
+        await store.saveCurrentSetlist();
+
+        expect(repo.putSetlist).toHaveBeenCalledTimes(1);
+        expect(repo.putSetlist.mock.calls[0][0]).toMatchObject({ songs: [{ songId: "s1", performance: {} }] });
+        expect(repo.putSetlist.mock.calls[0][0].id).not.toBe("performed");
+        expect(repo.putSetlist.mock.calls[0][0].performedAt).toBeUndefined();
+        teardown();
+    });
 });
