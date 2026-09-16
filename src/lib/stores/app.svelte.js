@@ -1935,9 +1935,30 @@ export function createAppStore(repo) {
         });
     }
 
+    /**
+     * True when saving/deleting `song` must touch other catalog records to
+     * keep the symmetric "keep apart" relation consistent. Because links are
+     * stored on both songs, the song's own list names every partner.
+     */
+    function keepApartCascadeNeeded(song, previous = null) {
+        const next = new Set(song?.keepApartFrom || []);
+        const prev = new Set(previous?.keepApartFrom || []);
+        if (next.size !== prev.size) return true;
+        for (const id of next) if (!prev.has(id)) return true;
+        return false;
+    }
+
     async function saveSong() {
         if (!editorSong || !String(editorSong.name || "").trim()) {
             toastError("Songs need names.");
+            return;
+        }
+        // The keep-apart cascade writes back-references onto partner songs.
+        // Until the account's first sync has settled, the in-memory catalog
+        // may be partial and a partner could be missed — refuse rather than
+        // leave the relation one-sided (same policy as renameBandMember).
+        if (!catalogSettled && keepApartCascadeNeeded(editorSong, songsById.get(editorSong.id))) {
+            toastWarn("Still syncing your catalog — try saving the keep-apart change again in a moment.");
             return;
         }
         const sessionAlive = sessionGuard();
@@ -1990,6 +2011,13 @@ export function createAppStore(repo) {
             confirmLabel: "Delete",
         });
         if (!confirmed) return;
+        // Deleting a song scrubs its id from every partner's keepApartFrom.
+        // With a partial catalog (first sync still running) a partner not
+        // yet loaded would keep a stale reference, so wait for settle.
+        if (!catalogSettled && keepApartCascadeNeeded(song)) {
+            toastWarn("Still syncing your catalog — try deleting again in a moment.");
+            return;
+        }
         const sessionAlive = sessionGuard();
         try {
             busyMessage = `Deleting "${song.name}"...`;

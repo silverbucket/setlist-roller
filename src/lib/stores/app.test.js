@@ -211,6 +211,36 @@ describe("destructive confirm", () => {
     });
 });
 
+describe("keep-apart cascade guard", () => {
+    it("deleteSong refuses a linked song until the catalog has settled, but deletes unlinked ones", async () => {
+        const repo = { deleteSong: vi.fn(async () => {}) };
+        const store = createAppStore(repo);
+        expect(store.initialSyncDone).toBe(false);
+
+        const linked = store.deleteSong({ id: "s1", name: "Linked", keepApartFrom: ["s2"] });
+        store.resolveConfirm(true);
+        await linked;
+        expect(repo.deleteSong).not.toHaveBeenCalled();
+        expect(store.toastMessages.at(-1)?.message).toMatch(/still syncing/i);
+
+        const plain = store.deleteSong({ id: "s3", name: "Plain", keepApartFrom: [] });
+        store.resolveConfirm(true);
+        await plain;
+        expect(repo.deleteSong).toHaveBeenCalledTimes(1);
+    });
+
+    it("saveSong refuses a keep-apart change until the catalog has settled", async () => {
+        const repo = { putSong: vi.fn(async (s) => s) };
+        const store = createAppStore(repo);
+        store.openNewSong();
+        store.updateSongField("name", "New");
+        store.updateSongField("keepApartFrom", ["other"]);
+        await store.saveSong();
+        expect(repo.putSong).not.toHaveBeenCalled();
+        expect(store.toastMessages.at(-1)?.message).toMatch(/still syncing/i);
+    });
+});
+
 describe("incremental remote sync", () => {
     // The store's init() needs window + localStorage; we're in node, so
     // polyfill exactly those. (jsdom would trip Svelte's top-level-$effect
