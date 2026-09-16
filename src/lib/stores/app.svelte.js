@@ -1490,6 +1490,17 @@ export function createAppStore(repo) {
             "Sound & Fury", "The Audacity", "Full Send",
             "Controlled Chaos", "Plot Twist", "The Good Stuff",
             "Questionable Choices", "Send It", "No Notes",
+            "All Killer", "Last Call Legends", "The Loud Part",
+            "Neon and Noise", "One More Song", "Worth the Ringing",
+            "Stage Leftovers", "The Floor Is Shaking", "Crowd Control",
+            "Amped Up", "Good Trouble", "Maximum Volume",
+            "Lowered Expectations", "Barely Rehearsed", "This Seemed Easier",
+            "Probably Fine", "Against Better Judgment", "The Wheels Are On",
+            "Technical Difficulties", "Peak Mediocrity", "No One Asked",
+            "A Series of Choices", "Here Goes Nothing", "Still Not Famous",
+            "The Last Good Idea", "Diminishing Returns", "Read the Room",
+            "Underqualified and Loud", "Everything Is Fine", "Career Limiting Move",
+            "Our Apologies", "Dead Air Society",
         ];
         // Pick a random name, avoid recently used names
         const usedNames = new Set(currentSaved.slice(0, 5).map(s => s.name));

@@ -1,4 +1,6 @@
 import "fake-indexeddb/auto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1073,6 +1075,150 @@ describe("incremental remote sync", () => {
         expect(store.syncState).toBe("synced");
         expect(store.songs.map((s) => s.name)).toEqual(["Keep"]);
         expect(store.initialSyncDone).toBe(true);
+        teardown();
+    });
+});
+
+const NEW_FUN_NAMES = [
+    "All Killer",
+    "Last Call Legends",
+    "The Loud Part",
+    "Neon and Noise",
+    "One More Song",
+    "Worth the Ringing",
+    "Stage Leftovers",
+    "The Floor Is Shaking",
+    "Crowd Control",
+    "Amped Up",
+    "Good Trouble",
+    "Maximum Volume",
+    "Lowered Expectations",
+    "Barely Rehearsed",
+    "This Seemed Easier",
+    "Probably Fine",
+    "Against Better Judgment",
+    "The Wheels Are On",
+    "Technical Difficulties",
+    "Peak Mediocrity",
+    "No One Asked",
+    "A Series of Choices",
+    "Here Goes Nothing",
+    "Still Not Famous",
+    "The Last Good Idea",
+    "Diminishing Returns",
+    "Read the Room",
+    "Underqualified and Loud",
+    "Everything Is Fine",
+    "Career Limiting Move",
+    "Our Apologies",
+    "Dead Air Society",
+];
+
+function readFunNamesFromSource() {
+    const path = fileURLToPath(new URL("./app.svelte.js", import.meta.url));
+    const src = readFileSync(path, "utf8");
+    const block = src.match(/const funNames = \[([\s\S]*?)\];/)?.[1] ?? "";
+    return [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+describe("generated setlist names", () => {
+    let restoreEnv;
+
+    beforeEach(() => {
+        restoreEnv = installBrowserEnv();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        restoreEnv();
+    });
+
+    async function bootStore(repo, { settled = false } = {}) {
+        if (settled) await markCatalogSettled();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+        return { store, teardown };
+    }
+
+    it("includes the newly added names in the generated name pool", () => {
+        const funNames = readFunNamesFromSource();
+        expect(funNames).toHaveLength(52);
+        for (const name of NEW_FUN_NAMES) {
+            expect(funNames).toContain(name);
+        }
+        expect(new Set(funNames).size).toBe(funNames.length);
+    });
+
+    it("can assign a newly added name when saving a fresh setlist", async () => {
+        const funNames = readFunNamesFromSource();
+        const target = "Dead Air Society";
+        const targetIndex = funNames.indexOf(target);
+        expect(targetIndex).toBeGreaterThan(-1);
+
+        const repo = buildRepo();
+        repo.putSetlist = vi.fn(async (entry) => entry);
+        const { store, teardown } = await bootStore(repo, { settled: true });
+
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Starter" },
+        });
+        store.addSetlistSong("s1");
+
+        const randomSpy = vi.spyOn(Math, "random").mockReturnValue((targetIndex + 0.5) / funNames.length);
+        await store.saveCurrentSetlist();
+
+        expect(repo.putSetlist).toHaveBeenCalledTimes(1);
+        expect(repo.putSetlist.mock.calls[0][0].name).toBe(target);
+        expect(store.setlistSaved).toBe(true);
+
+        randomSpy.mockRestore();
+        teardown();
+    });
+
+    it("avoids the five most recently saved fun names when alternatives exist", async () => {
+        const funNames = readFunNamesFromSource();
+        const recent = funNames.slice(0, 5);
+
+        const repo = buildRepo();
+        repo.putSetlist = vi.fn(async (entry) => entry);
+        const { store, teardown } = await bootStore(repo, { settled: true });
+
+        for (let i = 0; i < recent.length; i += 1) {
+            repo.fireChange({
+                relativePath: `setlists/set-${i}`,
+                origin: "remote",
+                newValue: {
+                    id: `set-${i}`,
+                    name: recent[i],
+                    savedAt: `2026-09-${String(10 - i).padStart(2, "0")}T00:00:00.000Z`,
+                    schemaVersion: 2,
+                    seed: 1,
+                    songs: [],
+                },
+            });
+        }
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/s1",
+            origin: "remote",
+            newValue: { id: "s1", name: "Starter" },
+        });
+        store.addSetlistSong("s1");
+
+        const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+        await store.saveCurrentSetlist();
+
+        expect(repo.putSetlist).toHaveBeenCalledTimes(1);
+        const chosen = repo.putSetlist.mock.calls[0][0].name;
+        expect(recent).not.toContain(chosen);
+        expect(chosen).toBe(funNames[5]);
+
+        randomSpy.mockRestore();
         teardown();
     });
 });
