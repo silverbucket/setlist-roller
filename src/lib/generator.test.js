@@ -1257,6 +1257,44 @@ describe("generateSetlist — per-member gear changes", () => {
         expect(avoid.summary.score).toBe(24);
         expect(free.summary.score).toBe(0);
     });
+
+    it("across seeds, avoid and minimize incur far fewer tuning changes than free", () => {
+        const tunings = ["Standard", "Drop D", "DADGAD"];
+        const songs = Array.from({ length: 36 }, (_, i) =>
+            makeSong(`Song ${i + 1}`, {
+                id: `mix-${i + 1}`,
+                members: {
+                    nick: {
+                        instruments: [{ name: "guitar", tuning: [tunings[i % 3]], capo: 0, picking: [] }],
+                    },
+                },
+            }),
+        );
+
+        const countTuningChanges = (gearChanges) => {
+            let total = 0;
+            for (let seed = 1; seed <= 20; seed++) {
+                const result = generateSetlist(songs, makeConfig(), {
+                    ...deterministicOptions({ count: 12, seed }),
+                    setShape: "none",
+                    show: { members: { nick: { gearChanges } } },
+                });
+                for (let i = 1; i < result.songs.length; i++) {
+                    const prev = result.songs[i - 1].performance.nick;
+                    const next = result.songs[i].performance.nick;
+                    if (prev && next && prev.tuning !== next.tuning) total++;
+                }
+            }
+            return total;
+        };
+
+        const avoid = countTuningChanges("avoid");
+        const minimize = countTuningChanges("minimize");
+        const free = countTuningChanges("free");
+
+        expect(avoid).toBeLessThanOrEqual(minimize);
+        expect(minimize).toBeLessThan(free / 2);
+    });
 });
 
 // ===================================================================
@@ -1294,6 +1332,60 @@ describe("generateSetlist — song mix", () => {
             songMix: "balanced",
         });
         expect(a.songs.map((song) => song.id)).toEqual(b.songs.map((song) => song.id));
+    });
+
+    it("surprise me explores the catalog more than greatest hits", () => {
+        const songs = simpleCatalog(20);
+        for (let i = 0; i < 10; i++) songs[i].playPriority = "prefer";
+
+        const uniqueSongs = (songMix) => {
+            const seen = new Set();
+            for (let seed = 1; seed <= 20; seed++) {
+                generateSetlist(songs, makeConfig(), {
+                    count: 6,
+                    seed,
+                    beamWidth: 64,
+                    songMix,
+                    randomness: {
+                        shuffleCatalog: false,
+                        variantJitter: 0,
+                        stateJitter: 0,
+                        temperature: 0.85,
+                        finalChoicePool: 8,
+                    },
+                }).songs.forEach((song) => {
+                    seen.add(song.id);
+                });
+            }
+            return seen.size;
+        };
+
+        expect(uniqueSongs("surprise")).toBeGreaterThan(uniqueSongs("hits"));
+    });
+});
+
+describe("generateSetlist — legacy config knobs", () => {
+    it("ignores stale per-prop transition knobs from older configs", () => {
+        const songs = twoTuningCatalog(6);
+        const withKnobs = makeConfig({
+            props: {
+                tuning: { kind: "instrumentField", field: "tuning", minStreak: 99, returnPenalty: 99 },
+                capo: { kind: "instrumentDelta", field: "capo" },
+                instruments: { kind: "instrumentSet", weightKey: "instrument" },
+                picking: { kind: "instrumentField", field: "picking", weightKey: "technique" },
+            },
+        });
+        const options = {
+            ...deterministicOptions({ count: 4, seed: 7 }),
+            fixedSongIds: songs.map((song) => song.id),
+            setShape: "none",
+        };
+
+        const withLegacy = generateSetlist(songs, withKnobs, options);
+        const baseline = generateSetlist(songs, makeConfig(), options);
+
+        expect(withLegacy.songs.map((song) => song.id)).toEqual(baseline.songs.map((song) => song.id));
+        expect(withLegacy.summary.score).toBe(baseline.summary.score);
     });
 });
 

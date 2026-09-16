@@ -676,6 +676,33 @@ describe("incremental remote sync", () => {
         teardown();
     });
 
+    it("migrates stored generation options from older builds", async () => {
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("ui-options"),
+            JSON.stringify({
+                rotation: "deep",
+                transitionSmoothness: "adventurous",
+                selectionVariety: 77,
+                randomness: { temperature: 0.2 },
+                count: 11,
+            }),
+        );
+
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        expect(store.generationOptions.songMix).toBe("deep");
+        expect(store.generationOptions.count).toBe(11);
+        expect(store.generationOptions.transitionSmoothness).toBeUndefined();
+        expect(store.generationOptions.selectionVariety).toBeUndefined();
+        expect(store.generationOptions.rotation).toBeUndefined();
+
+        teardown();
+    });
+
     it("propagates a remote note edit into the displayed setlist", async () => {
         // Regression for the band report: a note edited on another device
         // showed up in the Songs catalog but not in the rolled setlist.
