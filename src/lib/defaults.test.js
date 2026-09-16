@@ -26,6 +26,14 @@ describe("default app config", () => {
         const normalized = normalizeAppConfig({ bandName: "Test Band" });
         expect(normalized.props.tuning.returnPenalty).toBe(2);
     });
+
+    it("clamps returnPenalty to its supported range", () => {
+        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: -1 } } }).props.tuning.returnPenalty).toBe(0);
+        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: 11 } } }).props.tuning.returnPenalty).toBe(10);
+        expect(normalizeAppConfig({ props: { tuning: { returnPenalty: "invalid" } } }).props.tuning.returnPenalty).toBe(
+            2,
+        );
+    });
 });
 
 const NICK = {

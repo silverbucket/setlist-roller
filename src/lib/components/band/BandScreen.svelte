@@ -326,7 +326,7 @@
                                     max={field.max}
                                     step={field.step || 1}
                                     value={store.configFieldValue(store.appConfig, field) ?? ""}
-                                    oninput={(e) => store.updateConfigField(field.path, Number(e.currentTarget.value))}
+                                    oninput={(e) => store.updateConfigField(field, e.currentTarget.value)}
                                 />
                             {:else}
                                 <input

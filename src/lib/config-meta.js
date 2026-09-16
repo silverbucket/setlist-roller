@@ -120,7 +120,7 @@ export const CONFIG_SECTIONS = [
                 min: 0,
                 max: 10,
                 description:
-                    "Extra cost for returning to a tuning used earlier in the set. Repeated returns cost progressively more; set to 0 to allow them freely.",
+                    "Extra cost for returning to a tuning used earlier in the set. Repeated returns cost progressively more; set to 0 to remove this extra return cost.",
             },
             {
                 path: "props.tuning.allowChangeOnLastSong",

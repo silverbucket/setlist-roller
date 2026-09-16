@@ -5,6 +5,7 @@ import {
     detectInstrumentSetChange,
     detectInstrumentSetChangeLite,
     inferPropKind,
+    normalizeValue,
 } from "./detection.js";
 import { scoreKeyTransition } from "./keys.js";
 import { deepMerge, toArray } from "./utils.js";
@@ -23,6 +24,11 @@ function normalizeLimitField(value, fallback) {
         return fallback;
     }
     return parsed < 0 ? -1 : parsed;
+}
+
+function normalizeReturnPenalty(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.min(10, Math.max(0, parsed)) : 0;
 }
 
 function clampFloat(value, fallback, minimum) {
@@ -1406,11 +1412,11 @@ class SetList {
     }
 
     _tuningKey(member, setup) {
-        return JSON.stringify([member, setup.instrument || "", setup.tuning ?? ""]);
+        return JSON.stringify([member, setup.instrument || "", normalizeValue(setup.tuning)]);
     }
 
     _scoreTuningReturn(state, prevItem, nextItem) {
-        const multiplier = Number(this._propConfig.tuning?.returnPenalty) || 0;
+        const multiplier = normalizeReturnPenalty(this._propConfig.tuning?.returnPenalty);
         if (multiplier <= 0) return 0;
 
         const previous = prevItem?.performance || {};
@@ -1419,7 +1425,13 @@ class SetList {
         return Object.keys(previous).reduce((score, member) => {
             const before = previous[member];
             const after = next[member];
-            if (!after || before.instrument !== after.instrument || before.tuning === after.tuning) return score;
+            if (
+                !after ||
+                before.instrument !== after.instrument ||
+                normalizeValue(before.tuning) === normalizeValue(after.tuning)
+            ) {
+                return score;
+            }
             const exits = state.tuningExitCounts?.[this._tuningKey(member, after)] || 0;
             return score + exits * multiplier * this._getPropWeight("tuning");
         }, 0);
@@ -1437,7 +1449,11 @@ class SetList {
             Object.keys(previous).forEach((member) => {
                 const before = previous[member];
                 const after = next[member];
-                if (after && before.instrument === after.instrument && before.tuning !== after.tuning) {
+                if (
+                    after &&
+                    before.instrument === after.instrument &&
+                    normalizeValue(before.tuning) !== normalizeValue(after.tuning)
+                ) {
                     const key = this._tuningKey(member, before);
                     tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
                 }
@@ -1652,11 +1668,11 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
     const tuningExitCounts = Object.create(null);
 
     function tuningKey(member, setup) {
-        return JSON.stringify([member, setup.instrument || "", setup.tuning ?? ""]);
+        return JSON.stringify([member, setup.instrument || "", normalizeValue(setup.tuning)]);
     }
 
     function scoreTuningReturn(prevItem, nextItem) {
-        const multiplier = Number(propConfig.tuning?.returnPenalty) || 0;
+        const multiplier = normalizeReturnPenalty(propConfig.tuning?.returnPenalty);
         if (!prevItem || multiplier <= 0) return 0;
 
         const previous = prevItem.performance || {};
@@ -1664,7 +1680,13 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
         return Object.keys(previous).reduce((score, member) => {
             const before = previous[member];
             const after = next[member];
-            if (!after || before.instrument !== after.instrument || before.tuning === after.tuning) return score;
+            if (
+                !after ||
+                before.instrument !== after.instrument ||
+                normalizeValue(before.tuning) === normalizeValue(after.tuning)
+            ) {
+                return score;
+            }
             return score + (tuningExitCounts[tuningKey(member, after)] || 0) * multiplier * getPropWeight("tuning");
         }, 0);
     }
@@ -1676,7 +1698,11 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
         Object.keys(previous).forEach((member) => {
             const before = previous[member];
             const after = next[member];
-            if (after && before.instrument === after.instrument && before.tuning !== after.tuning) {
+            if (
+                after &&
+                before.instrument === after.instrument &&
+                normalizeValue(before.tuning) !== normalizeValue(after.tuning)
+            ) {
                 const key = tuningKey(member, before);
                 tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
             }

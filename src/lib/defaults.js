@@ -330,6 +330,11 @@ export function normalizeAppConfig(config) {
         normalized.ui.dieColor = null;
     }
 
+    const returnPenalty = Number(normalized.props?.tuning?.returnPenalty);
+    normalized.props.tuning.returnPenalty = Number.isFinite(returnPenalty)
+        ? Math.min(10, Math.max(0, returnPenalty))
+        : DEFAULT_CONFIG_TEMPLATE.props.tuning.returnPenalty;
+
     return normalized;
 }
 

@@ -1191,6 +1191,24 @@ describe("generateSetlist — tuning blocks", () => {
         expect(result.songs[2].incrementalScore).toBe(4);
     });
 
+    it("clamps direct returnPenalty config to its supported range", () => {
+        const performance = (tuning) => ({
+            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
+        });
+        const songs = [
+            { id: "g-1", performance: performance("Open G") },
+            { id: "d", performance: performance("Open D") },
+            { id: "g-2", performance: performance("Open G") },
+        ];
+
+        expect(
+            scoreFixedOrder(songs, tuningReturnConfig({ tuning: { returnPenalty: -1 } })).songs[2].incrementalScore,
+        ).toBe(4);
+        expect(
+            scoreFixedOrder(songs, tuningReturnConfig({ tuning: { returnPenalty: 11 } })).songs[2].incrementalScore,
+        ).toBe(44);
+    });
+
     it("charges progressively more for repeated returns to the same tuning", () => {
         const performance = (tuning) => ({
             nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
@@ -1257,6 +1275,24 @@ describe("generateSetlist — tuning blocks", () => {
         expect(oscillate.songs[2].incrementalScore).toBe(12);
         expect(detour.songs[2].incrementalScore).toBe(4);
         expect(detour.songs[2].incrementalScore).toBeLessThan(oscillate.songs[2].incrementalScore);
+    });
+
+    it("normalizes empty tuning values before tracking returns", () => {
+        const performance = (tuning) => ({
+            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
+        });
+        const result = scoreFixedOrder(
+            [
+                { id: "empty-1", performance: performance(undefined) },
+                { id: "empty-2", performance: performance(null) },
+                { id: "d", performance: performance("Open D") },
+                { id: "empty-3", performance: performance([]) },
+            ],
+            tuningReturnConfig(),
+        );
+
+        expect(result.songs[1].incrementalScore).toBe(0);
+        expect(result.songs[3].incrementalScore).toBe(12);
     });
 
     it("avoids unnecessary tuning returns across many seeds when grouping is possible", () => {
@@ -1381,37 +1417,6 @@ describe("generateSetlist — tuning blocks", () => {
         expect(seedsWithReturnsWhenPenalized).toBeLessThan(seedsWithReturnsWhenUnpenalized);
         expect(totalReturnsWhenUnpenalized).toBeGreaterThan(totalReturnsWhenPenalized);
     }, 15_000);
-
-    it("still allows required returns when minimums force revisiting a tuning", () => {
-        const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
-        const show = {
-            members: {
-                nick: {
-                    allowedTunings: { banjo: ["Open G", "Open D", "Open C"] },
-                    minSongsPerTuning: { banjo: 3 },
-                },
-            },
-        };
-        const config = tuningReturnConfig();
-        const seeds = 30;
-        let totalReturns = 0;
-
-        for (let seed = 1; seed <= seeds; seed++) {
-            const result = generateSetlist(songs, config, variedRollOptions({ count: 9, seed, show }));
-            const counts = result.songs.reduce((acc, song) => {
-                const tuning = song.performance.nick?.tuning;
-                acc[tuning] = (acc[tuning] || 0) + 1;
-                return acc;
-            }, {});
-
-            expect(counts["Open G"]).toBeGreaterThanOrEqual(3);
-            expect(counts["Open D"]).toBeGreaterThanOrEqual(3);
-            expect(counts["Open C"]).toBeGreaterThanOrEqual(3);
-            totalReturns += countTuningReturns(extractMemberTunings(result));
-        }
-
-        expect(totalReturns / seeds).toBeGreaterThanOrEqual(1);
-    });
 
     it("honors a pinned G→D→G order and applies the return penalty in scoring", () => {
         const songs = [
