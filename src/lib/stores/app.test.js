@@ -483,6 +483,71 @@ describe("keep-apart cascade guard", () => {
             teardown();
         });
 
+        it("saveSong lists every failed partner in the warning toast", async () => {
+            const repo = buildRepo();
+            repo.putSong = vi.fn(async (s) => {
+                if (s.id === "s2" || s.id === "s3") throw new Error("offline");
+                return s;
+            });
+            const { store, teardown } = await bootStore(repo, { settled: true });
+
+            for (const [id, name] of [
+                ["s1", "Alpha"],
+                ["s2", "Beta"],
+                ["s3", "Gamma"],
+                ["s4", "Delta"],
+            ]) {
+                repo.fireChange({ relativePath: `songs/${id}`, origin: "remote", newValue: { id, name } });
+            }
+            await settle();
+
+            store.openSong(store.songs.find((s) => s.id === "s1"));
+            store.updateSongField("keepApartFrom", ["s2", "s3", "s4"]);
+            await store.saveSong();
+
+            expect(repo.putSong).toHaveBeenCalledTimes(4);
+            expect(store.songs.find((s) => s.id === "s4")?.keepApartFrom).toEqual(["s1"]);
+            expect(store.toastMessages.at(-1)?.message).toContain('"Beta"');
+            expect(store.toastMessages.at(-1)?.message).toContain('"Gamma"');
+            teardown();
+        });
+
+        it("deleteSong keeps the primary delete and reports a failed partner write", async () => {
+            const repo = buildRepo();
+            repo.deleteSong = vi.fn(async () => {});
+            repo.putSong = vi.fn(async (s) => {
+                if (s.id === "s2") throw new Error("offline");
+                return s;
+            });
+            const { store, teardown } = await bootStore(repo, { settled: true });
+
+            for (const [id, name, keepApartFrom] of [
+                ["s1", "Alpha", ["s2", "s3"]],
+                ["s2", "Beta", ["s1"]],
+                ["s3", "Gamma", ["s1"]],
+            ]) {
+                repo.fireChange({
+                    relativePath: `songs/${id}`,
+                    origin: "remote",
+                    newValue: { id, name, keepApartFrom },
+                });
+            }
+            await settle();
+
+            const pending = store.deleteSong({ id: "s1", name: "Alpha", keepApartFrom: ["s2", "s3"] });
+            store.resolveConfirm(true);
+            await pending;
+
+            expect(repo.deleteSong).toHaveBeenCalledWith("s1");
+            expect(store.songs.find((s) => s.id === "s1")).toBeUndefined();
+            expect(repo.putSong).toHaveBeenCalledTimes(2);
+            expect(store.songs.find((s) => s.id === "s3")?.keepApartFrom).toEqual([]);
+            expect(store.songs.find((s) => s.id === "s2")?.keepApartFrom).toEqual(["s1"]);
+            expect(store.toastMessages.at(-1)).toMatchObject({ tone: "warning" });
+            expect(store.toastMessages.at(-1)?.message).toContain('"Beta"');
+            teardown();
+        });
+
         it("saveSong cascades keep-apart links once settled", async () => {
             const repo = buildRepo();
             repo.putSong = vi.fn(async (s) => s);
