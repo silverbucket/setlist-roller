@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    DEFAULT_APP_CONFIG,
     memberDefaultRig,
     normalizeSongRecord,
     resolveSongMembers,
@@ -7,6 +8,12 @@ import {
     songsReferencingKeepApart,
     syncKeepApartLinks,
 } from "./defaults.js";
+
+describe("default app config", () => {
+    it("discourages returning to a tuning without forbidding it", () => {
+        expect(DEFAULT_APP_CONFIG.props.tuning.returnPenalty).toBe(2);
+    });
+});
 
 const NICK = {
     instruments: [

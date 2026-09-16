@@ -755,6 +755,7 @@ class SetList {
             propChangeCounts: zeroMap(this._propNames),
             propStreaks: zeroMap(this._propNames),
             changeTotals: zeroMap(this._propNames),
+            tuningExitCounts: Object.create(null),
             usageCounts: { instruments: {}, tunings: {} },
             remainingPotentialCounts: {
                 instruments: {
@@ -994,9 +995,9 @@ class SetList {
             };
             const prevItem = finalizedItems[finalizedItems.length - 1] || null;
             const propTransition = this._scoreConfiguredProps(prevItem, variant);
-            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem);
+            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem, variant);
             const positionScore = this._scorePosition(variant, position);
-            const transitionScore = propTransition.score;
+            const transitionScore = propTransition.score + this._scoreTuningReturn(state, prevItem, variant);
             const keyFlow = this._scoreKeyFlow(prevItem, variant, state.keyFifthsDir);
             const incrementalScore = transitionScore + positionScore.score + this._songBias(variant.id) + keyFlow.score;
 
@@ -1028,6 +1029,7 @@ class SetList {
                 propChangeCounts: nextPropState.propChangeCounts,
                 propStreaks: nextPropState.propStreaks,
                 changeTotals: nextPropState.changeTotals,
+                tuningExitCounts: nextPropState.tuningExitCounts,
                 keyFifthsDir: keyFlow.dir,
             };
         });
@@ -1123,6 +1125,7 @@ class SetList {
                 propChangeCounts: variantState.propChangeCounts,
                 propStreaks: variantState.propStreaks,
                 changeTotals: variantState.changeTotals,
+                tuningExitCounts: variantState.tuningExitCounts,
                 usageCounts: variantState.usageCounts,
                 remainingPotentialCounts: variantState.remainingPotentialCounts,
                 keyFifthsDir: variantState.keyFifthsDir ?? 0,
@@ -1162,7 +1165,7 @@ class SetList {
                 continue;
             }
 
-            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem);
+            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem, variant);
             const nextUsageCounts = this._updateUsageCounts(state.usageCounts, variant);
             if (!remainingGroupCapabilitiesById && this._minimumGroups.length) {
                 remainingGroupCapabilitiesById = Object.create(null);
@@ -1185,7 +1188,7 @@ class SetList {
             );
 
             const positionScore = this._scorePositionLite(variant, position);
-            const transitionScore = propTransition.score;
+            const transitionScore = propTransition.score + this._scoreTuningReturn(state, prevItem, variant);
             const chaosAdjustment = this._chaosAdjustment(prevItem, variant);
             const keyFlow = this._scoreKeyFlow(prevItem, variant, state.keyFifthsDir);
 
@@ -1199,6 +1202,7 @@ class SetList {
                         propChangeCounts: nextPropState.propChangeCounts,
                         propStreaks: nextPropState.propStreaks,
                         changeTotals: nextPropState.changeTotals,
+                        tuningExitCounts: nextPropState.tuningExitCounts,
                         usageCounts: nextUsageCounts,
                         remainingPotentialCounts: nextRemainingPotentialCounts,
                         incrementalScore: fbScore,
@@ -1224,6 +1228,7 @@ class SetList {
                     propChangeCounts: nextPropState.propChangeCounts,
                     propStreaks: nextPropState.propStreaks,
                     changeTotals: nextPropState.changeTotals,
+                    tuningExitCounts: nextPropState.tuningExitCounts,
                     usageCounts: nextUsageCounts,
                     remainingPotentialCounts: nextRemainingPotentialCounts,
                     incrementalScore,
@@ -1400,10 +1405,44 @@ class SetList {
         return true;
     }
 
-    _advancePropState(state, propChanges, prevItem) {
+    _tuningKey(member, setup) {
+        return JSON.stringify([member, setup.instrument || "", setup.tuning ?? ""]);
+    }
+
+    _scoreTuningReturn(state, prevItem, nextItem) {
+        const multiplier = Number(this._propConfig.tuning?.returnPenalty) || 0;
+        if (multiplier <= 0) return 0;
+
+        const previous = prevItem?.performance || {};
+        const next = nextItem?.performance || {};
+
+        return Object.keys(previous).reduce((score, member) => {
+            const before = previous[member];
+            const after = next[member];
+            if (!after || before.instrument !== after.instrument || before.tuning === after.tuning) return score;
+            const exits = state.tuningExitCounts?.[this._tuningKey(member, after)] || 0;
+            return score + exits * multiplier * this._getPropWeight("tuning");
+        }, 0);
+    }
+
+    _advancePropState(state, propChanges, prevItem, nextItem) {
         const propChangeCounts = { ...state.propChangeCounts };
         const propStreaks = { ...state.propStreaks };
         const changeTotals = { ...state.changeTotals };
+        const tuningExitCounts = { ...(state.tuningExitCounts || {}) };
+
+        if (prevItem && propChanges.tuning?.changed) {
+            const previous = prevItem.performance || {};
+            const next = nextItem?.performance || {};
+            Object.keys(previous).forEach((member) => {
+                const before = previous[member];
+                const after = next[member];
+                if (after && before.instrument === after.instrument && before.tuning !== after.tuning) {
+                    const key = this._tuningKey(member, before);
+                    tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
+                }
+            });
+        }
 
         for (let i = 0; i < this._propNames.length; i++) {
             const propName = this._propNames[i];
@@ -1427,6 +1466,7 @@ class SetList {
             propChangeCounts,
             propStreaks,
             changeTotals,
+            tuningExitCounts,
         };
     }
 
@@ -1609,6 +1649,39 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
     let coverCount = 0;
     let instrumentalCount = 0;
     let keyDir = 0;
+    const tuningExitCounts = Object.create(null);
+
+    function tuningKey(member, setup) {
+        return JSON.stringify([member, setup.instrument || "", setup.tuning ?? ""]);
+    }
+
+    function scoreTuningReturn(prevItem, nextItem) {
+        const multiplier = Number(propConfig.tuning?.returnPenalty) || 0;
+        if (!prevItem || multiplier <= 0) return 0;
+
+        const previous = prevItem.performance || {};
+        const next = nextItem.performance || {};
+        return Object.keys(previous).reduce((score, member) => {
+            const before = previous[member];
+            const after = next[member];
+            if (!after || before.instrument !== after.instrument || before.tuning === after.tuning) return score;
+            return score + (tuningExitCounts[tuningKey(member, after)] || 0) * multiplier * getPropWeight("tuning");
+        }, 0);
+    }
+
+    function recordTuningExits(prevItem, nextItem) {
+        if (!prevItem) return;
+        const previous = prevItem.performance || {};
+        const next = nextItem.performance || {};
+        Object.keys(previous).forEach((member) => {
+            const before = previous[member];
+            const after = next[member];
+            if (after && before.instrument === after.instrument && before.tuning !== after.tuning) {
+                const key = tuningKey(member, before);
+                tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
+            }
+        });
+    }
 
     fixedSongs.forEach((song, index) => {
         const prevItem = items[items.length - 1] || null;
@@ -1619,7 +1692,8 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
                 : { score: 0, dir: keyDir };
         keyDir = keyFlow.dir;
 
-        const incrementalScore = propTransition.score + keyFlow.score;
+        const incrementalScore = propTransition.score + scoreTuningReturn(prevItem, song) + keyFlow.score;
+        recordTuningExits(prevItem, song);
         totalScore += incrementalScore;
         coverCount += Number(Boolean(song.cover));
         instrumentalCount += Number(Boolean(song.instrumental));

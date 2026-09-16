@@ -47,6 +47,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
             kind: "instrumentField",
             field: "tuning",
             minStreak: 1,
+            returnPenalty: 2,
             allowChangeOnLastSong: true,
         },
         capo: {

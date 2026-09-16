@@ -981,6 +981,72 @@ describe("generateSetlist — minStreak enforcement", () => {
     });
 });
 
+describe("generateSetlist — tuning blocks", () => {
+    it("prefers grouping tuning songs instead of returning to a tuning", () => {
+        const tuningSong = (name, tuning, positionPreference) => ({
+            ...makeSong(name, {
+                members: {
+                    nick: {
+                        instruments: [{ name: "banjo", tuning: [tuning], capo: 0, picking: [] }],
+                    },
+                },
+            }),
+            positionPreference,
+        });
+        const songs = [
+            tuningSong("Open G one", "Open G", "anywhere"),
+            tuningSong("Open D", "Open D", "anywhere"),
+            tuningSong("Open G two", "Open G", "anywhere"),
+        ];
+        const config = makeConfig({
+            props: {
+                tuning: {
+                    kind: "instrumentField",
+                    field: "tuning",
+                    minStreak: 1,
+                    returnPenalty: 2,
+                    allowChangeOnLastSong: true,
+                },
+            },
+        });
+
+        for (let seed = 1; seed <= 10; seed++) {
+            const result = generateSetlist(songs, config, deterministicOptions({ count: 3, seed, setShape: "none" }));
+            const tunings = result.songs.map((song) => song.performance.nick.tuning);
+            expect(tunings).not.toEqual(["Open G", "Open D", "Open G"]);
+            expect(tunings).not.toEqual(["Open D", "Open G", "Open D"]);
+        }
+    });
+
+    it("allows a return when the song order requires it", () => {
+        const performance = (tuning) => ({
+            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
+        });
+        const config = makeConfig({
+            props: {
+                tuning: {
+                    kind: "instrumentField",
+                    field: "tuning",
+                    minStreak: 1,
+                    returnPenalty: 2,
+                    allowChangeOnLastSong: true,
+                },
+            },
+        });
+        const result = scoreFixedOrder(
+            [
+                { id: "g-1", name: "G first", performance: performance("Open G") },
+                { id: "d", name: "D", performance: performance("Open D") },
+                { id: "g-2", name: "G return", performance: performance("Open G") },
+            ],
+            config,
+        );
+
+        expect(result.songs).toHaveLength(3);
+        expect(result.songs[2].incrementalScore).toBe(12);
+    });
+});
+
 // ===================================================================
 // Bug #6 regression: maxChanges enforced on last song
 // ===================================================================
