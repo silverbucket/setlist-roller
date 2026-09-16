@@ -1039,7 +1039,8 @@
     }
 
     .file-input {
-        font-size: 0.85rem;
+        /* iOS zooms inputs <16px on focus — keep at 16px to prevent zoom. See app.css. */
+        font-size: 16px;
         color: var(--muted, #617086);
     }
 

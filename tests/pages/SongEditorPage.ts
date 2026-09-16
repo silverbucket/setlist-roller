@@ -16,6 +16,8 @@ export class SongEditorPage {
     readonly energySelect: Locator;
     readonly duplicateButton: Locator;
     readonly deleteButton: Locator;
+    readonly keepApartAddButton: Locator;
+    readonly keepApartPicker: Locator;
 
     constructor(page: Page) {
         this.page = page;
@@ -30,6 +32,10 @@ export class SongEditorPage {
         this.energySelect = this.overlay.locator("label").filter({ hasText: "Energy" }).locator("select");
         this.duplicateButton = this.overlay.getByRole("button", { name: "Duplicate song" });
         this.deleteButton = this.overlay.getByRole("button", { name: "Delete song" });
+        this.keepApartAddButton = this.overlay.getByRole("button", { name: "+ Add song" });
+        // The picker is a sibling of .editor-overlay, not a child, so it is
+        // located from the page rather than from the overlay.
+        this.keepApartPicker = page.locator(".picker-dialog");
     }
 
     async waitForVisible() {
@@ -128,5 +134,35 @@ export class SongEditorPage {
         const input = sec.getByPlaceholder("Name the new instrument");
         await input.fill(value);
         await input.press("Enter");
+    }
+
+    /** A "Keep apart from" chip for the named song. */
+    keepApartChip(name: string): Locator {
+        return this.overlay.locator(".keep-apart-chip").filter({ hasText: name });
+    }
+
+    async openKeepApartPicker() {
+        await this.keepApartAddButton.click();
+        await expect(this.keepApartPicker).toBeVisible();
+    }
+
+    /**
+     * Assert the picker is the element that actually receives pointer
+     * input at its centre. `toBeVisible()` passes even when another
+     * fixed overlay is stacked on top, which is exactly how the picker
+     * shipped hidden behind the editor.
+     */
+    async expectKeepApartPickerOnTop() {
+        const onTop = await this.keepApartPicker.evaluate((dialog) => {
+            const r = dialog.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return hit !== null && dialog.contains(hit);
+        });
+        expect(onTop, "keep-apart picker is covered by another element").toBe(true);
+    }
+
+    async pickKeepApart(name: string) {
+        await this.keepApartPicker.getByRole("button", { name, exact: true }).click();
+        await expect(this.keepApartPicker).toBeHidden();
     }
 }

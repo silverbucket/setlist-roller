@@ -347,3 +347,77 @@ test.describe("Song editor — members & instruments", () => {
         await expect(editor.overlay.locator(".member-card")).toHaveCount(0);
     });
 });
+
+test.describe("Song editor — keep apart from", () => {
+    test("picker opens on top of the editor and adds a song", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: {
+                    a: makeSong({ id: "a", name: "Alpha" }),
+                    b: makeSong({ id: "b", name: "Bravo" }),
+                    c: makeSong({ id: "c", name: "Charlie" }),
+                },
+            }),
+        );
+        await app.goto();
+        // Keep-apart writes back-references onto partner songs, and saveSong
+        // refuses to cascade until the first sync has settled.
+        await app.waitForSynced();
+        await new AppShell(page).gotoSongs();
+
+        const songs = new SongsPage(page);
+        const editor = new SongEditorPage(page);
+        await songs.openSong("Alpha");
+        await editor.waitForVisible();
+
+        await editor.openKeepApartPicker();
+        // Regression: the picker used to render at a lower z-index than the
+        // editor overlay, so clicking "+ Add song" appeared to do nothing.
+        await editor.expectKeepApartPickerOnTop();
+
+        // The song being edited must not offer itself as a candidate.
+        await expect(editor.keepApartPicker.getByRole("button", { name: "Alpha", exact: true })).toHaveCount(0);
+
+        await editor.pickKeepApart("Bravo");
+        await expect(editor.keepApartChip("Bravo")).toBeVisible();
+
+        // Already-chosen songs drop out of the candidate list.
+        await editor.openKeepApartPicker();
+        await expect(editor.keepApartPicker.getByRole("button", { name: "Bravo", exact: true })).toHaveCount(0);
+        await editor.pickKeepApart("Charlie");
+
+        await editor.save();
+        const state = await app.getState();
+        const alpha = state.songs.find((s: SeedSong) => s.id === "a");
+        expect(alpha.keepApartFrom).toEqual(["b", "c"]);
+    });
+
+    test("removing a chip clears the rule", async ({ page, app }) => {
+        await app.seed(
+            buildSeed({
+                songs: {
+                    a: makeSong({ id: "a", name: "Alpha", keepApartFrom: ["b"] }),
+                    b: makeSong({ id: "b", name: "Bravo" }),
+                },
+            }),
+        );
+        await app.goto();
+        // Keep-apart writes back-references onto partner songs, and saveSong
+        // refuses to cascade until the first sync has settled.
+        await app.waitForSynced();
+        await new AppShell(page).gotoSongs();
+
+        const songs = new SongsPage(page);
+        const editor = new SongEditorPage(page);
+        await songs.openSong("Alpha");
+        await editor.waitForVisible();
+
+        await expect(editor.keepApartChip("Bravo")).toBeVisible();
+        await editor.keepApartChip("Bravo").getByRole("button", { name: "Stop keeping apart from Bravo" }).click();
+        await expect(editor.keepApartChip("Bravo")).toHaveCount(0);
+
+        await editor.save();
+        const state = await app.getState();
+        expect(state.songs.find((s: SeedSong) => s.id === "a").keepApartFrom).toEqual([]);
+    });
+});
