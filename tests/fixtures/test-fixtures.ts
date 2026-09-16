@@ -506,20 +506,16 @@ export function buildSeed(overrides: Partial<AppSeed> = {}): AppSeed {
         },
         show: {},
         props: {
-            tuning: { kind: "instrumentField", field: "tuning", minStreak: 2, allowChangeOnLastSong: true },
-            capo: { kind: "instrumentDelta", field: "capo", minStreak: 2, allowChangeOnLastSong: true },
+            tuning: { kind: "instrumentField", field: "tuning" },
+            capo: { kind: "instrumentDelta", field: "capo" },
             instruments: {
                 kind: "instrumentSet",
                 weightKey: "instrument",
-                minStreak: 2,
-                allowChangeOnLastSong: true,
             },
             picking: {
                 kind: "instrumentField",
                 field: "picking",
                 weightKey: "technique",
-                minStreak: 1,
-                allowChangeOnLastSong: true,
             },
         },
     };

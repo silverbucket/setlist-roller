@@ -250,14 +250,8 @@ export function createAppStore(repo) {
             keyFlow: false,
             includeUnpracticed: false,
             setShape: "build",
-            rotation: "balanced",
-            transitionSmoothness: "balanced",
-            selectionVariety: 50,
+            songMix: "balanced",
             seed: "",
-            randomness: {
-                temperature: source.general?.randomness?.temperature ?? 0.85,
-                finalChoicePool: source.general?.randomness?.finalChoicePool ?? 12
-            },
             show: {
                 members: clone(source.show?.members || {})
             }
@@ -361,7 +355,18 @@ export function createAppStore(repo) {
         const fallback = defaultGenerationOptions(DEFAULT_APP_CONFIG);
         if (typeof localStorage === "undefined") return fallback;
         const stored = tryParseJson(localStorage.getItem(storageKey("ui-options")), null);
-        return stored ? deepMerge(fallback, stored) : fallback;
+        return stored ? deepMerge(fallback, migrateGenerationOptions(stored)) : fallback;
+    }
+
+    /**
+     * Options saved by older builds carried knobs that no longer exist. Keep
+     * what still maps (the old "rotation" is today's song mix) and drop the
+     * rest so they don't linger in storage forever.
+     */
+    function migrateGenerationOptions(stored) {
+        const { rotation, transitionSmoothness, selectionVariety, randomness, ...rest } = stored || {};
+        if (rest.songMix === undefined && rotation) rest.songMix = rotation;
+        return rest;
     }
 
     function persistGenerationOptions() {
@@ -404,6 +409,7 @@ export function createAppStore(repo) {
         }
         const scored = scoreFixedOrder(fat, appConfig || DEFAULT_APP_CONFIG, {
             keyFlow: generationOptions?.keyFlow,
+            show: generationOptions?.show,
         });
         const pinnedIds = new Set(fat.filter((song) => song.pinned).map((song) => song.id));
         return {
@@ -1358,7 +1364,6 @@ export function createAppStore(repo) {
             persistCurrentSetlist();
             if (
                 result.summary?.minimumsRelaxed ||
-                result.summary?.transitionRulesRelaxed ||
                 !validateConstraintMinimums(result)
             ) {
                 toastWarn("Couldn't meet every demand, but it got close.");

@@ -265,23 +265,6 @@ test.describe("Roll screen — settings drawer", () => {
         await expect(roll.settingsDrawer).toHaveJSProperty("open", false);
     });
 
-    test("variety slider is reflected in store config", async ({ page, app }) => {
-        await app.seed(seedWithCatalog());
-        await app.goto();
-        await app.waitForReady();
-        await new AppShell(page).gotoRoll();
-
-        const roll = new RollPage(page);
-        await roll.openSettings();
-        await roll.activateTab("chaos");
-        // Move slider to a known value via fill (range inputs accept fill in
-        // Playwright). Use a value that maps cleanly to a temperature.
-        await roll.varietySlider.fill("80");
-        const state = await app.getState();
-        // varietyToTemp(80) = 0.3 + 0.8 * 1.7 = 1.66 (approx)
-        expect(state.appConfig).toBeTruthy();
-    });
-
     test("seed input value persists after closing settings", async ({ page, app }) => {
         await app.seed(seedWithCatalog());
         await app.goto();

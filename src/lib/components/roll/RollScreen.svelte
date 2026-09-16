@@ -133,6 +133,21 @@
     return (store.generationOptions.show?.members?.[memberName]?.allowedTunings?.[instName] || []).length;
   }
 
+  // A member can only change gear mid-set when more than one instrument or
+  // tuning is in play for this roll. Unselected chips mean "no restriction",
+  // so an empty selection counts every option the member has.
+  function memberChangesInPlay(memberName) {
+    const instruments = store.bandMembers?.[memberName]?.instruments || [];
+    const selectedInstruments = selectedInstrumentCount(memberName);
+    const instrumentsInPlay = selectedInstruments || instruments.length;
+    if (instrumentsInPlay > 1) return true;
+    return instruments.some((inst) => {
+      if (selectedInstruments && !(store.generationOptions.show?.members?.[memberName]?.allowedInstruments || []).includes(inst.name)) return false;
+      const tuningsInPlay = selectedTuningCount(memberName, inst.name) || (inst.tunings || []).length;
+      return tuningsInPlay > 1;
+    });
+  }
+
   let settingsTab = $state("constraints");
   let hasConstraints = $derived(membersWithChoices().length > 0);
   // anxietyLevel: pre-computed by the generator, label from anxiety lib
@@ -395,22 +410,14 @@
           </label>
           <label class="adv-field">
             <span>Song mix</span>
-            <select value={store.generationOptions.rotation || "balanced"} onchange={(e) => store.updateGenerationField("rotation", e.currentTarget.value)}>
+            <select value={store.generationOptions.songMix || "balanced"} onchange={(e) => store.updateGenerationField("songMix", e.currentTarget.value)}>
               <option value="hits">Greatest hits</option>
               <option value="balanced">Balanced</option>
               <option value="deep">Dig deeper</option>
+              <option value="surprise">Surprise me</option>
             </select>
           </label>
         </div>
-
-        <label class="adv-field">
-          <span>Transition smoothness</span>
-          <select value={store.generationOptions.transitionSmoothness || "balanced"} onchange={(e) => store.updateGenerationField("transitionSmoothness", e.currentTarget.value)}>
-            <option value="smooth">Smooth</option>
-            <option value="balanced">Balanced</option>
-            <option value="adventurous">Anything goes</option>
-          </select>
-        </label>
 
         <div class="quick-row">
           <div class="adv-field">
@@ -450,26 +457,6 @@
               />
               <span>No limit</span>
             </label>
-          </div>
-        </div>
-
-        <div class="variety-field">
-          <div class="variety-header">
-            <span class="variety-label">Selection variety</span>
-            <span class="variety-hint">{store.generationOptions.selectionVariety < 30 ? "Reliable picks" : store.generationOptions.selectionVariety > 70 ? "More surprises" : "Balanced"}</span>
-          </div>
-          <input
-            class="variety-slider"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value={store.generationOptions.selectionVariety ?? 50}
-            oninput={(e) => store.updateGenerationField("selectionVariety", Number(e.currentTarget.value))}
-          />
-          <div class="variety-labels">
-            <span>Reliable picks</span>
-            <span>More surprises</span>
           </div>
         </div>
 
@@ -560,6 +547,23 @@
                   </div>
                 {/if}
               {/each}
+            {/if}
+
+            {#if memberChangesInPlay(memberName)}
+              <label class="adv-field gear-changes">
+                <span>Changes between songs</span>
+                <select
+                  value={store.generationOptions.show?.members?.[memberName]?.gearChanges || "minimize"}
+                  onchange={(e) => {
+                    store.ensureMemberShowConfig(memberName);
+                    store.updateGenerationField(`show.members.${memberName}.gearChanges`, e.currentTarget.value);
+                  }}
+                >
+                  <option value="avoid">Avoid — only when there's no other way</option>
+                  <option value="minimize">Keep to a minimum</option>
+                  <option value="free">Don't care</option>
+                </select>
+              </label>
             {/if}
           </div>
         {/each}
@@ -1222,6 +1226,10 @@
     gap: 0.65rem;
   }
 
+  .gear-changes {
+    margin-top: 0.5rem;
+  }
+
   .adv-field select {
     width: 100%;
     min-height: 2.5rem;
@@ -1232,75 +1240,6 @@
     color: var(--ink);
     font: inherit;
     font-size: 16px;
-  }
-
-  .variety-field {
-    display: grid;
-    gap: 0.3rem;
-  }
-
-  .variety-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-
-  .variety-label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: var(--muted, #8a95a5);
-  }
-
-  .variety-hint {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--accent, #e15b37);
-  }
-
-  .variety-slider {
-    width: 100%;
-    height: 6px;
-    -webkit-appearance: none;
-    appearance: none;
-    border-radius: 3px;
-    background: var(--line);
-    outline: none;
-    cursor: pointer;
-  }
-
-  .variety-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--accent, #e15b37);
-    border: 2px solid var(--paper-strong);
-    box-shadow: var(--shadow-sm);
-    cursor: pointer;
-  }
-
-  .variety-slider::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--accent, #e15b37);
-    border: 2px solid var(--paper-strong);
-    box-shadow: var(--shadow-sm);
-    cursor: pointer;
-  }
-
-  .variety-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: var(--muted, #8a95a5);
-  }
-
-  .field-hint {
-    font-weight: 500;
-    color: var(--muted, #8a95a5);
-    font-size: 0.72rem;
   }
 
   .adv-field {

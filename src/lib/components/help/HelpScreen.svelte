@@ -49,8 +49,9 @@
     <section class="help-section">
         <h2>Tweaking the results</h2>
         <ul class="tips">
-            <li><strong>Constraints</strong> — if a member has multiple instruments or tunings, you can limit which ones to include in a setlist.</li>
-            <li><strong>Variety slider</strong> — controls how adventurous the algorithm gets. Low = predictable, high = spicy.</li>
+            <li><strong>Demands</strong> — if a member has multiple instruments or tunings, limit which ones are in play tonight, and say how much that member minds changing between songs: avoid it, keep it to a minimum, or don't care. This is the main lever for tuning and instrument changes.</li>
+            <li><strong>Set shape</strong> — the energy arc of the set, using each song's energy rating.</li>
+            <li><strong>Song mix</strong> — how strongly play priority steers which songs get picked, from greatest hits to deep cuts, or "surprise me" for luck-heavy rolls.</li>
             <li><strong>Max covers / instrumentals</strong> — cap how many of each type end up in the set.</li>
         </ul>
     </section>

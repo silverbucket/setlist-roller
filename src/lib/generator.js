@@ -1,11 +1,11 @@
-import { computeAnxiety, scoreAnxietyPressure } from "./anxiety.js";
+import { computeAnxiety } from "./anxiety.js";
+import { normalizeGearChanges } from "./defaults.js";
 import {
     detectFieldChange,
     detectFieldChangeLite,
     detectInstrumentSetChange,
     detectInstrumentSetChangeLite,
     inferPropKind,
-    normalizeValue,
 } from "./detection.js";
 import { scoreKeyTransition } from "./keys.js";
 import { deepMerge, toArray } from "./utils.js";
@@ -26,9 +26,32 @@ function normalizeLimitField(value, fallback) {
     return parsed < 0 ? -1 : parsed;
 }
 
-function normalizeReturnPenalty(value) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.min(10, Math.max(0, parsed)) : 0;
+/**
+ * Per-member gear-change preference → multiplier on the base transition
+ * weights. "avoid" makes a change for that member cost more than any
+ * other single scoring term, so the roller only does it when the catalog
+ * leaves no choice; "free" makes their changes invisible to the roller.
+ */
+const GEAR_CHANGE_MULTIPLIERS = { avoid: 6, minimize: 1.5, free: 0 };
+
+export function gearChangeMultiplier(level) {
+    return GEAR_CHANGE_MULTIPLIERS[normalizeGearChanges(level)];
+}
+
+/**
+ * Song-mix presets: how strongly play priority steers selection, and how
+ * much per-song luck is mixed in. "Must play" songs are guaranteed a slot
+ * separately (see _guaranteedIds), so they carry only the "prefer" pull.
+ */
+const SONG_MIX_PRESETS = {
+    hits: { jitter: 2, prefer: -16, normal: 2, rest: 30 },
+    balanced: { jitter: 3, prefer: -8, normal: 0, rest: 24 },
+    deep: { jitter: 4, prefer: -2, normal: -4, rest: 16 },
+    surprise: { jitter: 10, prefer: -4, normal: 0, rest: 8 },
+};
+
+export function normalizeSongMix(value) {
+    return Object.hasOwn(SONG_MIX_PRESETS, value) ? value : "balanced";
 }
 
 function clampFloat(value, fallback, minimum) {
@@ -37,10 +60,6 @@ function clampFloat(value, fallback, minimum) {
         return fallback;
     }
     return Math.max(minimum, parsed);
-}
-
-function clampUnit(value) {
-    return Math.max(0, Math.min(1, value));
 }
 
 function merge(left, right) {
@@ -260,7 +279,11 @@ class SetList {
         this._songs = new SongsCatalog(songs);
         this._propNames = Object.keys(this._config.props || {});
         this._propConfig = this._config.props || {};
-        this._weights = merge(DEFAULT_WEIGHTS, this._config.general?.weighting || {});
+        // Base transition weights are fixed. Older configs may still carry
+        // general.weighting from the removed Transition Costs screen; honoring
+        // it would let a hidden, uneditable value override the per-member
+        // gear-change level the user actually sets.
+        this._weights = { ...DEFAULT_WEIGHTS };
         this._options = this._normalizeOptions(options);
         this._pinnedPositions = new Map(
             (this._options.pinnedSongs || [])
@@ -270,18 +293,13 @@ class SetList {
         this._pinnedPositionById = new Map(
             Array.from(this._pinnedPositions.entries()).map(([position, id]) => [id, position]),
         );
-        const smoothnessScale =
-            { smooth: 1.75, balanced: 1, adventurous: 0.35 }[this._options.transitionSmoothness] ?? 1;
-        ["tuning", "capo", "instrument", "technique", "keyFlow"].forEach((key) => {
-            this._weights[key] = (this._weights[key] ?? DEFAULT_WEIGHTS[key]) * smoothnessScale;
-        });
         this._keyFlowEnabled = Boolean(this._options.keyFlow);
         this._show = deepMerge(this._config.show || {}, this._options.show || {});
+        this._memberMultipliers = buildMemberMultipliers(this._show);
         this._seed = this._normalizeSeed(this._options.seed);
         this._rng = createRng(this._seed);
         this._randomness = merge(DEFAULT_RANDOMNESS, this._config.general?.randomness || {});
         this._randomness = merge(this._randomness, this._options.randomness || {});
-        this._chaosLevel = clampUnit((clampFloat(this._randomness.temperature, 0.85, 0.01) - 0.3) / 1.7);
         if (this._options.fixedSongIds) {
             const idSet = new Set(this._options.fixedSongIds);
             this._catalog = this._songs.all().filter((s) => idSet.has(s.id));
@@ -293,6 +311,21 @@ class SetList {
             this._count = Math.min(this._options.count, this._catalog.length);
         }
         this._songsById = new Map(this._catalog.map((song) => [String(song.id), song]));
+        // Pins without a position ("play this tonight, anywhere") and
+        // must-play songs are guaranteed a slot: the beam never lets the
+        // remaining positions drop below the number still unplaced. This is
+        // a capacity rule, not a score, so it doesn't push them to the front.
+        // With fixedSongIds every song is in by construction.
+        this._guaranteedIds = new Set();
+        if (!this._options.fixedSongIds) {
+            for (const pin of this._options.pinnedSongs || []) {
+                const id = String(pin.id);
+                if (!this._pinnedPositionById.has(id) && this._songsById.has(id)) this._guaranteedIds.add(id);
+            }
+            for (const song of this._catalog) {
+                if (song.playPriority === "must") this._guaranteedIds.add(String(song.id));
+            }
+        }
         // When appending to an existing set, the caller passes the current
         // tail so the first new song respects keep-apart across the seam.
         this._precedingSong = this._options.precedingSong || null;
@@ -356,45 +389,36 @@ class SetList {
         return list;
     }
 
+    /**
+     * Which songs get picked is steered here, in the same pass that orders
+     * them: play priority pulls songs in or out according to the song mix,
+     * and a per-song dose of luck keeps rolls from repeating. Because this
+     * runs alongside transition scoring, a "must play" song still lands
+     * where it costs the band the least.
+     */
     _buildSongBiases(songs) {
-        const magnitude = clampFloat(this._randomness.songBias, 3, 0);
+        // A per-song bias is constant wherever the song lands, but the beam
+        // prunes prefixes, so any bias also nudges a song earlier or later.
+        // When the song set is fixed (Optimize Order) there is nothing to
+        // select, so no bias at all: position and transitions decide.
+        if (this._options.fixedSongIds) return {};
+        const preset = SONG_MIX_PRESETS[normalizeSongMix(this._options.songMix)];
+        // The mix decides how much luck is mixed in; callers (tests, tools)
+        // may still pin it explicitly through options.randomness.songBias.
+        const explicit = this._options.randomness?.songBias;
+        const magnitude = explicit === undefined ? preset.jitter : clampFloat(explicit, preset.jitter, 0);
         return songs.reduce((result, song) => {
-            const preferenceBias = this._options.selectionPhase ? this._selectionPreference(song) : 0;
+            // Guaranteed songs (pins, must-play) are in regardless, so they
+            // carry no selection pull at all: position preference and
+            // transitions alone decide where they land.
+            const preferenceBias = this._guaranteedIds.has(song.id) ? 0 : (preset[song.playPriority || "normal"] ?? 0);
             result[song.id] = preferenceBias + this._randomJitter(magnitude);
             return result;
         }, {});
     }
 
-    _selectionPreference(song) {
-        const rotation = this._options.rotation || "balanced";
-        const scores = {
-            hits: { must: -100, prefer: -16, normal: 2, rest: 30 },
-            balanced: { must: -100, prefer: -8, normal: 0, rest: 24 },
-            deep: { must: -100, prefer: -2, normal: -4, rest: 16 },
-        }[rotation];
-        return scores?.[song.playPriority || "normal"] ?? 0;
-    }
-
     _songBias(songId) {
         return this._songBiasById[songId] || 0;
-    }
-
-    _chaosAdjustment(prevItem, nextVariant) {
-        // The legacy Variety control used temperature to reward or punish
-        // awkward transitions. Modern rolls separate selection variety from
-        // transition smoothness, so temperature only explores alternatives.
-        if (this._options.selectionVariety !== undefined) return 0;
-        const centeredChaos = this._chaosLevel * 2 - 1;
-        if (!prevItem || centeredChaos === 0) {
-            return 0;
-        }
-
-        const pressure = scoreAnxietyPressure(prevItem, nextVariant, this._propNames, this._propConfig, this._weights);
-        if (!pressure.changed) {
-            return centeredChaos > 0 ? centeredChaos * 1.5 : 0;
-        }
-
-        return -(pressure.weightedScore + 1.5) * centeredChaos;
     }
 
     _scoreKeyFlow(prevItem, nextVariant, prevDir) {
@@ -759,9 +783,7 @@ class SetList {
             rankScore: 0,
             _tiebreaker: 0,
             propChangeCounts: zeroMap(this._propNames),
-            propStreaks: zeroMap(this._propNames),
             changeTotals: zeroMap(this._propNames),
-            tuningExitCounts: Object.create(null),
             usageCounts: { instruments: {}, tunings: {} },
             remainingPotentialCounts: {
                 instruments: {
@@ -798,7 +820,6 @@ class SetList {
         this._minimumPotentialTotals = minimumPotentialContext.totals;
         this._minimumGroupCapabilitiesBySongId = minimumPotentialContext.groupCapabilitiesBySongId;
         this._minimumsRelaxed = false;
-        this._transitionRulesRelaxed = false;
         this._openerFilterRelaxed = false;
         this._closerFilterRelaxed = false;
         let states = [this._initialState()];
@@ -807,7 +828,7 @@ class SetList {
             const nextStates = [];
             const fallbackStates = [];
 
-            const expand = (relaxPositionFilter, relaxTransitionRules = false) => {
+            const expand = (relaxPositionFilter, relaxKeepApart = false) => {
                 for (let si = 0; si < states.length; si++) {
                     const state = states[si];
                     for (let ci = 0; ci < catalog.length; ci++) {
@@ -820,14 +841,11 @@ class SetList {
                         if ((pinnedId && song.id !== pinnedId) || (songPinnedAt && songPinnedAt !== position)) {
                             continue;
                         }
+                        if (!this._guaranteedIds.has(song.id) && !this._roomForGuaranteed(state, position)) {
+                            continue;
+                        }
 
-                        const result = this._buildNextState(
-                            state,
-                            song,
-                            position,
-                            relaxPositionFilter,
-                            relaxTransitionRules,
-                        );
+                        const result = this._buildNextState(state, song, position, relaxPositionFilter, relaxKeepApart);
                         if (!result) {
                             continue;
                         }
@@ -854,12 +872,10 @@ class SetList {
                 expand(true);
             }
 
-            // A hard transition rule (most commonly maxChanges) can make the
-            // final positions mathematically impossible. Never silently
-            // return fewer songs than requested; keep filling the set with
-            // that rule treated as a preference.
+            // The keep-apart rule can make the remaining positions
+            // impossible. Never silently return fewer songs than requested;
+            // keep filling the set with that rule treated as a preference.
             if (!nextStates.length && !fallbackStates.length) {
-                this._transitionRulesRelaxed = true;
                 expand(isEdgeSlot, true);
             }
 
@@ -880,6 +896,24 @@ class SetList {
         const finalized = this._finalizeItems(bestItems);
         this._list = finalized.items;
         this._summary = finalized.summary;
+    }
+
+    /**
+     * True when placing a non-guaranteed song here still leaves room for
+     * every unplaced guaranteed song (floating pins, must-play). Positions
+     * after this one that are reserved by a fixed-position pin don't count.
+     */
+    _roomForGuaranteed(state, position) {
+        if (!this._guaranteedIds.size) return true;
+        let unplaced = 0;
+        for (const id of this._guaranteedIds) {
+            if (!state.usedIds[id]) unplaced += 1;
+        }
+        let reserved = 0;
+        for (const fixedPosition of this._pinnedPositions.keys()) {
+            if (fixedPosition > position && fixedPosition <= this._count) reserved += 1;
+        }
+        return this._count - position - reserved >= unplaced;
     }
 
     _selectBeamStates(nextStates) {
@@ -1001,11 +1035,11 @@ class SetList {
             };
             const prevItem = finalizedItems[finalizedItems.length - 1] || null;
             const propTransition = this._scoreConfiguredProps(prevItem, variant);
-            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem, variant);
+            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem);
             const positionScore = this._scorePosition(variant, position);
-            const transitionScore = propTransition.score + this._scoreTuningReturn(state, prevItem, variant);
             const keyFlow = this._scoreKeyFlow(prevItem, variant, state.keyFifthsDir);
-            const incrementalScore = transitionScore + positionScore.score + this._songBias(variant.id) + keyFlow.score;
+            const incrementalScore =
+                propTransition.score + positionScore.score + this._songBias(variant.id) + keyFlow.score;
 
             const finalized = {
                 id: variant.id,
@@ -1033,9 +1067,7 @@ class SetList {
                 coverCount: state.coverCount + Number(Boolean(variant.cover)),
                 instrumentalCount: state.instrumentalCount + Number(Boolean(variant.instrumental)),
                 propChangeCounts: nextPropState.propChangeCounts,
-                propStreaks: nextPropState.propStreaks,
                 changeTotals: nextPropState.changeTotals,
-                tuningExitCounts: nextPropState.tuningExitCounts,
                 keyFifthsDir: keyFlow.dir,
             };
         });
@@ -1053,7 +1085,6 @@ class SetList {
                 anxiety,
                 keepApartRelaxed: keepApartConflicts > 0,
                 minimumsRelaxed: Boolean(this._minimumsRelaxed),
-                transitionRulesRelaxed: Boolean(this._transitionRulesRelaxed),
                 openerFilterRelaxed: Boolean(this._openerFilterRelaxed),
                 closerFilterRelaxed: Boolean(this._closerFilterRelaxed),
             },
@@ -1076,15 +1107,15 @@ class SetList {
         return prevList.some((id) => String(id) === nextId);
     }
 
-    _buildNextState(state, song, position, relaxPositionFilter = false, relaxTransitionRules = false) {
+    _buildNextState(state, song, position, relaxPositionFilter = false, relaxKeepApart = false) {
         const isPinnedHere = this._pinnedPositions.get(position) === song.id;
         // Hard adjacency rule: never seat two "keep apart" songs side by side.
-        // Only the last-resort expansion (relaxTransitionRules) may ignore it.
+        // Only the last-resort expansion (relaxKeepApart) may ignore it.
         const ruleNeighbour = state.lastItem || (state.length === 0 ? this._precedingSong : null);
-        if (!relaxTransitionRules && this._keptApart(ruleNeighbour, song)) {
+        if (!relaxKeepApart && this._keptApart(ruleNeighbour, song)) {
             return null;
         }
-        if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {
+        if (!relaxPositionFilter && !isPinnedHere) {
             if (position === 1 && song.notGoodOpener) {
                 return null;
             }
@@ -1103,7 +1134,7 @@ class SetList {
             return null;
         }
 
-        const bestVariant = this._findBestVariant(state, song, position, relaxTransitionRules);
+        const bestVariant = this._findBestVariant(state, song, position);
         if (!bestVariant.feasible && !bestVariant.fallback) {
             return null;
         }
@@ -1129,9 +1160,7 @@ class SetList {
                 rankScore: newScore + this._randomJitter(this._randomness.stateJitter),
                 _tiebreaker: this._rng(),
                 propChangeCounts: variantState.propChangeCounts,
-                propStreaks: variantState.propStreaks,
                 changeTotals: variantState.changeTotals,
-                tuningExitCounts: variantState.tuningExitCounts,
                 usageCounts: variantState.usageCounts,
                 remainingPotentialCounts: variantState.remainingPotentialCounts,
                 keyFifthsDir: variantState.keyFifthsDir ?? 0,
@@ -1145,7 +1174,7 @@ class SetList {
     }
 
     /** Choose the best playable setup variant, with an optional transition-rule fallback. */
-    _findBestVariant(state, song, position, relaxTransitionRules = false) {
+    _findBestVariant(state, song, position) {
         const prevItem = state.lastItem;
         let best = null;
         let bestScore = Infinity;
@@ -1162,16 +1191,7 @@ class SetList {
         for (let vi = 0; vi < variants.length; vi++) {
             const variant = variants[vi];
             const propTransition = this._scoreConfiguredPropsLite(prevItem, variant);
-            const isPinnedHere = this._pinnedPositions.get(position) === song.id;
-            if (
-                !relaxTransitionRules &&
-                !isPinnedHere &&
-                !this._isAllowedByPropRules(state, propTransition.changes, prevItem, position)
-            ) {
-                continue;
-            }
-
-            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem, variant);
+            const nextPropState = this._advancePropState(state, propTransition.changes, prevItem);
             const nextUsageCounts = this._updateUsageCounts(state.usageCounts, variant);
             if (!remainingGroupCapabilitiesById && this._minimumGroups.length) {
                 remainingGroupCapabilitiesById = Object.create(null);
@@ -1194,21 +1214,17 @@ class SetList {
             );
 
             const positionScore = this._scorePositionLite(variant, position);
-            const transitionScore = propTransition.score + this._scoreTuningReturn(state, prevItem, variant);
-            const chaosAdjustment = this._chaosAdjustment(prevItem, variant);
+            const transitionScore = propTransition.score;
             const keyFlow = this._scoreKeyFlow(prevItem, variant, state.keyFifthsDir);
 
             if (minimumPenalty === Infinity) {
                 // Track as fallback in case all variants are impossible
-                const fbScore =
-                    transitionScore + positionScore + this._songBias(variant.id) + chaosAdjustment + keyFlow.score;
+                const fbScore = transitionScore + positionScore + this._songBias(variant.id) + keyFlow.score;
                 if (fbScore < fallbackScore) {
                     fallbackScore = fbScore;
                     fallback = {
                         propChangeCounts: nextPropState.propChangeCounts,
-                        propStreaks: nextPropState.propStreaks,
                         changeTotals: nextPropState.changeTotals,
-                        tuningExitCounts: nextPropState.tuningExitCounts,
                         usageCounts: nextUsageCounts,
                         remainingPotentialCounts: nextRemainingPotentialCounts,
                         incrementalScore: fbScore,
@@ -1220,21 +1236,14 @@ class SetList {
             }
 
             const incrementalScore =
-                transitionScore +
-                positionScore +
-                this._songBias(variant.id) +
-                minimumPenalty +
-                chaosAdjustment +
-                keyFlow.score;
+                transitionScore + positionScore + this._songBias(variant.id) + minimumPenalty + keyFlow.score;
             const exploratoryScore = incrementalScore + this._randomJitter(this._randomness.variantJitter);
 
             if (exploratoryScore < bestScore) {
                 bestScore = exploratoryScore;
                 best = {
                     propChangeCounts: nextPropState.propChangeCounts,
-                    propStreaks: nextPropState.propStreaks,
                     changeTotals: nextPropState.changeTotals,
-                    tuningExitCounts: nextPropState.tuningExitCounts,
                     usageCounts: nextUsageCounts,
                     remainingPotentialCounts: nextRemainingPotentialCounts,
                     incrementalScore,
@@ -1260,11 +1269,16 @@ class SetList {
             const change = this._detectPropChangeLite(prevItem, nextVariant, propName, this._propConfig[propName]);
             changes[propName] = change;
             if (change.changed) {
-                score += change.magnitude * this._getPropWeight(propName);
+                score += this._weightedChangeScore(propName, change);
             }
         }
 
         return { score, changes };
+    }
+
+    /** Cost of one prop change: each member's share × base weight × that member's gear-change multiplier. */
+    _weightedChangeScore(propName, change) {
+        return weightedChangeScore(change, this._getPropWeight(propName), this._memberMultipliers);
     }
 
     _detectPropChangeLite(prevItem, nextVariant, propName, rule) {
@@ -1285,7 +1299,6 @@ class SetList {
 
     // Lite position scoring: returns just the numeric score
     _scorePositionLite(song, position) {
-        if (this._options.selectionPhase) return 0;
         let score = 0;
         const orderLabel = this._findOrderLabel(position);
         const orderRules = this._config.general?.order?.[orderLabel] || [];
@@ -1352,7 +1365,7 @@ class SetList {
             const change = this._detectPropChange(prevItem, nextVariant, propName, this._propConfig[propName]);
             changes[propName] = change;
             if (change.changed) {
-                score += change.magnitude * this._getPropWeight(propName);
+                score += this._weightedChangeScore(propName, change);
                 Array.prototype.push.apply(notes, change.notes);
             }
         });
@@ -1384,106 +1397,22 @@ class SetList {
         return this._weights[weightKey] || 0;
     }
 
-    _isAllowedByPropRules(state, propChanges, prevItem, position) {
-        const isLastSong = position === this._count;
-
-        for (let index = 0; index < this._propNames.length; index += 1) {
-            const propName = this._propNames[index];
-            const rule = this._propConfig[propName] || {};
-            const change = propChanges[propName];
-
-            if (!change.changed || !prevItem) {
-                continue;
-            }
-            // maxChanges is always enforced, even on the last song
-            if (rule.maxChanges !== undefined && state.propChangeCounts[propName] >= rule.maxChanges) {
-                return false;
-            }
-            // allowChangeOnLastSong only bypasses minStreak, not maxChanges
-            if (isLastSong && rule.allowChangeOnLastSong) {
-                continue;
-            }
-            if (rule.minStreak !== undefined && state.propStreaks[propName] < rule.minStreak) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    _tuningKey(member, setup) {
-        return JSON.stringify([member, setup.instrument || "", normalizeValue(setup.tuning)]);
-    }
-
-    _scoreTuningReturn(state, prevItem, nextItem) {
-        const multiplier = normalizeReturnPenalty(this._propConfig.tuning?.returnPenalty);
-        if (multiplier <= 0) return 0;
-
-        const previous = prevItem?.performance || {};
-        const next = nextItem?.performance || {};
-
-        return Object.keys(previous).reduce((score, member) => {
-            const before = previous[member];
-            const after = next[member];
-            if (
-                !after ||
-                before.instrument !== after.instrument ||
-                normalizeValue(before.tuning) === normalizeValue(after.tuning)
-            ) {
-                return score;
-            }
-            const exits = state.tuningExitCounts?.[this._tuningKey(member, after)] || 0;
-            return score + exits * multiplier * this._getPropWeight("tuning");
-        }, 0);
-    }
-
-    _advancePropState(state, propChanges, prevItem, nextItem) {
+    _advancePropState(state, propChanges, prevItem) {
         const propChangeCounts = { ...state.propChangeCounts };
-        const propStreaks = { ...state.propStreaks };
         const changeTotals = { ...state.changeTotals };
-        const tuningExitCounts = { ...(state.tuningExitCounts || {}) };
 
-        if (prevItem && propChanges.tuning?.changed) {
-            const previous = prevItem.performance || {};
-            const next = nextItem?.performance || {};
-            Object.keys(previous).forEach((member) => {
-                const before = previous[member];
-                const after = next[member];
-                if (
-                    after &&
-                    before.instrument === after.instrument &&
-                    normalizeValue(before.tuning) !== normalizeValue(after.tuning)
-                ) {
-                    const key = this._tuningKey(member, before);
-                    tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
+        if (prevItem) {
+            for (let i = 0; i < this._propNames.length; i++) {
+                const propName = this._propNames[i];
+                const change = propChanges[propName];
+                if (change.changed) {
+                    propChangeCounts[propName] += 1;
+                    changeTotals[propName] += change.magnitude;
                 }
-            });
+            }
         }
 
-        for (let i = 0; i < this._propNames.length; i++) {
-            const propName = this._propNames[i];
-            const change = propChanges[propName];
-            if (!prevItem) {
-                propStreaks[propName] = 1;
-                continue;
-            }
-
-            if (change.changed) {
-                propChangeCounts[propName] += 1;
-                propStreaks[propName] = 1;
-                changeTotals[propName] += change.magnitude;
-                continue;
-            }
-
-            propStreaks[propName] += 1;
-        }
-
-        return {
-            propChangeCounts,
-            propStreaks,
-            changeTotals,
-            tuningExitCounts,
-        };
+        return { propChangeCounts, changeTotals };
     }
 
     _scorePosition(song, position) {
@@ -1555,66 +1484,52 @@ const DEFAULT_RANDOMNESS = {
     blockShuffleTemperature: 1.4,
 };
 
+/**
+ * Members' gear-change multipliers, keyed by member name. Read from the
+ * roll's show constraints (`show.members[name].gearChanges`), alongside the
+ * other per-member demands for this roll.
+ */
+function buildMemberMultipliers(show) {
+    const members = show?.members || {};
+    const result = Object.create(null);
+    for (const [name, member] of Object.entries(members)) {
+        result[name] = gearChangeMultiplier(member?.gearChanges);
+    }
+    return result;
+}
+
+function memberMultiplier(multipliers, member) {
+    const value = multipliers?.[member];
+    return value === undefined ? gearChangeMultiplier() : value;
+}
+
+function weightedChangeScore(change, baseWeight, multipliers) {
+    if (!baseWeight) return 0;
+    const byMember = change.byMember;
+    if (!byMember) return change.magnitude * baseWeight * gearChangeMultiplier();
+    let score = 0;
+    for (const member in byMember) {
+        score += byMember[member] * baseWeight * memberMultiplier(multipliers, member);
+    }
+    return score;
+}
+
 export function generateSetlist(songs, config, options = {}) {
     const excludedIds = new Set((options.excludedSongIds || []).map(String));
     const eligibleSongs = excludedIds.size ? songs.filter((song) => !excludedIds.has(String(song.id))) : songs;
-    const usesSelectionPreferences =
-        options.selectionVariety !== undefined || options.rotation !== undefined || options.setShape !== undefined;
-    const selectedSongs =
-        options.fixedSongIds || !usesSelectionPreferences
-            ? eligibleSongs
-            : selectSongPool(eligibleSongs, options, config);
-    const generator = new SetList(selectedSongs, config, {
+    const generator = new SetList(eligibleSongs, config, {
         ...options,
-        count: Math.min(options.count ?? config?.general?.count ?? 15, selectedSongs.length),
+        count: Math.min(options.count ?? config?.general?.count ?? 15, eligibleSongs.length),
     });
     return generator.toJSON();
 }
 
-function selectSongPool(songs, options = {}, config = {}) {
-    const count = Math.min(
-        Math.max(1, Number.parseInt(options.count, 10) || config?.general?.count || 15),
-        songs.length,
-    );
-    if (songs.length <= count) return songs.slice();
-
-    const pinnedIds = new Set((options.pinnedSongs || []).map((pin) => String(pin.id)));
-    const pinnedSongs = songs.filter((song) => pinnedIds.has(String(song.id))).slice(0, count);
-    const remainingCount = count - pinnedSongs.length;
-    if (remainingCount <= 0) return pinnedSongs;
-    const remainingSongs = songs.filter((song) => !pinnedIds.has(String(song.id)));
-
-    const variety = clampUnit((options.selectionVariety === undefined ? 50 : Number(options.selectionVariety)) / 100);
-    const selectionOptions = {
-        ...options,
-        count: remainingCount,
-        keyFlow: false,
-        setShape: "none",
-        transitionSmoothness: "adventurous",
-        selectionPhase: true,
-        pinnedSongs: [],
-        randomness: {
-            ...(options.randomness || {}),
-            songBias: 1 + variety * 12,
-            temperature: 0.35 + variety * 1.65,
-            stateJitter: variety * 3,
-            variantJitter: variety * 1.5,
-        },
-    };
-    const selectedIds = new Set(
-        new SetList(remainingSongs, config, selectionOptions).toJSON().songs.map((song) => song.id),
-    );
-    pinnedSongs.forEach((song) => {
-        selectedIds.add(String(song.id));
-    });
-    return songs.filter((song) => selectedIds.has(String(song.id)));
-}
-
 export function scoreFixedOrder(fixedSongs, config, options = {}) {
-    const weights = Object.assign({}, DEFAULT_WEIGHTS, config?.general?.weighting || {});
+    const weights = { ...DEFAULT_WEIGHTS };
     const propNames = Object.keys(config?.props || {});
     const propConfig = config?.props || {};
     const keyFlowEnabled = Boolean(options.keyFlow);
+    const multipliers = buildMemberMultipliers(options.show);
 
     function getPropWeight(propName) {
         const rule = propConfig[propName] || {};
@@ -1650,7 +1565,7 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
 
             changes[propName] = change;
             if (change.changed) {
-                score += change.magnitude * getPropWeight(propName);
+                score += weightedChangeScore(change, getPropWeight(propName), multipliers);
                 notes.push(...change.notes);
             }
         }
@@ -1665,50 +1580,6 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
     let coverCount = 0;
     let instrumentalCount = 0;
     let keyDir = 0;
-    const tuningExitCounts = Object.create(null);
-
-    function tuningKey(member, setup) {
-        return JSON.stringify([member, setup.instrument || "", normalizeValue(setup.tuning)]);
-    }
-
-    function scoreTuningReturn(prevItem, nextItem) {
-        const multiplier = normalizeReturnPenalty(propConfig.tuning?.returnPenalty);
-        if (!prevItem || multiplier <= 0) return 0;
-
-        const previous = prevItem.performance || {};
-        const next = nextItem.performance || {};
-        return Object.keys(previous).reduce((score, member) => {
-            const before = previous[member];
-            const after = next[member];
-            if (
-                !after ||
-                before.instrument !== after.instrument ||
-                normalizeValue(before.tuning) === normalizeValue(after.tuning)
-            ) {
-                return score;
-            }
-            return score + (tuningExitCounts[tuningKey(member, after)] || 0) * multiplier * getPropWeight("tuning");
-        }, 0);
-    }
-
-    function recordTuningExits(prevItem, nextItem) {
-        if (!prevItem) return;
-        const previous = prevItem.performance || {};
-        const next = nextItem.performance || {};
-        Object.keys(previous).forEach((member) => {
-            const before = previous[member];
-            const after = next[member];
-            if (
-                after &&
-                before.instrument === after.instrument &&
-                normalizeValue(before.tuning) !== normalizeValue(after.tuning)
-            ) {
-                const key = tuningKey(member, before);
-                tuningExitCounts[key] = (tuningExitCounts[key] || 0) + 1;
-            }
-        });
-    }
-
     fixedSongs.forEach((song, index) => {
         const prevItem = items[items.length - 1] || null;
         const propTransition = scorePropTransition(prevItem, song);
@@ -1718,8 +1589,7 @@ export function scoreFixedOrder(fixedSongs, config, options = {}) {
                 : { score: 0, dir: keyDir };
         keyDir = keyFlow.dir;
 
-        const incrementalScore = propTransition.score + scoreTuningReturn(prevItem, song) + keyFlow.score;
-        recordTuningExits(prevItem, song);
+        const incrementalScore = propTransition.score + keyFlow.score;
         totalScore += incrementalScore;
         coverCount += Number(Boolean(song.cover));
         instrumentalCount += Number(Boolean(song.instrumental));

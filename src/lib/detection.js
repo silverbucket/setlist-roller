@@ -36,6 +36,7 @@ export function displayValue(value) {
 export function detectInstrumentSetChange(prevPerf, nextPerf) {
     const members = new Set([...Object.keys(prevPerf), ...Object.keys(nextPerf)]);
     const notes = [];
+    const byMember = {};
     let magnitude = 0;
 
     for (const member of Array.from(members).sort()) {
@@ -44,16 +45,18 @@ export function detectInstrumentSetChange(prevPerf, nextPerf) {
 
         if (!prev || !next) {
             magnitude += 1;
+            byMember[member] = 1;
             notes.push(`${member} instrument on/off`);
             continue;
         }
         if (prev.instrument !== next.instrument) {
             magnitude += 1;
+            byMember[member] = 1;
             notes.push(`${member} instrument ${prev.instrument} -> ${next.instrument}`);
         }
     }
 
-    return { changed: magnitude > 0, magnitude, notes };
+    return { changed: magnitude > 0, magnitude, notes, byMember };
 }
 
 /**
@@ -70,6 +73,7 @@ export function detectInstrumentSetChange(prevPerf, nextPerf) {
 export function detectFieldChange(prevPerf, nextPerf, field, scaleByDelta) {
     const allMembers = new Set([...Object.keys(prevPerf), ...Object.keys(nextPerf)]);
     const notes = [];
+    const byMember = {};
     let magnitude = 0;
 
     for (const member of Array.from(allMembers).sort()) {
@@ -91,10 +95,11 @@ export function detectFieldChange(prevPerf, nextPerf, field, scaleByDelta) {
         if (!amount) continue;
 
         magnitude += amount;
+        byMember[member] = amount;
         notes.push(`${member} ${field} ${displayValue(prevValue)} -> ${displayValue(nextValue)}`);
     }
 
-    return { changed: magnitude > 0, magnitude, notes };
+    return { changed: magnitude > 0, magnitude, notes, byMember };
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +111,7 @@ export function detectFieldChange(prevPerf, nextPerf, field, scaleByDelta) {
  */
 export function detectInstrumentSetChangeLite(prevPerf, nextPerf) {
     let magnitude = 0;
+    const byMember = {};
     const prevKeys = Object.keys(prevPerf);
     const nextKeys = Object.keys(nextPerf);
 
@@ -113,19 +119,22 @@ export function detectInstrumentSetChangeLite(prevPerf, nextPerf) {
         const m = prevKeys[i];
         if (!nextPerf[m]) {
             magnitude += 1;
+            byMember[m] = 1;
             continue;
         }
         if (prevPerf[m].instrument !== nextPerf[m].instrument) {
             magnitude += 1;
+            byMember[m] = 1;
         }
     }
     for (let i = 0; i < nextKeys.length; i++) {
         if (!prevPerf[nextKeys[i]]) {
             magnitude += 1;
+            byMember[nextKeys[i]] = 1;
         }
     }
 
-    return { changed: magnitude > 0, magnitude };
+    return { changed: magnitude > 0, magnitude, byMember };
 }
 
 /**
@@ -133,8 +142,8 @@ export function detectInstrumentSetChangeLite(prevPerf, nextPerf) {
  */
 export function detectFieldChangeLite(prevPerf, nextPerf, field, scaleByDelta) {
     let magnitude = 0;
+    const byMember = {};
     const prevKeys = Object.keys(prevPerf);
-    const _nextKeys = Object.keys(nextPerf);
 
     // Check members in prev
     for (let i = 0; i < prevKeys.length; i++) {
@@ -148,12 +157,13 @@ export function detectFieldChangeLite(prevPerf, nextPerf, field, scaleByDelta) {
         const amount = scaleByDelta ? Math.abs((Number(prevValue) || 0) - (Number(nextValue) || 0)) : 1;
         if (!amount) continue;
         magnitude += amount;
+        byMember[member] = amount;
     }
 
-    // Check members only in next (not in prev) — skip for field change
-    // (instrument set change handles on/off)
+    // Members only in next (not in prev) are skipped for field changes
+    // (instrument set change handles on/off).
 
-    return { changed: magnitude > 0, magnitude };
+    return { changed: magnitude > 0, magnitude, byMember };
 }
 
 // ---------------------------------------------------------------------------

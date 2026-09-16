@@ -10,7 +10,6 @@ export class RollPage {
     readonly rollButton: Locator;
     readonly settingsDrawer: Locator;
     readonly settingsToggle: Locator;
-    readonly varietySlider: Locator;
     readonly maxCoversInput: Locator;
     readonly maxInstrumentalsInput: Locator;
     readonly maxCoversNoLimit: Locator;
@@ -40,7 +39,6 @@ export class RollPage {
         this.rollButton = this.screen.getByRole("button", { name: "Roll setlist" });
         this.settingsDrawer = this.screen.locator(".settings-drawer");
         this.settingsToggle = this.screen.locator(".settings-toggle");
-        this.varietySlider = this.screen.locator(".variety-slider");
         this.maxCoversInput = this.screen.getByLabel("Max covers");
         this.maxInstrumentalsInput = this.screen.getByLabel("Max instrumentals");
         // The "No limit" checkboxes have no aria-label so we walk by parent.

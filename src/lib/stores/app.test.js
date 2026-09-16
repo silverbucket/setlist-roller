@@ -373,7 +373,7 @@ describe("keep-apart cascade guard", () => {
         it("clamps numeric config fields to their declared bounds", async () => {
             const repo = buildRepo();
             const { store, teardown } = await bootStore(repo);
-            const field = { path: "props.tuning.returnPenalty", type: "number", min: 0, max: 10 };
+            const field = { path: "general.count", type: "number", min: 1, max: 30 };
             repo.fireChange({
                 relativePath: "settings/app-config",
                 origin: "remote",
@@ -382,9 +382,9 @@ describe("keep-apart cascade guard", () => {
             await settle();
 
             store.updateConfigField(field, -1);
-            expect(store.appConfig.props.tuning.returnPenalty).toBe(0);
-            store.updateConfigField(field, 11);
-            expect(store.appConfig.props.tuning.returnPenalty).toBe(10);
+            expect(store.appConfig.general.count).toBe(1);
+            store.updateConfigField(field, 31);
+            expect(store.appConfig.general.count).toBe(30);
 
             teardown();
         });
@@ -673,6 +673,33 @@ describe("incremental remote sync", () => {
         repo.fireChange({ relativePath: "songs/w1", origin: "window", newValue: { id: "w1", name: "W" } });
         repo.fireChange({ relativePath: "songs/l1", origin: "local", newValue: { id: "l1", name: "L" } });
         expect(store.songs).toEqual([]);
+        teardown();
+    });
+
+    it("migrates stored generation options from older builds", async () => {
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("ui-options"),
+            JSON.stringify({
+                rotation: "deep",
+                transitionSmoothness: "adventurous",
+                selectionVariety: 77,
+                randomness: { temperature: 0.2 },
+                count: 11,
+            }),
+        );
+
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        expect(store.generationOptions.songMix).toBe("deep");
+        expect(store.generationOptions.count).toBe(11);
+        expect(store.generationOptions.transitionSmoothness).toBeUndefined();
+        expect(store.generationOptions.selectionVariety).toBeUndefined();
+        expect(store.generationOptions.rotation).toBeUndefined();
+
         teardown();
     });
 
