@@ -2247,23 +2247,59 @@ describe("scoreFixedOrder — keep apart", () => {
 
 describe("generateSetlist — keep apart regression", () => {
     it("only enforces direct keep-apart pairs, not transitive separation", () => {
+        // Alpha↔Gamma and Gamma↔Beta are kept apart; Alpha↔Beta is not.
+        // Pin Alpha and Beta adjacent so the contract is asserted directly
+        // rather than hoping some seed happens to produce that adjacency.
         const songs = [makeSong("Alpha"), makeSong("Gamma"), makeSong("Beta"), makeSong("Delta"), makeSong("Epsilon")];
         songs[0].keepApartFrom = ["gamma"];
         songs[1].keepApartFrom = ["beta"];
         const config = makeConfig({ general: { count: 5 } });
-        let sawAlphaBetaAdjacent = false;
-        for (let seed = 1; seed <= 30; seed += 1) {
-            const result = generateSetlist(songs, config, { seed, count: 5 });
-            expect(result.summary.keepApartRelaxed).toBe(false);
+        for (let seed = 1; seed <= 10; seed += 1) {
+            const result = generateSetlist(songs, config, {
+                seed,
+                count: 5,
+                pinnedSongs: [
+                    { id: "alpha", position: 1 },
+                    { id: "beta", position: 2 },
+                ],
+            });
             const ids = result.songs.map((s) => s.id);
+            expect(ids.slice(0, 2)).toEqual(["alpha", "beta"]);
+            expect(result.summary.keepApartRelaxed).toBe(false);
             for (let i = 1; i < ids.length; i += 1) {
                 const pair = [ids[i - 1], ids[i]].sort().join("|");
                 expect(pair).not.toBe("alpha|gamma");
                 expect(pair).not.toBe("beta|gamma");
-                if (pair === "alpha|beta") sawAlphaBetaAdjacent = true;
             }
         }
-        expect(sawAlphaBetaAdjacent).toBe(true);
+    });
+
+    it("respects keep-apart against a caller-supplied preceding song (append seam)", () => {
+        const songs = [makeSong("Beta"), makeSong("Gamma"), makeSong("Delta")];
+        songs[0].keepApartFrom = ["alpha"];
+        const config = makeConfig({ general: { count: 3 } });
+        for (let seed = 1; seed <= 20; seed += 1) {
+            const result = generateSetlist(songs, config, {
+                seed,
+                count: 3,
+                precedingSong: { id: "alpha", keepApartFrom: ["beta"] },
+            });
+            expect(result.songs[0].id).not.toBe("beta");
+            expect(result.songs).toHaveLength(3);
+        }
+    });
+
+    it("honours a one-sided preceding-song record", () => {
+        const songs = [makeSong("Beta"), makeSong("Gamma"), makeSong("Delta")];
+        const config = makeConfig({ general: { count: 3 } });
+        for (let seed = 1; seed <= 20; seed += 1) {
+            const result = generateSetlist(songs, config, {
+                seed,
+                count: 3,
+                precedingSong: { id: "alpha", keepApartFrom: ["beta"] },
+            });
+            expect(result.songs[0].id).not.toBe("beta");
+        }
     });
 
     it("flags conflicts when pinned positions force keep-apart songs adjacent", () => {

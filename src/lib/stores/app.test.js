@@ -20,6 +20,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function installBrowserEnv() {
+    const origIndexedDB = globalThis.indexedDB;
     globalThis.indexedDB = new IDBFactory();
     const origLocalStorage = globalThis.localStorage;
     const origWindow = globalThis.window;
@@ -36,6 +37,8 @@ function installBrowserEnv() {
         removeEventListener: () => {},
     };
     return () => {
+        if (typeof origIndexedDB === "undefined") delete globalThis.indexedDB;
+        else globalThis.indexedDB = origIndexedDB;
         if (typeof origLocalStorage === "undefined") delete globalThis.localStorage;
         else globalThis.localStorage = origLocalStorage;
         if (typeof origWindow === "undefined") delete globalThis.window;

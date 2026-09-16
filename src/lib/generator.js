@@ -287,6 +287,9 @@ class SetList {
             this._count = Math.min(this._options.count, this._catalog.length);
         }
         this._songsById = new Map(this._catalog.map((song) => [String(song.id), song]));
+        // When appending to an existing set, the caller passes the current
+        // tail so the first new song respects keep-apart across the seam.
+        this._precedingSong = this._options.precedingSong || null;
         this._songBiasById = this._buildSongBiases(this._catalog);
         this._minConstraints = this._buildMinConstraints();
         this._minimumGroups = this._buildMinimumGroups();
@@ -1057,16 +1060,20 @@ class SetList {
         const a = Array.isArray(song.keepApartFrom) ? song.keepApartFrom : [];
         if (a.some((id) => String(id) === prevId)) return true;
         // Lists are stored symmetrically, but tolerate a one-sided record.
-        const prevSong = this._songsById?.get(prevId);
-        const b = Array.isArray(prevSong?.keepApartFrom) ? prevSong.keepApartFrom : [];
-        return b.some((id) => String(id) === nextId);
+        // The previous item may be a catalog song, a beam item, or the
+        // caller-supplied precedingSong (not in this catalog).
+        const prevList = Array.isArray(prevItem.keepApartFrom)
+            ? prevItem.keepApartFrom
+            : this._songsById?.get(prevId)?.keepApartFrom || [];
+        return prevList.some((id) => String(id) === nextId);
     }
 
     _buildNextState(state, song, position, relaxPositionFilter = false, relaxTransitionRules = false) {
         const isPinnedHere = this._pinnedPositions.get(position) === song.id;
         // Hard adjacency rule: never seat two "keep apart" songs side by side.
         // Only the last-resort expansion (relaxTransitionRules) may ignore it.
-        if (!relaxTransitionRules && this._keptApart(state.lastItem, song)) {
+        const ruleNeighbour = state.lastItem || (state.length === 0 ? this._precedingSong : null);
+        if (!relaxTransitionRules && this._keptApart(ruleNeighbour, song)) {
             return null;
         }
         if (!relaxPositionFilter && !this._options.selectionPhase && !isPinnedHere) {

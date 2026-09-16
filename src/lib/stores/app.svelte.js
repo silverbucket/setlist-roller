@@ -1413,9 +1413,13 @@ export function createAppStore(repo) {
         const currentCovers = currentSongs.filter((song) => song.cover).length;
         const currentInstrumentals = currentSongs.filter((song) => song.instrumental).length;
         const remainingLimit = (limit, used) => (limit < 0 ? -1 : Math.max(0, limit - used));
+        // Appending: the first new song sits right after the current tail,
+        // so hand the generator that tail for the keep-apart adjacency rule.
+        const tail = optimizeFullSet ? null : songsById.get(existingSongs.at(-1)?.songId);
         generate({
             count,
             excludedSongIds: [...existingIds],
+            precedingSong: tail ? { id: tail.id, keepApartFrom: tail.keepApartFrom || [] } : undefined,
             maxCovers: remainingLimit(generationOptions.maxCovers, currentCovers),
             maxInstrumentals: remainingLimit(generationOptions.maxInstrumentals, currentInstrumentals),
             pinnedSongs: [],
