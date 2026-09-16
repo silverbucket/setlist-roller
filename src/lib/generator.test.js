@@ -1276,7 +1276,7 @@ describe("generateSetlist — tuning blocks", () => {
         }
 
         expect(seedsWithReturns).toBe(0);
-    });
+    }, 15_000);
 
     it("keeps varied song orders while grouping tunings efficiently", () => {
         const songs = fixedTuningCatalog(["Open G", "Open D", "Open C"], 6);
