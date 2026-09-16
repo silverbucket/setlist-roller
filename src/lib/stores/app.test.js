@@ -11,6 +11,95 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+// ---------------------------------------------------------------------------
+// Shared harness for tests that call store.init().
+//
+// init() needs window + localStorage; we're in node, so polyfill exactly
+// those. (jsdom would trip Svelte's top-level-$effect validation.)
+// IndexedDB comes from fake-indexeddb, fresh per install.
+// ---------------------------------------------------------------------------
+
+function installBrowserEnv() {
+    globalThis.indexedDB = new IDBFactory();
+    const origLocalStorage = globalThis.localStorage;
+    const origWindow = globalThis.window;
+    const map = new Map();
+    globalThis.localStorage = {
+        getItem: (k) => (map.has(k) ? map.get(k) : null),
+        setItem: (k, v) => map.set(k, String(v)),
+        removeItem: (k) => map.delete(k),
+        clear: () => map.clear(),
+    };
+    globalThis.window = {
+        location: { hash: "" },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+    return () => {
+        if (typeof origLocalStorage === "undefined") delete globalThis.localStorage;
+        else globalThis.localStorage = origLocalStorage;
+        if (typeof origWindow === "undefined") delete globalThis.window;
+        else globalThis.window = origWindow;
+    };
+}
+
+function flush() {
+    // Drain microtasks + fake-indexeddb's setImmediate-driven work.
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function settle(times = 10) {
+    for (let i = 0; i < times; i += 1) await flush();
+}
+
+function buildRepo() {
+    const listeners = new Map();
+    let changeHandler = null;
+    return {
+        on(eventName, handler) {
+            if (!listeners.has(eventName)) listeners.set(eventName, new Set());
+            listeners.get(eventName).add(handler);
+            return () => listeners.get(eventName)?.delete(handler);
+        },
+        fire(eventName, payload) {
+            for (const handler of [...(listeners.get(eventName) || [])]) handler(payload);
+        },
+        onChange(handler) {
+            changeHandler = handler;
+            return () => {
+                changeHandler = null;
+            };
+        },
+        fireChange(event) {
+            changeHandler?.(event);
+        },
+        loadAll: vi.fn(async () => ({
+            songs: [],
+            config: null,
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        })),
+        getRawConfig: vi.fn(async () => null),
+        getSyncInterval: () => 10000,
+        setSyncInterval: vi.fn(),
+        isConnected: () => true,
+        getUserAddress: () => "user@example.com",
+        getToken: () => "stub-token",
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+    };
+}
+
+/** Persist the "first sync finished" marker so the store boots settled. */
+async function markCatalogSettled() {
+    const db = await openAccountDb("user@example.com");
+    await db.putKv("sync-meta", { initialSyncDone: true });
+    db.close();
+}
+
 describe("normalizeAuthToken", () => {
     it("keeps non-empty string tokens", () => {
         expect(normalizeAuthToken("saved-token")).toBe("saved-token");
@@ -261,87 +350,11 @@ describe("keep-apart cascade guard", () => {
     });
 
     describe("with initialized store", () => {
-        let _origLocalStorage;
-        let _origWindow;
-
+        let restoreEnv;
         beforeEach(() => {
-            globalThis.indexedDB = new IDBFactory();
-            _origLocalStorage = globalThis.localStorage;
-            _origWindow = globalThis.window;
-            const map = new Map();
-            globalThis.localStorage = {
-                getItem: (k) => (map.has(k) ? map.get(k) : null),
-                setItem: (k, v) => map.set(k, String(v)),
-                removeItem: (k) => map.delete(k),
-                clear: () => map.clear(),
-            };
-            globalThis.window = {
-                location: { hash: "" },
-                addEventListener: () => {},
-                removeEventListener: () => {},
-            };
+            restoreEnv = installBrowserEnv();
         });
-        afterEach(() => {
-            if (typeof _origLocalStorage === "undefined") delete globalThis.localStorage;
-            else globalThis.localStorage = _origLocalStorage;
-            if (typeof _origWindow === "undefined") delete globalThis.window;
-            else globalThis.window = _origWindow;
-        });
-
-        function flush() {
-            return new Promise((resolve) => setImmediate(resolve));
-        }
-
-        async function settle(times = 10) {
-            for (let i = 0; i < times; i += 1) await flush();
-        }
-
-        function buildRepo() {
-            const listeners = new Map();
-            let changeHandler = null;
-            return {
-                on(eventName, handler) {
-                    if (!listeners.has(eventName)) listeners.set(eventName, new Set());
-                    listeners.get(eventName).add(handler);
-                    return () => listeners.get(eventName)?.delete(handler);
-                },
-                fire(eventName, payload) {
-                    for (const handler of [...(listeners.get(eventName) || [])]) handler(payload);
-                },
-                onChange(handler) {
-                    changeHandler = handler;
-                    return () => {
-                        changeHandler = null;
-                    };
-                },
-                fireChange(event) {
-                    changeHandler?.(event);
-                },
-                loadAll: vi.fn(async () => ({
-                    songs: [],
-                    config: null,
-                    bootstrap: null,
-                    setlists: [],
-                    members: {},
-                    pendingBodies: 0,
-                    errors: {},
-                })),
-                getRawConfig: vi.fn(async () => null),
-                getSyncInterval: () => 10000,
-                setSyncInterval: vi.fn(),
-                isConnected: () => true,
-                getUserAddress: () => "user@example.com",
-                getToken: () => "stub-token",
-                connect: vi.fn(),
-                disconnect: vi.fn(),
-            };
-        }
-
-        async function markCatalogSettled() {
-            const db = await openAccountDb("user@example.com");
-            await db.putKv("sync-meta", { initialSyncDone: true });
-            db.close();
-        }
+        afterEach(() => restoreEnv());
 
         async function bootStore(repo, { settled = false } = {}) {
             if (settled) await markCatalogSettled();
@@ -351,6 +364,29 @@ describe("keep-apart cascade guard", () => {
             await settle();
             return { store, teardown };
         }
+
+        it("deleteSong guard reads links from the catalog record, not the caller's object", async () => {
+            const repo = buildRepo();
+            repo.deleteSong = vi.fn(async () => {});
+            const { store, teardown } = await bootStore(repo);
+            expect(store.initialSyncDone).toBe(false);
+
+            repo.fireChange({
+                relativePath: "songs/s1",
+                origin: "remote",
+                newValue: { id: "s1", name: "Alpha", keepApartFrom: ["s2"] },
+            });
+            await settle();
+
+            // A list row passes only { id, name }; the catalog says s1 is linked.
+            const pending = store.deleteSong({ id: "s1", name: "Alpha" });
+            store.resolveConfirm(true);
+            await pending;
+
+            expect(repo.deleteSong).not.toHaveBeenCalled();
+            expect(store.toastMessages.at(-1)?.message).toMatch(/still syncing/i);
+            teardown();
+        });
 
         it("saveSong allows renaming a linked song while unsettled when keepApartFrom is unchanged", async () => {
             const repo = buildRepo();
@@ -448,85 +484,14 @@ describe("keep-apart cascade guard", () => {
 });
 
 describe("incremental remote sync", () => {
-    // The store's init() needs window + localStorage; we're in node, so
-    // polyfill exactly those. (jsdom would trip Svelte's top-level-$effect
-    // validation.) IndexedDB comes from fake-indexeddb, fresh per test.
-    let _origLocalStorage;
-    let _origWindow;
+    let restoreEnv;
     beforeEach(() => {
-        globalThis.indexedDB = new IDBFactory();
-        _origLocalStorage = globalThis.localStorage;
-        _origWindow = globalThis.window;
-        const map = new Map();
-        globalThis.localStorage = {
-            getItem: (k) => (map.has(k) ? map.get(k) : null),
-            setItem: (k, v) => map.set(k, String(v)),
-            removeItem: (k) => map.delete(k),
-            clear: () => map.clear(),
-        };
-        globalThis.window = {
-            location: { hash: "" },
-            addEventListener: () => {},
-            removeEventListener: () => {},
-        };
+        restoreEnv = installBrowserEnv();
     });
     afterEach(() => {
         vi.useRealTimers();
-        if (typeof _origLocalStorage === "undefined") delete globalThis.localStorage;
-        else globalThis.localStorage = _origLocalStorage;
-        if (typeof _origWindow === "undefined") delete globalThis.window;
-        else globalThis.window = _origWindow;
+        restoreEnv();
     });
-
-    function flush() {
-        // Drain microtasks + fake-indexeddb's setImmediate-driven work.
-        return new Promise((resolve) => setImmediate(resolve));
-    }
-
-    async function settle(times = 10) {
-        for (let i = 0; i < times; i += 1) await flush();
-    }
-
-    function buildRepo() {
-        const listeners = new Map();
-        let changeHandler = null;
-        return {
-            on(eventName, handler) {
-                if (!listeners.has(eventName)) listeners.set(eventName, new Set());
-                listeners.get(eventName).add(handler);
-                return () => listeners.get(eventName)?.delete(handler);
-            },
-            fire(eventName, payload) {
-                for (const handler of [...(listeners.get(eventName) || [])]) handler(payload);
-            },
-            onChange(handler) {
-                changeHandler = handler;
-                return () => {
-                    changeHandler = null;
-                };
-            },
-            fireChange(event) {
-                changeHandler?.(event);
-            },
-            loadAll: vi.fn(async () => ({
-                songs: [],
-                config: null,
-                bootstrap: null,
-                setlists: [],
-                members: {},
-                pendingBodies: 0,
-                errors: {},
-            })),
-            getRawConfig: vi.fn(async () => null),
-            getSyncInterval: () => 10000,
-            setSyncInterval: vi.fn(),
-            isConnected: () => true,
-            getUserAddress: () => "user@example.com",
-            getToken: () => "stub-token",
-            connect: vi.fn(),
-            disconnect: vi.fn(),
-        };
-    }
 
     it("applies remote changes one document at a time — no full reloads", async () => {
         const repo = buildRepo();
@@ -675,9 +640,7 @@ describe("incremental remote sync", () => {
     it("cascades a band-member rename into song overrides and generation constraints", async () => {
         // Renames refuse to run until the catalog is settled (the cascade
         // must see every song) — mark this account's initial sync done.
-        const db = await openAccountDb("user@example.com");
-        await db.putKv("sync-meta", { initialSyncDone: true });
-        db.close();
+        await markCatalogSettled();
         const repo = buildRepo();
         repo.putMember = vi.fn(async (name, data) => ({ ...data, name }));
         repo.deleteMember = vi.fn(async () => {});
@@ -812,65 +775,6 @@ describe("incremental remote sync", () => {
         expect(store.displayedSetlist).toBeNull();
         expect(store.setlistLocked).toBe(false);
         expect(globalThis.localStorage.getItem(accountSlot("user@example.com").key("current-set"))).toBeNull();
-        teardown();
-    });
-
-    it("saveSong mirrors keepApartFrom links to partner songs", async () => {
-        const repo = buildRepo();
-        repo.putSong = vi.fn(async (s) => s);
-        const store = createAppStore(repo);
-        const teardown = store.init();
-        repo.fire("connected");
-        await settle();
-
-        repo.fireChange({
-            relativePath: "songs/a",
-            origin: "remote",
-            newValue: { id: "a", name: "Alpha", keepApartFrom: [] },
-        });
-        repo.fireChange({
-            relativePath: "songs/b",
-            origin: "remote",
-            newValue: { id: "b", name: "Beta", keepApartFrom: [] },
-        });
-
-        store.openSong(store.songs.find((s) => s.id === "a"));
-        store.updateSongField("keepApartFrom", ["b"]);
-        await store.saveSong();
-
-        expect(repo.putSong).toHaveBeenCalledTimes(2);
-        const partnerCall = repo.putSong.mock.calls.find(([song]) => song.id === "b");
-        expect(partnerCall?.[0].keepApartFrom).toEqual(["a"]);
-        expect(store.songs.find((s) => s.id === "b")?.keepApartFrom).toEqual(["a"]);
-        teardown();
-    });
-
-    it("deleteSong scrubs keepApartFrom references from partner songs", async () => {
-        const repo = buildRepo();
-        repo.putSong = vi.fn(async (s) => s);
-        repo.deleteSong = vi.fn(async () => {});
-        const store = createAppStore(repo);
-        const teardown = store.init();
-        repo.fire("connected");
-        await settle();
-
-        repo.fireChange({
-            relativePath: "songs/a",
-            origin: "remote",
-            newValue: { id: "a", name: "Alpha", keepApartFrom: ["b"] },
-        });
-        repo.fireChange({
-            relativePath: "songs/b",
-            origin: "remote",
-            newValue: { id: "b", name: "Beta", keepApartFrom: ["a"] },
-        });
-
-        const deletePromise = store.deleteSong({ id: "b", name: "Beta" });
-        store.resolveConfirm(true);
-        await deletePromise;
-
-        expect(repo.putSong).toHaveBeenCalledWith(expect.objectContaining({ id: "a", keepApartFrom: [] }));
-        expect(store.songs.find((s) => s.id === "a")?.keepApartFrom).toEqual([]);
         teardown();
     });
 

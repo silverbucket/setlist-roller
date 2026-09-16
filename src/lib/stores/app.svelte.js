@@ -2014,7 +2014,9 @@ export function createAppStore(repo) {
         // Deleting a song scrubs its id from every partner's keepApartFrom.
         // With a partial catalog (first sync still running) a partner not
         // yet loaded would keep a stale reference, so wait for settle.
-        if (!catalogSettled && keepApartCascadeNeeded(song)) {
+        // Consult the catalog record, not the caller's object: a bare
+        // `{ id, name }` from a list row must not sidestep the guard.
+        if (!catalogSettled && keepApartCascadeNeeded(songsById.get(String(song.id)) ?? song)) {
             toastWarn("Still syncing your catalog — try deleting again in a moment.");
             return;
         }
