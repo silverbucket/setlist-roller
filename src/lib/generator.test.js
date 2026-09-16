@@ -1045,6 +1045,101 @@ describe("generateSetlist — tuning blocks", () => {
         expect(result.songs).toHaveLength(3);
         expect(result.songs[2].incrementalScore).toBe(12);
     });
+
+    it("disables return penalty when returnPenalty is 0", () => {
+        const performance = (tuning) => ({
+            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
+        });
+        const config = makeConfig({
+            props: {
+                tuning: {
+                    kind: "instrumentField",
+                    field: "tuning",
+                    minStreak: 1,
+                    returnPenalty: 0,
+                    allowChangeOnLastSong: true,
+                },
+            },
+        });
+        const result = scoreFixedOrder(
+            [
+                { id: "g-1", name: "G first", performance: performance("Open G") },
+                { id: "d", name: "D", performance: performance("Open D") },
+                { id: "g-2", name: "G return", performance: performance("Open G") },
+            ],
+            config,
+        );
+
+        expect(result.songs[2].incrementalScore).toBe(4);
+    });
+
+    it("charges progressively more for repeated returns to the same tuning", () => {
+        const performance = (tuning) => ({
+            nick: { instrument: "banjo", tuning, capo: 0, picking: [] },
+        });
+        const config = makeConfig({
+            props: {
+                tuning: {
+                    kind: "instrumentField",
+                    field: "tuning",
+                    minStreak: 1,
+                    returnPenalty: 2,
+                    allowChangeOnLastSong: true,
+                },
+            },
+        });
+        const result = scoreFixedOrder(
+            [
+                { id: "g-1", name: "G", performance: performance("Open G") },
+                { id: "d-1", name: "D", performance: performance("Open D") },
+                { id: "g-2", name: "G return 1", performance: performance("Open G") },
+                { id: "d-2", name: "D again", performance: performance("Open D") },
+                { id: "g-3", name: "G return 2", performance: performance("Open G") },
+            ],
+            config,
+        );
+
+        expect(result.songs[2].incrementalScore).toBe(12);
+        expect(result.songs[4].incrementalScore).toBe(20);
+        expect(result.songs[4].incrementalScore).toBeGreaterThan(result.songs[2].incrementalScore);
+    });
+
+    it("does not penalize returning to a tuning after an instrument switch", () => {
+        const performance = (instrument, tuning) => ({
+            nick: { instrument, tuning, capo: 0, picking: [] },
+        });
+        const config = makeConfig({
+            props: {
+                tuning: {
+                    kind: "instrumentField",
+                    field: "tuning",
+                    minStreak: 1,
+                    returnPenalty: 2,
+                    allowChangeOnLastSong: true,
+                },
+            },
+        });
+        const oscillate = scoreFixedOrder(
+            [
+                { id: "g-1", performance: performance("banjo", "Open G") },
+                { id: "d", performance: performance("banjo", "Open D") },
+                { id: "g-2", performance: performance("banjo", "Open G") },
+            ],
+            config,
+        );
+        const detour = scoreFixedOrder(
+            [
+                { id: "g-1", performance: performance("banjo", "Open G") },
+                { id: "guitar", performance: performance("guitar", "Standard") },
+                { id: "g-2", performance: performance("banjo", "Open G") },
+            ],
+            config,
+        );
+
+        expect(oscillate.songs[2].incrementalScore).toBe(12);
+        expect(detour.songs[2].incrementalScore).toBe(4);
+        expect(detour.songs[2].incrementalScore).toBeLessThan(oscillate.songs[2].incrementalScore);
+    });
 });
 
 // ===================================================================

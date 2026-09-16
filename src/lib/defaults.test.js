@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     DEFAULT_APP_CONFIG,
     memberDefaultRig,
+    normalizeAppConfig,
     normalizeSongRecord,
     resolveSongMembers,
     rigEqualsDefault,
@@ -12,6 +13,18 @@ import {
 describe("default app config", () => {
     it("discourages returning to a tuning without forbidding it", () => {
         expect(DEFAULT_APP_CONFIG.props.tuning.returnPenalty).toBe(2);
+    });
+
+    it("preserves returnPenalty through normalizeAppConfig", () => {
+        const normalized = normalizeAppConfig({
+            props: { tuning: { returnPenalty: 5 } },
+        });
+        expect(normalized.props.tuning.returnPenalty).toBe(5);
+    });
+
+    it("keeps default returnPenalty when omitted from stored config", () => {
+        const normalized = normalizeAppConfig({ bandName: "Test Band" });
+        expect(normalized.props.tuning.returnPenalty).toBe(2);
     });
 });
 
