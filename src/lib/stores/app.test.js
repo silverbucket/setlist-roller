@@ -609,6 +609,144 @@ describe("incremental remote sync", () => {
         teardown();
     });
 
+    it("saveSong mirrors keepApartFrom links to partner songs", async () => {
+        const repo = buildRepo();
+        repo.putSong = vi.fn(async (s) => s);
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/a",
+            origin: "remote",
+            newValue: { id: "a", name: "Alpha", keepApartFrom: [] },
+        });
+        repo.fireChange({
+            relativePath: "songs/b",
+            origin: "remote",
+            newValue: { id: "b", name: "Beta", keepApartFrom: [] },
+        });
+
+        store.openSong(store.songs.find((s) => s.id === "a"));
+        store.updateSongField("keepApartFrom", ["b"]);
+        await store.saveSong();
+
+        expect(repo.putSong).toHaveBeenCalledTimes(2);
+        const partnerCall = repo.putSong.mock.calls.find(([song]) => song.id === "b");
+        expect(partnerCall?.[0].keepApartFrom).toEqual(["a"]);
+        expect(store.songs.find((s) => s.id === "b")?.keepApartFrom).toEqual(["a"]);
+        teardown();
+    });
+
+    it("deleteSong scrubs keepApartFrom references from partner songs", async () => {
+        const repo = buildRepo();
+        repo.putSong = vi.fn(async (s) => s);
+        repo.deleteSong = vi.fn(async () => {});
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/a",
+            origin: "remote",
+            newValue: { id: "a", name: "Alpha", keepApartFrom: ["b"] },
+        });
+        repo.fireChange({
+            relativePath: "songs/b",
+            origin: "remote",
+            newValue: { id: "b", name: "Beta", keepApartFrom: ["a"] },
+        });
+
+        const deletePromise = store.deleteSong({ id: "b", name: "Beta" });
+        store.resolveConfirm(true);
+        await deletePromise;
+
+        expect(repo.putSong).toHaveBeenCalledWith(expect.objectContaining({ id: "a", keepApartFrom: [] }));
+        expect(store.songs.find((s) => s.id === "a")?.keepApartFrom).toEqual([]);
+        teardown();
+    });
+
+    it("recomputes keep-apart conflict badges after manual reorder", async () => {
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("current-set"),
+            JSON.stringify({
+                seed: 1,
+                songs: [
+                    { songId: "a", performance: {} },
+                    { songId: "c", performance: {} },
+                    { songId: "b", performance: {} },
+                ],
+            }),
+        );
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/a",
+            origin: "remote",
+            newValue: { id: "a", name: "Alpha", keepApartFrom: ["b"] },
+        });
+        repo.fireChange({
+            relativePath: "songs/b",
+            origin: "remote",
+            newValue: { id: "b", name: "Beta", keepApartFrom: ["a"] },
+        });
+        repo.fireChange({
+            relativePath: "songs/c",
+            origin: "remote",
+            newValue: { id: "c", name: "Gamma" },
+        });
+
+        expect(store.displayedSetlist.songs.map((song) => song.keepApartConflict)).toEqual([false, false, false]);
+
+        store.reorderSetlistSong(2, 1);
+        expect(store.displayedSetlist.songs.map((song) => song.keepApartConflict)).toEqual([true, true, false]);
+        teardown();
+    });
+
+    it("flags keep-apart conflicts when catalog rules make adjacent songs conflict", async () => {
+        globalThis.localStorage.setItem(
+            accountSlot("user@example.com").key("current-set"),
+            JSON.stringify({
+                seed: 1,
+                songs: [
+                    { songId: "a", performance: {} },
+                    { songId: "b", performance: {} },
+                ],
+            }),
+        );
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "songs/a",
+            origin: "remote",
+            newValue: { id: "a", name: "Alpha" },
+        });
+        repo.fireChange({
+            relativePath: "songs/b",
+            origin: "remote",
+            newValue: { id: "b", name: "Beta" },
+        });
+        expect(store.displayedSetlist.songs.every((song) => !song.keepApartConflict)).toBe(true);
+
+        repo.fireChange({
+            relativePath: "songs/a",
+            origin: "remote",
+            newValue: { id: "a", name: "Alpha", keepApartFrom: ["b"] },
+        });
+        expect(store.displayedSetlist.songs.map((song) => song.keepApartConflict)).toEqual([true, true]);
+        teardown();
+    });
+
     it("persists pin toggles on the working setlist", async () => {
         globalThis.localStorage.setItem(
             accountSlot("user@example.com").key("current-set"),
