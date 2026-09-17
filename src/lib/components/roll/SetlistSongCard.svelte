@@ -1,52 +1,26 @@
 <script>
-  import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
+  import { needsTuningChange, songChangeLines } from "../../transitions.js";
 
   const { song, index, prevSong, onDragStart, onEdit, onSwap, onRemove, onTogglePin, arming = false, dragging = false } = $props();
 
   let expanded = $state(false);
 
+  const changeLines = $derived(songChangeLines(song, prevSong));
+  const tuningChange = $derived(needsTuningChange(song, prevSong));
+
+  const KIND_LABELS = {
+    tuning: "Tuning",
+    instrument: "Gear",
+    capo: "Capo",
+    technique: "Technique",
+  };
+
   function toggleExpand() {
     expanded = !expanded;
   }
-
-  function getChanges(memberName) {
-    const curr = song.performance?.[memberName];
-    if (!curr) return [];
-    const prev = prevSong?.performance?.[memberName];
-    const changes = [];
-    if (!prev || curr.instrument !== prev.instrument) {
-      if (prev && curr.instrument) changes.push(curr.instrument);
-    }
-    if (!prev || curr.tuning !== prev.tuning) {
-      if (curr.tuning) changes.push(curr.tuning);
-    }
-    if (!prev || curr.capo !== prev.capo) {
-      if (curr.capo) changes.push(`capo ${curr.capo}`);
-      else if (prev?.capo) changes.push("capo off");
-    }
-    const currTech = normalizeTechniqueValue(curr.picking);
-    const prevTech = prev ? normalizeTechniqueValue(prev.picking) : "";
-    if (currTech !== prevTech && currTech) {
-      const tech = techniqueDisplay(curr.picking);
-      if (tech) changes.push(tech);
-    }
-    return changes;
-  }
-
-  function allChanges() {
-    if (!song.performance) return [];
-    const lines = [];
-    for (const [memberName, _perf] of Object.entries(song.performance)) {
-      const changes = getChanges(memberName);
-      if (changes.length > 0) {
-        lines.push({ member: memberName, changes });
-      }
-    }
-    return lines;
-  }
 </script>
 
-<div class="song-card" class:expanded class:dragging class:pinned={song.pinned}>
+<div class="song-card" class:expanded class:dragging class:pinned={song.pinned} class:tuning-change={tuningChange}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="card-main" onclick={toggleExpand} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpand(); } }} role="button" tabindex="0">
     <span
@@ -91,29 +65,26 @@
         {/if}
       </div>
 
-      {#if prevSong}
-        {@const changes = allChanges()}
-        {#if changes.length > 0}
-          <div class="change-lines">
-            {#each changes as line}
-              <div class="change-line">
-                <span class="change-member">{line.member}</span>
-                <span class="change-detail">{line.changes.join(", ")}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      {:else if song.performance}
-        <div class="change-lines">
-          {#each Object.entries(song.performance) as [memberName, perf]}
-            {@const techStr = techniqueDisplay(perf.picking)}
-            {@const parts = [perf.instrument, perf.tuning, perf.capo ? `capo ${perf.capo}` : null, techStr].filter(Boolean)}
-            {#if parts.length > 0}
-              <div class="change-line first-song">
-                <span class="change-member">{memberName}</span>
-                <span class="change-detail">{parts.join(", ")}</span>
-              </div>
-            {/if}
+      {#if changeLines.length > 0}
+        <div class="change-lines" class:first-song={!prevSong}>
+          {#each changeLines as line}
+            <div class="change-line">
+              <span class="change-member">{line.member}</span>
+              <span class="change-chips">
+                {#each line.changes as change}
+                  <span class="change-chip {change.kind}" title={`${KIND_LABELS[change.kind]}: ${change.label}`}>
+                    {#if change.kind === "tuning"}
+                      <svg class="chip-icon" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7a4 4 0 0 0 8 0V3"/><path d="M12 14v7"/></svg>
+                      <span class="chip-kind">Tune</span>
+                    {:else if change.kind === "instrument"}
+                      <svg class="chip-icon" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3"/><path d="m15 7-3 3"/><path d="M20 17H9l3 3"/><path d="m9 17 3-3"/></svg>
+                      <span class="chip-kind">Swap</span>
+                    {/if}
+                    <span class="chip-label">{change.label}</span>
+                  </span>
+                {/each}
+              </span>
+            </div>
           {/each}
         </div>
       {/if}
@@ -355,37 +326,112 @@
     margin-left: 0;
   }
 
+  /* A retune is the slowest change to make on stage and the easiest to miss
+     while scanning the list, so cards that need one get a solid edge stripe. */
+  .song-card.tuning-change {
+    box-shadow: inset 4px 0 0 var(--accent, #e15b37);
+  }
+
   .change-lines {
     display: grid;
-    gap: 0.1rem;
+    gap: 0.3rem;
     padding-left: 1.4rem;
   }
 
   .change-line {
     display: flex;
-    align-items: baseline;
-    gap: 0.35rem;
+    align-items: center;
+    gap: 0.4rem;
     font-size: 0.85rem;
   }
 
   .change-member {
     font-weight: 700;
-    color: var(--accent, #e15b37);
+    color: var(--ink, #182230);
     flex-shrink: 0;
   }
 
-  .change-detail {
-    color: var(--accent, #e15b37);
+  .change-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  /* Each kind of change gets its own chip treatment so a glance tells you
+     whether it is a retune, a guitar swap, a capo move, or just technique. */
+  .change-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .chip-icon {
+    flex-shrink: 0;
+  }
+
+  .chip-kind {
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.85;
+  }
+
+  .chip-kind::after {
+    content: "·";
+    margin-left: 0.25rem;
+    opacity: 0.6;
+  }
+
+  /* Tuning: loudest — solid accent fill. */
+  .change-chip.tuning {
+    background: var(--accent, #e15b37);
+    border-color: var(--accent, #e15b37);
+    color: var(--on-accent, #fff);
+  }
+
+  /* Instrument swap: accent outline. Related to tuning but visibly lighter. */
+  .change-chip.instrument {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    color: var(--accent-strong, #c64724);
+  }
+
+  /* Capo: quick to do — warm but muted. */
+  .change-chip.capo {
+    background: var(--warning-soft, rgba(255, 160, 40, 0.12));
+    color: var(--toast-warning, #7a5c10);
+  }
+
+  /* Technique: informational only. */
+  .change-chip.technique {
+    background: var(--line);
+    color: var(--ink, #182230);
     font-weight: 600;
   }
 
+  /* The opening song shows starting setup, not a change, so it stays quiet. */
   .first-song .change-member {
     color: var(--muted, #8a95a5);
   }
 
-  .first-song .change-detail {
+  .first-song .change-chip {
+    background: transparent;
+    border-color: var(--line-strong);
     color: var(--muted, #8a95a5);
-    font-weight: 500;
+    font-weight: 600;
+  }
+
+  .first-song .chip-kind {
+    display: none;
   }
 
   .song-notes {
