@@ -1384,6 +1384,12 @@ describe("generateSetlist — per-member gear changes", () => {
         const roll = (seed, gearChanges) =>
             generateSetlist(songs, thatOldDreamData.config, {
                 count: 26,
+                // The production default (512) makes this multi-seed
+                // statistical regression monopolize a slower CI worker long
+                // enough to trip Vitest's worker-RPC watchdog. A 128-state
+                // beam still exercises block placement against the real
+                // catalog while keeping the test comfortably bounded.
+                beamWidth: 128,
                 seed,
                 setShape: "none",
                 songMix: "balanced",
