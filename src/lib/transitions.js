@@ -22,7 +22,9 @@ function sortByKind(changes) {
 export function memberChanges(curr, prev) {
     if (!curr) return [];
     const changes = [];
-    if (prev && curr.instrument && curr.instrument !== prev.instrument) {
+    // A member who sat out the previous song (no prev) still needs to know
+    // which instrument to pick up, so a missing prev counts as a change.
+    if (curr.instrument && (!prev || curr.instrument !== prev.instrument)) {
         changes.push({ kind: "instrument", label: curr.instrument });
     }
     if (curr.tuning && (!prev || curr.tuning !== prev.tuning)) {

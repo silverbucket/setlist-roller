@@ -177,6 +177,9 @@
   .print-chip-kind { font-size: 0.85em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
   .print-chip.tuning { background: #000; border-color: #000; color: #fff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-chip.instrument { border: 2px solid #000; font-weight: 700; }
+  .print-chip.capo { border-style: dashed; border-color: #888; color: #333; }
+  .print-chip.technique { border-color: transparent; background: #eee; color: #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-chip-icon { vertical-align: -1px; }
   .print-change.setup .print-chip { border-color: #ccc; color: #666; }
   .print-notes { padding-left: 2.5rem; padding-top: 2px; font-size: 12pt; font-weight: 500; font-style: italic; color: #666; line-height: 1.45; white-space: pre-line; }
   .print-anxiety { margin-top: 8px; padding-top: 8px; border-top: 2px solid #000; display: flex; align-items: baseline; gap: 5px; font-size: 11pt; }
@@ -347,7 +350,7 @@
                         <span class="print-change-member">{line.member}:</span>
                         <span class="print-change-detail">
                           {#each line.changes as change}
-                            <span class="print-chip {change.kind}">{#if !line.isSetup && CHANGE_PREFIX[change.kind]}<span class="print-chip-kind">{CHANGE_PREFIX[change.kind]}</span> {/if}{change.label}</span>
+                            <span class="print-chip {change.kind}">{#if !line.isSetup && change.kind === "tuning"}<svg class="print-chip-icon" aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7a4 4 0 0 0 8 0V3"/><path d="M12 14v7"/></svg> {/if}{#if !line.isSetup && CHANGE_PREFIX[change.kind]}<span class="print-chip-kind">{CHANGE_PREFIX[change.kind]}</span> {/if}{change.label}</span>
                           {/each}
                         </span>
                       </div>
@@ -904,6 +907,22 @@
     background: var(--accent-soft);
     border-color: var(--accent-line);
     color: var(--accent-strong);
+  }
+
+  .print-chip.capo {
+    background: var(--warning-soft, rgba(255, 160, 40, 0.12));
+    border-color: transparent;
+    color: var(--toast-warning, #7a5c10);
+  }
+
+  .print-chip.technique {
+    background: var(--line);
+    border-color: transparent;
+    color: var(--ink);
+  }
+
+  .print-chip-icon {
+    flex-shrink: 0;
   }
 
   .print-change.setup .print-chip {

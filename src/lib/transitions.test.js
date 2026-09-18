@@ -22,8 +22,11 @@ describe("memberChanges", () => {
         expect(memberChanges({ ...std, capo: 0 }, { ...std, capo: 3 })).toEqual([{ kind: "capo", label: "capo off" }]);
     });
 
-    it("does not report an instrument when there is no previous song", () => {
-        expect(memberChanges(std, null)).toEqual([{ kind: "tuning", label: "Standard" }]);
+    it("reports the instrument and tuning when the member has no previous setup", () => {
+        expect(memberChanges(std, null)).toEqual([
+            { kind: "tuning", label: "Standard" },
+            { kind: "instrument", label: "Tele" },
+        ]);
     });
 
     it("ignores technique changes to none", () => {
@@ -48,6 +51,19 @@ describe("songChangeLines / needsTuningChange", () => {
 
     it("only lists members who change something", () => {
         expect(songChangeLines(b, a)).toEqual([{ member: "Nick", changes: [{ kind: "tuning", label: "Drop D" }] }]);
+    });
+
+    it("lists the full setup for a member who sat out the previous song", () => {
+        const withoutSam = { performance: { Nick: std } };
+        expect(songChangeLines(a, withoutSam)).toEqual([
+            {
+                member: "Sam",
+                changes: [
+                    { kind: "tuning", label: "Standard" },
+                    { kind: "instrument", label: "Bass" },
+                ],
+            },
+        ]);
     });
 
     it("marks the opening song as setup", () => {
