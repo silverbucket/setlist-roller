@@ -1,7 +1,7 @@
 <script>
   import { getContext, tick } from "svelte";
   import { anxietyLabel } from "../../anxiety.js";
-  import { normalizeTechniqueValue, techniqueDisplay } from "../../technique-utils.js";
+  import { songChangeLines } from "../../transitions.js";
 
   const store = getContext("app");
 
@@ -172,7 +172,15 @@
   .print-change { display: flex; align-items: baseline; gap: 5px; font-size: 12pt; color: #333; }
   .print-change.setup { color: #666; }
   .print-change-member { font-weight: 700; }
-  .print-change-detail { font-weight: 500; }
+  .print-change-detail { font-weight: 500; display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .print-chip { display: inline-block; padding: 0 6px; border: 1px solid #bbb; border-radius: 999px; white-space: nowrap; }
+  .print-chip-kind { font-size: 0.85em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+  .print-chip.tuning { background: #000; border-color: #000; color: #fff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-chip.instrument { border: 2px solid #000; font-weight: 700; }
+  .print-chip.capo { border-style: dashed; border-color: #888; color: #333; }
+  .print-chip.technique { border-color: transparent; background: #eee; color: #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-chip-icon { vertical-align: -1px; }
+  .print-change.setup .print-chip { border-color: #ccc; color: #666; }
   .print-notes { padding-left: 2.5rem; padding-top: 2px; font-size: 12pt; font-weight: 500; font-style: italic; color: #666; line-height: 1.45; white-space: pre-line; }
   .print-anxiety { margin-top: 8px; padding-top: 8px; border-top: 2px solid #000; display: flex; align-items: baseline; gap: 5px; font-size: 11pt; }
   .print-anxiety-title { font-weight: 700; }
@@ -244,48 +252,8 @@
     };
   });
 
-  // Transition notes — same logic as SetlistSongCard
-  function getChanges(song, prevSong, memberName) {
-    const curr = song.performance?.[memberName];
-    if (!curr) return [];
-    const prev = prevSong?.performance?.[memberName];
-    const changes = [];
-    if (!prev || curr.instrument !== prev.instrument) {
-      if (prev && curr.instrument) changes.push(curr.instrument);
-    }
-    if (!prev || curr.tuning !== prev.tuning) {
-      if (curr.tuning) changes.push(curr.tuning);
-    }
-    if (!prev || curr.capo !== prev.capo) {
-      if (curr.capo) changes.push(`capo ${curr.capo}`);
-      else if (prev?.capo) changes.push("capo off");
-    }
-    const currTech = normalizeTechniqueValue(curr.picking);
-    const prevTech = prev ? normalizeTechniqueValue(prev.picking) : "";
-    if (currTech !== prevTech && currTech) {
-      const tech = techniqueDisplay(curr.picking);
-      if (tech) changes.push(tech);
-    }
-    return changes;
-  }
-
-  function allChanges(song, prevSong) {
-    if (!song.performance) return [];
-    const lines = [];
-    for (const [memberName] of Object.entries(song.performance)) {
-      if (prevSong) {
-        const changes = getChanges(song, prevSong, memberName);
-        if (changes.length > 0) lines.push({ member: memberName, changes });
-      } else {
-        // First song: show initial setup
-        const perf = song.performance[memberName];
-        const techStr = techniqueDisplay(perf.picking);
-        const parts = [perf.instrument, perf.tuning, perf.capo ? `capo ${perf.capo}` : null, techStr].filter(Boolean);
-        if (parts.length > 0) lines.push({ member: memberName, changes: parts, isSetup: true });
-      }
-    }
-    return lines;
-  }
+  // Transition notes — shared with SetlistSongCard via transitions.js
+  const CHANGE_PREFIX = { tuning: "Tune", instrument: "Swap" };
 </script>
 
 <div class="saved-screen">
@@ -366,7 +334,7 @@
           <div class="print-songs">
             {#each viewingSet.songs as song, i}
               {@const prevSong = i > 0 ? viewingSet.songs[i - 1] : null}
-              {@const changes = allChanges(song, prevSong)}
+              {@const changes = songChangeLines(song, prevSong)}
               <div class="print-song">
                 <div class="print-song-row">
                   <span class="print-num">{i + 1}.</span>
@@ -380,7 +348,11 @@
                     {#each changes as line}
                       <div class="print-change" class:setup={line.isSetup}>
                         <span class="print-change-member">{line.member}:</span>
-                        <span class="print-change-detail">{line.changes.join(", ")}</span>
+                        <span class="print-change-detail">
+                          {#each line.changes as change}
+                            <span class="print-chip {change.kind}">{#if !line.isSetup && change.kind === "tuning"}<svg class="print-chip-icon" aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7a4 4 0 0 0 8 0V3"/><path d="M12 14v7"/></svg> {/if}{#if !line.isSetup && CHANGE_PREFIX[change.kind]}<span class="print-chip-kind">{CHANGE_PREFIX[change.kind]}</span> {/if}{change.label}</span>
+                          {/each}
+                        </span>
                       </div>
                     {/each}
                   </div>
@@ -901,7 +873,62 @@
   }
 
   .print-change-detail {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
     font-weight: 500;
+  }
+
+  .print-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .print-chip-kind {
+    font-size: 0.85em;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .print-chip.tuning {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .print-chip.instrument {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    color: var(--accent-strong);
+  }
+
+  .print-chip.capo {
+    background: var(--warning-soft, rgba(255, 160, 40, 0.12));
+    border-color: transparent;
+    color: var(--toast-warning, #7a5c10);
+  }
+
+  .print-chip.technique {
+    background: var(--line);
+    border-color: transparent;
+    color: var(--ink);
+  }
+
+  .print-chip-icon {
+    flex-shrink: 0;
+  }
+
+  .print-change.setup .print-chip {
+    background: transparent;
+    border-color: var(--line);
+    color: var(--muted);
   }
 
   .print-notes {
