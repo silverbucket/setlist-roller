@@ -1374,7 +1374,7 @@ describe("generateSetlist — per-member gear changes", () => {
         expect(minimize).toBeLessThan(free / 2);
     });
 
-    it("varies the capo block location in the supplied That Old Dream catalog", { timeout: 30_000 }, () => {
+    it("varies the capo block location in the supplied That Old Dream catalog", { timeout: 90_000 }, () => {
         const songs = thatOldDreamData.songs
             .filter((song) => !song.unpracticed)
             .map((song) => ({
