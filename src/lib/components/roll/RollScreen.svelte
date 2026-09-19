@@ -152,8 +152,16 @@
     });
   }
 
+  // Members with song-specific capo/technique changes need the gear-change
+  // setting even when they have no instrument or tuning choices to display.
+  function membersWithSettings() {
+    return (store.bandMemberEntries || [])
+      .map(([name]) => name)
+      .filter((name) => memberHasChoices(name) || memberChangesInPlay(name));
+  }
+
   let settingsTab = $state("constraints");
-  let hasConstraints = $derived(membersWithChoices().length > 0);
+  let hasConstraints = $derived(membersWithSettings().length > 0);
   // anxietyLevel: pre-computed by the generator, label from anxiety lib
   let anxietyLevel = $derived.by(() => {
     const anxiety = store.displayedSetlist?.summary?.anxiety;
@@ -486,7 +494,7 @@
       {/if}
 
       {#if settingsTab === "constraints" && hasConstraints}
-        {#each membersWithChoices() as memberName}
+        {#each membersWithSettings() as memberName}
           <div class="constraint-member">
             <span class="constraint-member-name">{memberName}</span>
 

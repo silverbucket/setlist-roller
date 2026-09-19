@@ -2339,6 +2339,38 @@ describe("generateSetlist — keep apart regression", () => {
         }
     });
 
+    it("preserves the append seam when relocating a minimize-gear block", () => {
+        const songs = Array.from({ length: 5 }, (_, index) => {
+            const specialSetup = index < 2;
+            const song = makeSong(["Beta", "Gamma", "Delta", "Epsilon", "Zeta"][index], {
+                members: {
+                    nick: {
+                        instruments: [{ name: "banjo", tuning: ["D"], capo: specialSetup ? 2 : 0, picking: [] }],
+                    },
+                },
+            });
+            song.positionPreference = specialSetup ? "early" : "anywhere";
+            return song;
+        });
+        const specialIds = new Set(["beta", "gamma"]);
+
+        for (let seed = 1; seed <= 10; seed += 1) {
+            const result = generateSetlist(songs, makeConfig({ general: { count: songs.length } }), {
+                ...deterministicOptions({ count: songs.length, seed }),
+                fixedSongIds: songs.map((song) => song.id),
+                precedingSong: { id: "alpha", keepApartFrom: [...specialIds] },
+                setShape: "none",
+                show: { members: { nick: { gearChanges: "minimize" } } },
+            });
+            const specialPositions = result.songs
+                .map((song, index) => (specialIds.has(song.id) ? index : null))
+                .filter((position) => position !== null);
+
+            expect(specialIds.has(result.songs[0].id)).toBe(false);
+            expect(specialPositions[1] - specialPositions[0]).toBe(1);
+        }
+    });
+
     it("flags conflicts when pinned positions force keep-apart songs adjacent", () => {
         const songs = [makeSong("Alpha"), makeSong("Beta"), makeSong("Gamma"), makeSong("Delta")];
         songs[0].keepApartFrom = ["beta"];

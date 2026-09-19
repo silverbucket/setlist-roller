@@ -957,6 +957,7 @@ class SetList {
 
     _isValidCompleteOrder(items) {
         if (items[0]?.notGoodOpener || items.at(-1)?.notGoodCloser) return false;
+        if (this._precedingSong && this._keptApart(this._precedingSong, items[0])) return false;
         for (let index = 1; index < items.length; index += 1) {
             if (this._keptApart(items[index - 1], items[index])) return false;
         }
