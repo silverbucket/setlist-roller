@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     DEFAULT_APP_CONFIG,
     memberDefaultRig,
+    memberHasVariableSetup,
     normalizeAppConfig,
     normalizeGearChanges,
     normalizeSongRecord,
@@ -95,6 +96,27 @@ describe("resolveSongMembers", () => {
         const ghost = { instruments: [{ name: "Theremin", tuning: [], capo: 0, picking: [] }] };
         const resolved = resolveSongMembers({ members: { Alumni: ghost } }, band);
         expect(resolved.Alumni).toBe(ghost);
+    });
+});
+
+describe("memberHasVariableSetup", () => {
+    const band = {
+        Nick: {
+            instruments: [{ name: "Banjo", tunings: ["D"], defaultTuning: "D", techniques: [] }],
+            defaultInstrument: "Banjo",
+        },
+    };
+
+    it("detects capo-only song changes for a member with one instrument and tuning", () => {
+        const songs = [
+            { members: {} },
+            { members: { Nick: { instruments: [{ name: "Banjo", tuning: ["D"], capo: 2, picking: [] }] } } },
+        ];
+        expect(memberHasVariableSetup(songs, band, "Nick")).toBe(true);
+    });
+
+    it("is false when every song resolves to the same setup", () => {
+        expect(memberHasVariableSetup([{ members: {} }, { members: {} }], band, "Nick")).toBe(false);
     });
 });
 

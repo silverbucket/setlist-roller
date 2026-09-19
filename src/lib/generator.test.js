@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import thatOldDreamData from "../../tests/fixtures/that-old-dream-data.json";
+import { resolveSongMembers } from "./defaults.js";
 import { buildDefaultPerformance, generateSetlist, normalizeSongMix, scoreFixedOrder } from "./generator.js";
 
 // ---------------------------------------------------------------------------
@@ -1371,6 +1373,66 @@ describe("generateSetlist — per-member gear changes", () => {
         expect(avoid).toBeLessThanOrEqual(minimize);
         expect(minimize).toBeLessThan(free / 2);
     });
+
+    it("varies the capo block location in the supplied That Old Dream catalog", { timeout: 90_000 }, () => {
+        const songs = thatOldDreamData.songs
+            .filter((song) => !song.unpracticed)
+            .map((song) => ({
+                ...song,
+                members: resolveSongMembers(song, thatOldDreamData.bandMembers),
+            }));
+        const roll = (seed, gearChanges) =>
+            generateSetlist(songs, thatOldDreamData.config, {
+                count: 26,
+                // The production default (512) makes this multi-seed
+                // statistical regression monopolize a slower CI worker long
+                // enough to trip Vitest's worker-RPC watchdog. A 128-state
+                // beam still exercises block placement against the real
+                // catalog while keeping the test comfortably bounded.
+                beamWidth: 128,
+                seed,
+                setShape: "none",
+                songMix: "balanced",
+                show: {
+                    members: {
+                        nick: { gearChanges },
+                        caolan: { gearChanges: "free" },
+                    },
+                },
+            });
+        const capoPositions = (result) =>
+            result.songs.map((song, index) => (song.performance.nick?.capo ? index + 1 : null)).filter(Boolean);
+
+        const middleSettingPositions = [];
+        for (let seed = 1; seed <= 8; seed += 1) {
+            const result = roll(seed, "minimize");
+            const capoSongs = result.songs.filter((song) => song.performance.nick?.capo);
+            const positions = capoPositions(result);
+
+            expect(capoSongs.map((song) => song.name).sort()).toEqual(["Me And Paul", "Yesterday Is Here"]);
+            expect(positions).toHaveLength(2);
+            expect(positions[1] - positions[0]).toBe(1);
+            middleSettingPositions.push(positions[0]);
+        }
+
+        const frequencyByStart = Map.groupBy(middleSettingPositions, (position) => position);
+        const mostFrequentStart = Math.max(...Array.from(frequencyByStart.values(), (positions) => positions.length));
+        expect(frequencyByStart.size).toBeGreaterThanOrEqual(4);
+        expect(mostFrequentStart).toBeLessThan(middleSettingPositions.length / 2);
+        expect(middleSettingPositions).not.toContain(25);
+
+        const laxPositions = [];
+        for (let seed = 1; seed <= 4; seed += 1) {
+            laxPositions.push(capoPositions(roll(seed, "free")));
+        }
+        expect(new Set(laxPositions.map((positions) => positions.join(","))).size).toBeGreaterThan(1);
+        expect(laxPositions.some((positions) => positions[1] - positions[0] > 1)).toBe(true);
+        expect(laxPositions).not.toContainEqual([25, 26]);
+
+        for (let seed = 1; seed <= 2; seed += 1) {
+            expect(capoPositions(roll(seed, "avoid"))).toEqual([25, 26]);
+        }
+    });
 });
 
 // ===================================================================
@@ -2274,6 +2336,38 @@ describe("generateSetlist — keep apart regression", () => {
                 precedingSong: { id: "alpha", keepApartFrom: ["beta"] },
             });
             expect(result.songs[0].id).not.toBe("beta");
+        }
+    });
+
+    it("preserves the append seam when relocating a minimize-gear block", () => {
+        const songs = Array.from({ length: 5 }, (_, index) => {
+            const specialSetup = index < 2;
+            const song = makeSong(["Beta", "Gamma", "Delta", "Epsilon", "Zeta"][index], {
+                members: {
+                    nick: {
+                        instruments: [{ name: "banjo", tuning: ["D"], capo: specialSetup ? 2 : 0, picking: [] }],
+                    },
+                },
+            });
+            song.positionPreference = specialSetup ? "early" : "anywhere";
+            return song;
+        });
+        const specialIds = new Set(["beta", "gamma"]);
+
+        for (let seed = 1; seed <= 10; seed += 1) {
+            const result = generateSetlist(songs, makeConfig({ general: { count: songs.length } }), {
+                ...deterministicOptions({ count: songs.length, seed }),
+                fixedSongIds: songs.map((song) => song.id),
+                precedingSong: { id: "alpha", keepApartFrom: [...specialIds] },
+                setShape: "none",
+                show: { members: { nick: { gearChanges: "minimize" } } },
+            });
+            const specialPositions = result.songs
+                .map((song, index) => (specialIds.has(song.id) ? index : null))
+                .filter((position) => position !== null);
+
+            expect(specialIds.has(result.songs[0].id)).toBe(false);
+            expect(specialPositions[1] - specialPositions[0]).toBe(1);
         }
     });
 

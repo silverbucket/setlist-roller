@@ -286,6 +286,31 @@ export function resolveSongMembers(song, bandMembers) {
 }
 
 /**
+ * Whether a member can use more than one effective setup across the catalog.
+ * This deliberately looks at resolved song rigs rather than only at the
+ * choices in Band settings: a single-instrument player can still have
+ * song-specific capo or technique changes that need roll controls.
+ */
+export function memberHasVariableSetup(songs, bandMembers, memberName) {
+    const signatures = new Set();
+    for (const song of songs || []) {
+        const setup = resolveSongMembers(song, bandMembers)?.[memberName];
+        for (const option of setup?.instruments || []) {
+            signatures.add(
+                JSON.stringify({
+                    instrument: option.name || option.instrument || "",
+                    tuning: [...(option.tuning || [])].sort(),
+                    capo: Number(option.capo) || 0,
+                    picking: [...(option.picking || [])].sort(),
+                }),
+            );
+            if (signatures.size > 1) return true;
+        }
+    }
+    return false;
+}
+
+/**
  * True when a song's member entry is exactly the member's default rig —
  * such entries are redundant (inheritance produces the same result) and
  * get squashed out of the song at save time.

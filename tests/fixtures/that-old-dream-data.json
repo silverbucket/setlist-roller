@@ -1,0 +1,1221 @@
+{
+    "app": "setlist-roller",
+    "schemaVersion": 2,
+    "exportedAt": "2026-09-18T13:03:27.332Z",
+    "songs": [
+        {
+            "id": "71f3da85-1f63-489c-ad62-6fb846a0750b",
+            "name": "A Bottle Of Whiskey And A Dull Kitchen Knife",
+            "cover": false,
+            "instrumental": false,
+            "notGoodOpener": true,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "prefer",
+            "energy": 2,
+            "positionPreference": "late",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "F G C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:40:02.186Z",
+            "updatedAt": "2026-09-18T12:51:53.722Z",
+            "members": {}
+        },
+        {
+            "id": "02fccdf3-36b4-414a-ade3-2c964a1759fd",
+            "name": "Butte County",
+            "cover": false,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": true,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "D",
+            "notes": "nick sings",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:56:27.567Z",
+            "updatedAt": "2026-09-18T12:57:44.083Z",
+            "members": {
+                "nick": {
+                    "instruments": [
+                        {
+                            "name": "banjo",
+                            "tuning": ["D"],
+                            "capo": 2,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "255e3465-daed-4eaf-b04e-4478f56dc21b",
+            "name": "Can’t Hardly Wait",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "middle",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "nick sings\nG C \nD Em G",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:37:13.203Z",
+            "updatedAt": "2026-09-18T12:58:08.792Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "57726999-bef6-4e7b-a5ec-01aee884d7da",
+            "name": "Can’t I Stay At Home Sometimes?",
+            "cover": false,
+            "instrumental": false,
+            "notGoodOpener": true,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "C G  \nAm C G  \nD G C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:38:13.469Z",
+            "updatedAt": "2026-09-18T12:53:46.905Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "64440bbe-6ee8-4048-96e9-af4fc18909ce",
+            "name": "Dark As A Dungeon",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:37:53.246Z",
+            "updatedAt": "2026-09-18T12:38:07.715Z",
+            "members": {}
+        },
+        {
+            "id": "d9df1184-8f1d-4485-883e-01974ff1bc86",
+            "name": "Freeborn Man",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:40:34.244Z",
+            "updatedAt": "2026-09-18T12:40:45.861Z",
+            "members": {}
+        },
+        {
+            "id": "b2ae83c1-aa53-4db8-ad76-8f98e0baca6b",
+            "name": "House Where Nobody Lives",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G D C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:44:16.573Z",
+            "updatedAt": "2026-09-18T12:44:26.644Z",
+            "members": {}
+        },
+        {
+            "id": "990da6a0-511b-4be3-bf5e-58204350f56f",
+            "name": "I Don't Believe In The Sun",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:42:01.265Z",
+            "updatedAt": "2026-09-18T12:42:15.569Z",
+            "members": {}
+        },
+        {
+            "id": "9854d1b5-fd6d-4d5b-89c9-6870b687f5e7",
+            "name": "If You Could Touch Her At All ",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "F G C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:36:07.603Z",
+            "updatedAt": "2026-09-18T12:36:21.650Z",
+            "members": {}
+        },
+        {
+            "id": "93f5a9b8-d677-4deb-8a1a-4c88a33e25c9",
+            "name": "Lazy John",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "nick sings\nD C G ",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:36:49.504Z",
+            "updatedAt": "2026-09-18T12:58:16.758Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "ab69cfb1-f587-4158-af1b-66c704ab1370",
+            "name": "Liza Jane",
+            "cover": true,
+            "instrumental": true,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "late",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:39:32.923Z",
+            "updatedAt": "2026-09-18T12:54:08.955Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "9c9f38db-2b0a-432a-b703-ffd16cbb319c",
+            "name": "Long Black Veil",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G D C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:34:53.820Z",
+            "updatedAt": "2026-09-18T12:54:15.484Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "014cb3de-4ebd-4e69-99e6-864d6d538d56",
+            "name": "Me And Paul",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "early",
+            "keepApartFrom": [],
+            "key": "A",
+            "notes": "A D E",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:47:49.055Z",
+            "updatedAt": "2026-09-18T13:00:31.750Z",
+            "members": {
+                "nick": {
+                    "instruments": [
+                        {
+                            "name": "banjo",
+                            "tuning": [],
+                            "capo": 2,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "839f48ba-f3dd-402a-ada0-f01a35296b2a",
+            "name": "Moon Over Montana",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": true,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "Am",
+            "notes": "Am Dm Em E7",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:47:05.772Z",
+            "updatedAt": "2026-09-18T12:51:24.063Z",
+            "members": {}
+        },
+        {
+            "id": "5464a444-5b7e-44c2-9109-74d011d48549",
+            "name": "One Drink, Just One More",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "late",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "C G C\nF G C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:41:38.282Z",
+            "updatedAt": "2026-09-18T12:50:49.847Z",
+            "members": {}
+        },
+        {
+            "id": "29149668-e135-4a60-88b4-44e623f66dda",
+            "name": "Pretty Polly",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G modal scale",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:35:39.961Z",
+            "updatedAt": "2026-09-18T12:54:23.996Z",
+            "members": {
+                "caolan": {
+                    "instruments": [
+                        {
+                            "name": "mandolin",
+                            "tuning": [],
+                            "capo": 0,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "334c2b9f-4415-4918-b771-18e88291ab00",
+            "name": "Save A Secret For The Moon",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D\nC D G",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:42:20.577Z",
+            "updatedAt": "2026-09-18T12:42:37.942Z",
+            "members": {}
+        },
+        {
+            "id": "8272cd2f-690f-4a83-8b74-6118cba4834f",
+            "name": "So Much Wine",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "D",
+            "notes": "D G D\nBm A Em\nGA",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:48:46.567Z",
+            "updatedAt": "2026-09-18T12:49:25.322Z",
+            "members": {}
+        },
+        {
+            "id": "232ee433-14fa-4f69-a238-2fcec92172fb",
+            "name": "Some of These Days and it Won't Be Long",
+            "cover": false,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": true,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "nick sings",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:55:35.421Z",
+            "updatedAt": "2026-09-18T12:57:46.437Z",
+            "members": {}
+        },
+        {
+            "id": "ecc502c4-f325-4108-880b-4f06a4540e6a",
+            "name": "Streets Of Bakersfield",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "G C D",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:39:07.065Z",
+            "updatedAt": "2026-09-18T12:39:15.515Z",
+            "members": {}
+        },
+        {
+            "id": "5be63114-1086-4dfb-992f-4ec1df5d1d9c",
+            "name": "Tennessee Whiskey",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": " C F G",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:40:15.804Z",
+            "updatedAt": "2026-09-18T12:40:29.324Z",
+            "members": {}
+        },
+        {
+            "id": "7d5ed7c7-65f6-49d1-8e64-dff406ab6a5e",
+            "name": "Troubles",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 4,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "nick sings\nC C (G)",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:36:31.624Z",
+            "updatedAt": "2026-09-18T12:58:51.796Z",
+            "members": {}
+        },
+        {
+            "id": "4a0f4d60-5f93-4f38-9c7c-3d3405e9dd62",
+            "name": "Two Characters In Search Of A Country Song ",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "F G C Am",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:46:48.863Z",
+            "updatedAt": "2026-09-18T12:47:00.051Z",
+            "members": {}
+        },
+        {
+            "id": "b7476f77-d10d-4a5b-a895-5dd2e77710a3",
+            "name": "Walking In My Sleep",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "G",
+            "notes": "C A\n(F F# G A D G C)\nC G",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:43:11.969Z",
+            "updatedAt": "2026-09-18T12:44:11.527Z",
+            "members": {}
+        },
+        {
+            "id": "9172dcd4-e62e-410d-9e1d-b038569e46ed",
+            "name": "Weightless Again",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "A",
+            "notes": "A Am Em\nG Am Em",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:48:13.830Z",
+            "updatedAt": "2026-09-18T12:48:35.468Z",
+            "members": {}
+        },
+        {
+            "id": "6e8cd880-3ec0-48da-a87e-9c9fc4ae5bab",
+            "name": "When I Ran Off And Left Her",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "",
+            "notes": "D C G\nC Bm Am G",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:42:52.007Z",
+            "updatedAt": "2026-09-18T12:43:07.764Z",
+            "members": {}
+        },
+        {
+            "id": "9b12deb8-6fc6-44fa-8d6c-24d73a001e20",
+            "name": "Whiskey, Weed And Women",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": true,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "C",
+            "notes": "C G C\nF Bb C",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:40:54.640Z",
+            "updatedAt": "2026-09-18T12:52:05.621Z",
+            "members": {}
+        },
+        {
+            "id": "07c11bc1-16cc-48c6-91c9-8152695ad5dd",
+            "name": "Workins' Too Hard",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": true,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "anywhere",
+            "keepApartFrom": [],
+            "key": "Am",
+            "notes": "nick sings",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:57:04.409Z",
+            "updatedAt": "2026-09-18T12:57:41.204Z",
+            "members": {}
+        },
+        {
+            "id": "388b731e-4ed7-4d0e-9822-4bcc26ecc90a",
+            "name": "Yesterday Is Here",
+            "cover": true,
+            "instrumental": false,
+            "notGoodOpener": false,
+            "notGoodCloser": false,
+            "unpracticed": false,
+            "playPriority": "normal",
+            "energy": 3,
+            "positionPreference": "early",
+            "keepApartFrom": [],
+            "key": "F#",
+            "notes": "F# C#7\t\t\nF#7 A B7 C#7 (C7 C#7)\n\n(capo 2)\nEm Bm7\nEm G B (Bb B)",
+            "schemaVersion": 2,
+            "createdAt": "2026-09-18T12:44:30.954Z",
+            "updatedAt": "2026-09-18T13:00:26.283Z",
+            "members": {
+                "nick": {
+                    "instruments": [
+                        {
+                            "name": "banjo",
+                            "tuning": [],
+                            "capo": 2,
+                            "picking": []
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "config": {
+        "bandName": "That Old Dream",
+        "schemaVersion": 2,
+        "createdAt": "2026-09-18T12:32:48.407Z",
+        "updatedAt": "2026-09-18T13:01:34.279Z",
+        "ui": {
+            "dieColor": "#e15b37"
+        },
+        "general": {
+            "count": 9,
+            "beamWidth": 512,
+            "limits": {
+                "covers": -1,
+                "instrumentals": -1
+            },
+            "order": {
+                "first": [["notGoodOpener", false], ["instrumental", false]],
+                "second": [["instrumental", false]],
+                "penultimate": [],
+                "last": [["notGoodCloser", false]]
+            },
+            "weighting": {
+                "tuning": 4,
+                "capo": 2,
+                "instrument": 3,
+                "technique": 1,
+                "keyFlow": 2,
+                "positionMiss": 8
+            },
+            "randomness": {
+                "variantJitter": 1.5,
+                "stateJitter": 2.5,
+                "finalChoicePool": 12,
+                "temperature": 0.85,
+                "shuffleCatalog": true,
+                "songBias": 3,
+                "beamChoicePoolMultiplier": 6,
+                "beamTemperature": 2,
+                "maxStatesPerLastSong": 24,
+                "blockShuffleTemperature": 1.4
+            }
+        },
+        "show": {},
+        "props": {
+            "tuning": {
+                "kind": "instrumentField",
+                "field": "tuning"
+            },
+            "capo": {
+                "kind": "instrumentDelta",
+                "field": "capo"
+            },
+            "instruments": {
+                "kind": "instrumentSet",
+                "weightKey": "instrument"
+            },
+            "picking": {
+                "kind": "instrumentField",
+                "field": "picking",
+                "weightKey": "technique"
+            }
+        },
+        "@context": "http://remotestorage.io/spec/modules/setlist-roller/setlist-roller-config"
+    },
+    "bandMembers": {
+        "cram": {
+            "instruments": [],
+            "defaultInstrument": ""
+        },
+        "nick": {
+            "instruments": [
+                {
+                    "name": "banjo",
+                    "tunings": ["D"],
+                    "defaultTuning": "D",
+                    "techniques": [],
+                    "defaultTechnique": ""
+                }
+            ],
+            "defaultInstrument": "banjo"
+        },
+        "caolan": {
+            "instruments": [
+                {
+                    "name": "mandolin",
+                    "tunings": [],
+                    "defaultTuning": "",
+                    "techniques": [],
+                    "defaultTechnique": ""
+                },
+                {
+                    "name": "lapsteel",
+                    "tunings": [],
+                    "defaultTuning": "",
+                    "techniques": [],
+                    "defaultTechnique": ""
+                }
+            ],
+            "defaultInstrument": "lapsteel"
+        }
+    },
+    "savedSetlists": [
+        {
+            "id": "a0d7314d-fa55-43e9-86f2-25108688ecbc",
+            "name": "No One Asked",
+            "savedAt": "2026-09-18T12:52:38.980Z",
+            "schemaVersion": 2,
+            "seed": 1789736360535,
+            "minimumsRelaxed": false,
+            "openerFilterRelaxed": false,
+            "closerFilterRelaxed": false,
+            "songs": [
+                {
+                    "songId": "9854d1b5-fd6d-4d5b-89c9-6870b687f5e7",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "8272cd2f-690f-4a83-8b74-6118cba4834f",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "57726999-bef6-4e7b-a5ec-01aee884d7da",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "5be63114-1086-4dfb-992f-4ec1df5d1d9c",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "93f5a9b8-d677-4deb-8a1a-4c88a33e25c9",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "29149668-e135-4a60-88b4-44e623f66dda",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "6e8cd880-3ec0-48da-a87e-9c9fc4ae5bab",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "990da6a0-511b-4be3-bf5e-58204350f56f",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "255e3465-daed-4eaf-b04e-4478f56dc21b",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "9172dcd4-e62e-410d-9e1d-b038569e46ed",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "839f48ba-f3dd-402a-ada0-f01a35296b2a",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "4a0f4d60-5f93-4f38-9c7c-3d3405e9dd62",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "9b12deb8-6fc6-44fa-8d6c-24d73a001e20",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "014cb3de-4ebd-4e69-99e6-864d6d538d56",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "b2ae83c1-aa53-4db8-ad76-8f98e0baca6b",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "b7476f77-d10d-4a5b-a895-5dd2e77710a3",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "7d5ed7c7-65f6-49d1-8e64-dff406ab6a5e",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "71f3da85-1f63-489c-ad62-6fb846a0750b",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "ab69cfb1-f587-4158-af1b-66c704ab1370",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "5464a444-5b7e-44c2-9109-74d011d48549",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "64440bbe-6ee8-4048-96e9-af4fc18909ce",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "ecc502c4-f325-4108-880b-4f06a4540e6a",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "334c2b9f-4415-4918-b771-18e88291ab00",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "388b731e-4ed7-4d0e-9822-4bcc26ecc90a",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "9c9f38db-2b0a-432a-b703-ffd16cbb319c",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                },
+                {
+                    "songId": "d9df1184-8f1d-4485-883e-01974ff1bc86",
+                    "performance": {
+                        "caolan": {
+                            "instrument": "mandolin",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        },
+                        "nick": {
+                            "instrument": "banjo",
+                            "tuning": null,
+                            "capo": 0,
+                            "picking": []
+                        }
+                    }
+                }
+            ],
+            "updatedAt": "2026-09-18T12:52:38.980Z",
+            "@context": "http://remotestorage.io/spec/modules/setlist-roller/setlist-roller-setlist"
+        }
+    ],
+    "meta": {
+        "bandName": "That Old Dream",
+        "songCount": 29,
+        "savedSetlistCount": 1
+    }
+}

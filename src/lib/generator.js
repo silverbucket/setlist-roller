@@ -6,6 +6,7 @@ import {
     detectInstrumentSetChange,
     detectInstrumentSetChangeLite,
     inferPropKind,
+    normalizeValue,
 } from "./detection.js";
 import { scoreKeyTransition } from "./keys.js";
 import { deepMerge, toArray } from "./utils.js";
@@ -296,6 +297,8 @@ class SetList {
         this._keyFlowEnabled = Boolean(this._options.keyFlow);
         this._show = deepMerge(this._config.show || {}, this._options.show || {});
         this._memberMultipliers = buildMemberMultipliers(this._show);
+        this._memberGearLevels = buildMemberGearLevels(this._show);
+        this._homePerformance = {};
         this._seed = this._normalizeSeed(this._options.seed);
         this._rng = createRng(this._seed);
         this._randomness = merge(DEFAULT_RANDOMNESS, this._config.general?.randomness || {});
@@ -815,6 +818,9 @@ class SetList {
             variantCache.set(catalog[i].id, this._songs.expandVariants(catalog[i], this._show));
         }
         this._variantCache = variantCache;
+        this._homePerformance = inferHomePerformance(
+            catalog.map((song) => variantCache.get(song.id)?.[0]).filter(Boolean),
+        );
         const minimumPotentialContext = this._buildMinimumPotentialContext(catalog, variantCache);
         this._minimumPotentialBySongId = minimumPotentialContext.bySongId;
         this._minimumPotentialTotals = minimumPotentialContext.totals;
@@ -893,9 +899,101 @@ class SetList {
 
         const best = this._pickFinalState(states);
         const bestItems = this._collectItems(best);
-        const finalized = this._finalizeItems(bestItems);
+        const arrangedItems = this._diversifyMinimizeBlockPlacement(bestItems);
+        const finalized = this._finalizeItems(arrangedItems);
         this._list = finalized.items;
         this._summary = finalized.summary;
+    }
+
+    /**
+     * Beam search naturally postpones a required special-setup block because
+     * entering it raises the prefix score. Once the complete order is known,
+     * try every insertion point for contiguous multi-song blocks used by
+     * "minimize" members and choose among the musically competitive ones.
+     */
+    _diversifyMinimizeBlockPlacement(items) {
+        if (items.length < 3 || this._pinnedPositions.size) return items;
+
+        let arranged = items.slice();
+        let start = 0;
+        while (start < arranged.length) {
+            if (!this._hasMinimizeSpecialSetup(arranged[start])) {
+                start += 1;
+                continue;
+            }
+            let end = start + 1;
+            while (end < arranged.length && this._hasMinimizeSpecialSetup(arranged[end])) end += 1;
+            const blockLength = end - start;
+            if (blockLength < 2) {
+                start = end;
+                continue;
+            }
+
+            const blockIds = new Set(arranged.slice(start, end).map((item) => item.id));
+            const block = arranged.filter((item) => blockIds.has(item.id));
+            const rest = arranged.filter((item) => !blockIds.has(item.id));
+            const candidates = [];
+            for (let insertion = 0; insertion <= rest.length; insertion += 1) {
+                const candidate = [...rest.slice(0, insertion), ...block, ...rest.slice(insertion)];
+                if (this._isValidCompleteOrder(candidate)) {
+                    candidates.push({ items: candidate, score: this._scoreCompleteOrderLite(candidate) });
+                }
+            }
+            if (candidates.length) arranged = this._pickBlockPlacement(candidates);
+            start = arranged.length; // Re-evaluate at most one coherent special-setup block per roll.
+        }
+        return arranged;
+    }
+
+    _hasMinimizeSpecialSetup(item) {
+        for (const [member, home] of Object.entries(this._homePerformance)) {
+            const level = this._memberGearLevels[member] || normalizeGearChanges();
+            if (level !== "minimize") continue;
+            const actual = item.performance?.[member];
+            if (actual && JSON.stringify(actual) !== JSON.stringify(home)) return true;
+        }
+        return false;
+    }
+
+    _isValidCompleteOrder(items) {
+        if (items[0]?.notGoodOpener || items.at(-1)?.notGoodCloser) return false;
+        if (this._precedingSong && this._keptApart(this._precedingSong, items[0])) return false;
+        for (let index = 1; index < items.length; index += 1) {
+            if (this._keptApart(items[index - 1], items[index])) return false;
+        }
+        return true;
+    }
+
+    _scoreCompleteOrderLite(items) {
+        let score = 0;
+        let previous = null;
+        let keyDirection = 0;
+        for (let index = 0; index < items.length; index += 1) {
+            const item = items[index];
+            const transitionScore = previous
+                ? this._scorePlacementPropsLite(previous, item)
+                : this._scoreBoundaryStartLite(item);
+            const keyFlow = this._scoreKeyFlow(previous, item, keyDirection);
+            score +=
+                transitionScore + this._scorePositionLite(item, index + 1) + this._songBias(item.id) + keyFlow.score;
+            keyDirection = keyFlow.dir;
+            previous = item;
+        }
+        return score;
+    }
+
+    _pickBlockPlacement(candidates) {
+        candidates.sort((left, right) => left.score - right.score);
+        const bestScore = candidates[0].score;
+        const temperature = clampFloat(this._randomness.blockShuffleTemperature, 1.4, 0.01);
+        const weights = candidates.map((candidate) => Math.exp(-(candidate.score - bestScore) / temperature));
+        const total = weights.reduce((sum, weight) => sum + weight, 0);
+        let target = this._rng() * total;
+        for (let index = 0; index < candidates.length; index += 1) {
+            target -= weights[index];
+            if (target <= 0) return candidates[index].items;
+        }
+        return candidates.at(-1).items;
     }
 
     /**
@@ -1281,6 +1379,41 @@ class SetList {
         return weightedChangeScore(change, this._getPropWeight(propName), this._memberMultipliers);
     }
 
+    _isHomeDestination(member, propName, nextVariant) {
+        const home = this._homePerformance[member];
+        const next = nextVariant.performance?.[member];
+        if (!home || !next) return false;
+        const rule = this._propConfig[propName] || {};
+        const kind = rule.kind || inferPropKind(propName);
+        if (kind === "instrumentSet") return home.instrument === next.instrument;
+        const field = rule.field || propName;
+        return normalizeValue(home[field]) === normalizeValue(next[field]);
+    }
+
+    _scoreBoundaryStartLite(nextVariant) {
+        if (!Object.keys(this._homePerformance).length) return 0;
+        return this._scorePlacementPropsLite({ performance: this._homePerformance }, nextVariant, true);
+    }
+
+    _scorePlacementPropsLite(prevItem, nextVariant, boundaryStart = false) {
+        let score = 0;
+        for (let index = 0; index < this._propNames.length; index += 1) {
+            const propName = this._propNames[index];
+            const change = this._detectPropChangeLite(prevItem, nextVariant, propName, this._propConfig[propName]);
+            if (!change.changed) continue;
+            const baseWeight = this._getPropWeight(propName);
+            for (const [member, magnitude] of Object.entries(change.byMember || {})) {
+                const level = this._memberGearLevels[member] || normalizeGearChanges();
+                if (boundaryStart && level !== "minimize") continue;
+                // Placement scoring treats a return to the usual rig as the
+                // completion of the same setup block, not a second block.
+                if (level === "minimize" && this._isHomeDestination(member, propName, nextVariant)) continue;
+                score += magnitude * baseWeight * gearChangeMultiplier(level);
+            }
+        }
+        return score;
+    }
+
     _detectPropChangeLite(prevItem, nextVariant, propName, rule) {
         if (!prevItem) {
             return { changed: false, magnitude: 0 };
@@ -1496,6 +1629,39 @@ function buildMemberMultipliers(show) {
         result[name] = gearChangeMultiplier(member?.gearChanges);
     }
     return result;
+}
+
+function buildMemberGearLevels(show) {
+    const members = show?.members || {};
+    const result = Object.create(null);
+    for (const [name, member] of Object.entries(members)) {
+        result[name] = normalizeGearChanges(member?.gearChanges);
+    }
+    return result;
+}
+
+/** Infer each member's usual rig from the most common effective setup. */
+function inferHomePerformance(items) {
+    const countsByMember = new Map();
+    for (const item of items) {
+        for (const [member, setup] of Object.entries(item.performance || {})) {
+            if (!countsByMember.has(member)) countsByMember.set(member, new Map());
+            const counts = countsByMember.get(member);
+            const signature = JSON.stringify(setup);
+            const current = counts.get(signature);
+            counts.set(signature, { count: (current?.count || 0) + 1, setup });
+        }
+    }
+
+    const performance = {};
+    for (const [member, counts] of countsByMember) {
+        let mostCommon = null;
+        for (const entry of counts.values()) {
+            if (!mostCommon || entry.count > mostCommon.count) mostCommon = entry;
+        }
+        if (mostCommon) performance[member] = mostCommon.setup;
+    }
+    return performance;
 }
 
 function memberMultiplier(multipliers, member) {
