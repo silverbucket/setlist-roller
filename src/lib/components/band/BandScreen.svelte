@@ -106,7 +106,12 @@
         "#f59e0b", "#d97706", "#f97316", "#ea580c",
         "#92400e", "#78716c", "#57534e", "#64748b", "#475569", "#1a1a1a",
     ];
-    let persistedDieColor = $derived(store.appConfig?.ui?.dieColor ?? null);
+    // normalizeAppConfig already enforces #rrggbb strings; the typeof check
+    // keeps a malformed value from throwing in the derived below and taking
+    // the whole Band screen down with it.
+    let persistedDieColor = $derived(
+        typeof store.appConfig?.ui?.dieColor === "string" ? store.appConfig.ui.dieColor : null
+    );
 
     let isCustomDieColor = $derived(
         persistedDieColor != null && !PIP_COLOR_OPTIONS.includes(persistedDieColor.toLowerCase())
@@ -411,7 +416,7 @@
                         </label>
                         <button type="button"
                             class="pip-swatch pip-swatch--reset"
-                            class:active={!store.appConfig?.ui?.dieColor}
+                            class:active={!persistedDieColor}
                             onclick={() => setDieColor(null)}
                             aria-label="Reset to default color"
                         >

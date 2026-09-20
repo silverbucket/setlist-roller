@@ -260,3 +260,15 @@ describe("keepApartFrom", () => {
         ]);
     });
 });
+
+describe("normalizeAppConfig — ui.dieColor", () => {
+    it("keeps a valid #rrggbb string", () => {
+        expect(normalizeAppConfig({ ui: { dieColor: "#AbCdEf" } }).ui.dieColor).toBe("#AbCdEf");
+    });
+
+    it("nulls malformed and non-string values", () => {
+        for (const dieColor of ["red", "#fff", 123456, ["#aabbcc"], { hex: "#aabbcc" }, true]) {
+            expect(normalizeAppConfig({ ui: { dieColor } }).ui.dieColor).toBeNull();
+        }
+    });
+});

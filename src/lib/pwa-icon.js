@@ -50,11 +50,28 @@ export function generateAppIconSvgString(color) {
     return generateDieSvgString(color).replace('viewBox="0 0 512 512"', 'viewBox="46 46 420 420"');
 }
 
-// Near-black dice would vanish on the dark tile, so they get a light one.
+// WCAG relative luminance: channels must be linearised before weighting.
+// Weighting the gamma-encoded bytes directly overstates how bright dark
+// colors are (#1f1f1f reads as 0.12 instead of 0.014).
+function relativeLuminance(color) {
+    const [r, g, b] = hexToRgb(color)
+        .split(",")
+        .map((channel) => {
+            const srgb = Number(channel) / 255;
+            return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+        });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+// Dark dice would vanish on the dark tile (its stops sit at ~0.03 and ~0.007
+// luminance, and the die's side faces are darker still than `color`), so
+// they get a light one. 0.06 is roughly #454545: it flips every charcoal
+// while keeping the deepest saturated palette entries (#9f1239 is ~0.08)
+// on the dark tile.
+const LIGHT_TILE_BELOW_LUMINANCE = 0.06;
+
 function tileGradientStops(color) {
-    const [r, g, b] = hexToRgb(color).split(",").map(Number);
-    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    return luminance < 0.12 ? ["#f6f3ec", "#d9d4ca"] : ["#2e2e35", "#141417"];
+    return relativeLuminance(color) < LIGHT_TILE_BELOW_LUMINANCE ? ["#f6f3ec", "#d9d4ca"] : ["#2e2e35", "#141417"];
 }
 
 // Opaque tile variant, used for the maskable manifest icon and the

@@ -31,12 +31,21 @@ describe("generateMaskableDieSvgString", () => {
         expectTileGradient(generateMaskableDieSvgString(DEFAULT_DIE_COLOR), DARK_TILE);
     });
 
-    it("uses the light gradient tile for near-black dice", () => {
+    it("uses the light gradient tile for dark dice", () => {
         expectTileGradient(generateMaskableDieSvgString("#1a1a1a"), LIGHT_TILE);
-        expectTileGradient(generateMaskableDieSvgString("#1e1e1e"), LIGHT_TILE);
+        // Gamma-encoded weighting used to score this 0.12 and leave it
+        // near-invisible on the dark tile.
+        expectTileGradient(generateMaskableDieSvgString("#1f1f1f"), LIGHT_TILE);
+        expectTileGradient(generateMaskableDieSvgString("#404040"), LIGHT_TILE);
     });
 
     it("uses the dark gradient tile once luminance clears the contrast threshold", () => {
-        expectTileGradient(generateMaskableDieSvgString("#1f1f1f"), DARK_TILE);
+        expectTileGradient(generateMaskableDieSvgString("#4a4a4a"), DARK_TILE);
+    });
+
+    it("keeps the deepest saturated palette colors on the dark tile", () => {
+        for (const color of ["#9f1239", "#92400e", "#1d4ed8", "#475569", "#57534e"]) {
+            expectTileGradient(generateMaskableDieSvgString(color), DARK_TILE);
+        }
     });
 });

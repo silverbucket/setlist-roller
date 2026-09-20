@@ -355,7 +355,12 @@ export function normalizeAppConfig(config) {
         normalized.ui && typeof normalized.ui === "object" && !Array.isArray(normalized.ui)
             ? normalized.ui
             : { dieColor: null };
-    if (normalized.ui.dieColor != null && !/^#[0-9a-fA-F]{6}$/.test(normalized.ui.dieColor)) {
+    // typeof guard: RegExp.test() coerces, so ["#aabbcc"] would otherwise pass
+    // and later blow up string-only callers (e.g. toLowerCase in BandScreen).
+    if (
+        normalized.ui.dieColor != null &&
+        (typeof normalized.ui.dieColor !== "string" || !/^#[0-9a-fA-F]{6}$/.test(normalized.ui.dieColor))
+    ) {
         normalized.ui.dieColor = null;
     }
 
