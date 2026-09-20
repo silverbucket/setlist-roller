@@ -11,7 +11,8 @@
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
     import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
-    import { DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
+    import { getEffectiveTheme } from "./lib/theme.svelte.js";
+    import { accentForTheme, DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
 
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
@@ -97,10 +98,23 @@
 
     $effect(() => {
         const root = document.documentElement;
-        root.style.setProperty("--accent", dieColor);
-        root.style.setProperty("--accent-strong", darkenHex(dieColor, 0.85));
-        root.style.setProperty("--accent-soft", hexToRgba(dieColor, 0.12));
-        root.style.setProperty("--accent-line", hexToRgba(dieColor, 0.24));
+        const custom = store.appConfig?.ui?.dieColor;
+        if (!custom) {
+            // No custom die colour: let each theme's own accent tokens in
+            // app.css apply instead of pinning the light-theme default.
+            for (const name of ["--accent", "--accent-strong", "--accent-soft", "--accent-line"]) {
+                root.style.removeProperty(name);
+            }
+            return;
+        }
+        // The die keeps the raw colour; the UI accent is nudged until it is
+        // legible on the active theme (a near-black die would otherwise
+        // render accent text black-on-black in dark mode).
+        const accent = accentForTheme(custom, getEffectiveTheme());
+        root.style.setProperty("--accent", accent);
+        root.style.setProperty("--accent-strong", darkenHex(accent, 0.85));
+        root.style.setProperty("--accent-soft", hexToRgba(accent, 0.12));
+        root.style.setProperty("--accent-line", hexToRgba(accent, 0.24));
     });
 
 </script>

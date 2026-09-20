@@ -162,3 +162,47 @@ export function darkenHex(hex, factor) {
     const [r, g, b] = parseHex(hex);
     return `#${toHexByte(r * f)}${toHexByte(g * f)}${toHexByte(b * f)}`;
 }
+
+// WCAG relative luminance of an [r, g, b] triple.
+function luminance([r, g, b]) {
+    const [lr, lg, lb] = [r, g, b].map((v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+}
+
+function contrastRatio(a, b) {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+// Opaque stand-ins for each theme's surfaces (--paper-strong / --surface
+// in app.css), which is what accent-coloured text actually sits on.
+const ACCENT_SURFACE = { light: [255, 255, 255], dark: [26, 30, 38] };
+// Dark gets the full WCAG AA text ratio: that's where the palette's dark
+// swatches fail. Light stays at 3 so the default accent (3.6 on white) and
+// the rest of the stock palette keep their exact colour.
+const ACCENT_MIN_CONTRAST = { light: 3, dark: 4.5 };
+
+/**
+ * The die colour doubles as the UI accent, but the palette (and the custom
+ * picker) allows near-black and near-white, which vanish as text on the
+ * dark and light themes respectively. Blend toward white (dark theme) or
+ * black (light theme) just far enough to stay legible; colours that already
+ * pass are returned untouched, so the die and the accent still match.
+ */
+export function accentForTheme(hex, theme) {
+    const surface = ACCENT_SURFACE[theme] || ACCENT_SURFACE.light;
+    const minContrast = ACCENT_MIN_CONTRAST[theme] || ACCENT_MIN_CONTRAST.light;
+    const target = theme === "dark" ? 255 : 0;
+    const base = parseHex(hex);
+    for (let step = 0; step <= 20; step += 1) {
+        const t = step / 20;
+        const mixed = base.map((v) => v + (target - v) * t);
+        if (contrastRatio(mixed, surface) >= minContrast) {
+            return `#${mixed.map(toHexByte).join("")}`;
+        }
+    }
+    return theme === "dark" ? "#ffffff" : "#000000";
+}
