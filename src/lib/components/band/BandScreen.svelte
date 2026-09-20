@@ -92,14 +92,30 @@
         return (memberConfig.instruments || []).map((i) => i.name).filter(Boolean).join(", ");
     }
 
+    // Ordered around the hue wheel, light-to-deep within each family. All are
+    // mid-to-dark tones: the die color doubles as the app accent and sits
+    // behind white pips, so pastels would wash both out.
     const PIP_COLOR_OPTIONS = [
-        DEFAULT_DIE_COLOR, "#ef4444", "#d94f7a", "#ec4899",
-        "#a855f7", "#8b5cf6", "#6366f1", "#3b82f6",
-        "#0ea5e9", "#14b8a6", "#10b981", "#22c55e",
-        "#84cc16", "#eab308", "#f59e0b", "#f97316",
-        "#78716c", "#64748b", "#1a1a1a",
+        DEFAULT_DIE_COLOR, "#ef4444", "#dc2626", "#b91c1c", "#9f1239",
+        "#e11d48", "#d94f7a", "#ec4899", "#db2777", "#c026d3",
+        "#a855f7", "#9333ea", "#8b5cf6", "#7c3aed", "#6366f1", "#4f46e5",
+        "#3b82f6", "#2563eb", "#1d4ed8", "#0ea5e9", "#0284c7",
+        "#06b6d4", "#0891b2", "#14b8a6", "#0d9488",
+        "#10b981", "#059669", "#22c55e", "#16a34a", "#15803d",
+        "#84cc16", "#65a30d", "#eab308", "#ca8a04",
+        "#f59e0b", "#d97706", "#f97316", "#ea580c",
+        "#92400e", "#78716c", "#57534e", "#64748b", "#475569", "#1a1a1a",
     ];
-    let persistedDieColor = $derived(store.appConfig?.ui?.dieColor ?? null);
+    // normalizeAppConfig already enforces #rrggbb strings; the typeof check
+    // keeps a malformed value from throwing in the derived below and taking
+    // the whole Band screen down with it.
+    let persistedDieColor = $derived(
+        typeof store.appConfig?.ui?.dieColor === "string" ? store.appConfig.ui.dieColor : null
+    );
+
+    let isCustomDieColor = $derived(
+        persistedDieColor != null && !PIP_COLOR_OPTIONS.includes(persistedDieColor.toLowerCase())
+    );
 
     function setDieColor(color) {
         // updateConfigField autosaves (debounced) — no explicit save needed.
@@ -379,9 +395,28 @@
                                 aria-label="Set die color to {color}"
                             ></button>
                         {/each}
+                        <!-- type=color never triggers the iOS focus zoom, so the
+                             16px input rule doesn't apply to this hidden control. -->
+                        <label
+                            class="pip-swatch pip-swatch--custom"
+                            class:active={isCustomDieColor}
+                            style={isCustomDieColor ? `background: ${persistedDieColor};` : ""}
+                            title="Custom color"
+                        >
+                            <input
+                                type="color"
+                                class="pip-swatch-input"
+                                value={persistedDieColor ?? DEFAULT_DIE_COLOR}
+                                onchange={(e) => setDieColor(e.currentTarget.value.toLowerCase())}
+                                aria-label="Pick a custom die color"
+                            />
+                            {#if !isCustomDieColor}
+                                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                            {/if}
+                        </label>
                         <button type="button"
                             class="pip-swatch pip-swatch--reset"
-                            class:active={!store.appConfig?.ui?.dieColor}
+                            class:active={!persistedDieColor}
                             onclick={() => setDieColor(null)}
                             aria-label="Reset to default color"
                         >
@@ -1134,6 +1169,33 @@
     .pip-swatch.active {
         border-color: var(--ink);
         box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+    }
+
+    .pip-swatch--custom {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: conic-gradient(#ef4444, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #ef4444);
+    }
+
+    .pip-swatch--custom:focus-within {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    /* Invisible but still the click/focus target, so the native picker opens
+       anchored to the swatch. */
+    .pip-swatch-input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        opacity: 0;
+        cursor: pointer;
     }
 
     .pip-swatch--reset {

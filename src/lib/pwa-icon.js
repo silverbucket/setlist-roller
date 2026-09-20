@@ -1,4 +1,4 @@
-import { darkenHex } from "./utils.js";
+import { darkenHex, hexToRgb } from "./utils.js";
 
 // Cache Storage bucket shared with the service worker. The static manifest
 // (vite.config.js) points its icons at /app-icon-*.png; a CacheFirst
@@ -44,18 +44,58 @@ export function generateDieSvgString(color) {
     );
 }
 
-// Maskable variant: the die scaled into the 80% safe zone on the app
-// background, so adaptive-icon shapes (circle, squircle, ...) don't crop
-// the artwork. Must stay in lockstep with scripts that generate the
-// static /public fallbacks.
+// Transparent "any"-purpose icon: the same die, cropped tight so it fills
+// ~90% of the canvas instead of floating in the 512 box's built-in margin.
+export function generateAppIconSvgString(color) {
+    return generateDieSvgString(color).replace('viewBox="0 0 512 512"', 'viewBox="46 46 420 420"');
+}
+
+// WCAG relative luminance: channels must be linearised before weighting.
+// Weighting the gamma-encoded bytes directly overstates how bright dark
+// colors are (#1f1f1f reads as 0.12 instead of 0.014).
+function relativeLuminance(color) {
+    const [r, g, b] = hexToRgb(color)
+        .split(",")
+        .map((channel) => {
+            const srgb = Number(channel) / 255;
+            return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+        });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+// Dark dice would vanish on the dark tile (its stops sit at ~0.03 and ~0.007
+// luminance, and the die's side faces are darker still than `color`), so
+// they get a light one. 0.06 is roughly #454545: it flips every charcoal
+// while keeping the deepest saturated palette entries (#9f1239 is ~0.08)
+// on the dark tile.
+const LIGHT_TILE_BELOW_LUMINANCE = 0.06;
+
+function tileGradientStops(color) {
+    return relativeLuminance(color) < LIGHT_TILE_BELOW_LUMINANCE ? ["#f6f3ec", "#d9d4ca"] : ["#2e2e35", "#141417"];
+}
+
+// Opaque tile variant, used for the maskable manifest icon and the
+// apple-touch-icon (macOS dock, iOS home screen — both render transparent
+// icons badly: shrunk onto a filler square, or on flat black).
+//
+// The die is drawn at full size: its hexagonal silhouette has a circumradius
+// of 190 around the canvas centre, inside the maskable safe zone (a circle
+// of radius 0.4 * 512 = 204.8), so no adaptive-icon shape crops the artwork.
+// Don't scale it down "to be safe" — that's what left a tiny die on a big
+// dark square in the macOS dock. Must stay in lockstep with the static
+// /public fallbacks (regenerate with `npm run icons`).
 export function generateMaskableDieSvgString(color) {
     const die = generateDieSvgString(color)
         .replace(/<svg[^>]*>/, "")
         .replace("</svg>", "");
+    const [top, bottom] = tileGradientStops(color);
     return (
         `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">` +
-        `<rect width="512" height="512" fill="#1a1a1e"/>` +
-        `<g transform="translate(76.8 76.8) scale(0.7)">${die}</g>` +
+        `<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">` +
+        `<stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/>` +
+        `</linearGradient></defs>` +
+        `<rect width="512" height="512" fill="url(#bg)"/>` +
+        die +
         `</svg>`
     );
 }
@@ -104,10 +144,11 @@ export async function updatePwaIcons(dieColor) {
     // default icons still work, we just skip the recolor.
     if (typeof caches === "undefined") return;
 
-    const die = generateDieSvgString(dieColor);
+    const die = generateAppIconSvgString(dieColor);
     const maskable = generateMaskableDieSvgString(dieColor);
     const [png180, png192, png512, pngMaskable512] = await Promise.all([
-        svgToPngBlob(die, 180),
+        // Opaque tile: macOS/iOS don't handle transparent touch icons well.
+        svgToPngBlob(maskable, 180),
         svgToPngBlob(die, 192),
         svgToPngBlob(die, 512),
         svgToPngBlob(maskable, 512),

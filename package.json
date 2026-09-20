@@ -10,6 +10,7 @@
         "preview": "vite preview",
         "test": "vitest run",
         "test:watch": "vitest",
+        "icons": "node scripts/generate-icons.mjs",
         "test:e2e": "playwright test --project=chromium",
         "test:e2e:smoke": "playwright test --project=chromium --grep @smoke",
         "test:e2e:mobile": "playwright test --project=mobile",
