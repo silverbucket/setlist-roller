@@ -94,17 +94,51 @@
 
     // Ordered around the hue wheel, light-to-deep within each family. All are
     // mid-to-dark tones: the die color doubles as the app accent and sits
-    // behind white pips, so pastels would wash both out.
+    // behind white pips, so pastels would wash both out. The deepest shades
+    // are fine for the accent too: accentForTheme() lifts them on dark mode.
     const PIP_COLOR_OPTIONS = [
-        DEFAULT_DIE_COLOR, "#ef4444", "#dc2626", "#b91c1c", "#9f1239",
-        "#e11d48", "#d94f7a", "#ec4899", "#db2777", "#c026d3",
-        "#a855f7", "#9333ea", "#8b5cf6", "#7c3aed", "#6366f1", "#4f46e5",
-        "#3b82f6", "#2563eb", "#1d4ed8", "#0ea5e9", "#0284c7",
-        "#06b6d4", "#0891b2", "#14b8a6", "#0d9488",
-        "#10b981", "#059669", "#22c55e", "#16a34a", "#15803d",
-        "#84cc16", "#65a30d", "#eab308", "#ca8a04",
-        "#f59e0b", "#d97706", "#f97316", "#ea580c",
-        "#92400e", "#78716c", "#57534e", "#64748b", "#475569", "#1a1a1a",
+        // red
+        DEFAULT_DIE_COLOR, "#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#7f1d1d",
+        // rose
+        "#f43f5e", "#e11d48", "#be123c", "#9f1239", "#881337",
+        // pink
+        "#d94f7a", "#ec4899", "#db2777", "#be185d", "#9d174d",
+        // fuchsia
+        "#d946ef", "#c026d3", "#a21caf", "#86198f",
+        // purple
+        "#a855f7", "#9333ea", "#7e22ce", "#6b21a8",
+        // violet
+        "#8b5cf6", "#7c3aed", "#6d28d9", "#5b21b6",
+        // indigo
+        "#6366f1", "#4f46e5", "#4338ca", "#3730a3",
+        // blue
+        "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a",
+        // sky
+        "#0ea5e9", "#0284c7", "#0369a1", "#075985",
+        // cyan
+        "#06b6d4", "#0891b2", "#0e7490", "#155e75",
+        // teal
+        "#14b8a6", "#0d9488", "#0f766e", "#115e59",
+        // emerald
+        "#10b981", "#059669", "#047857", "#065f46",
+        // green
+        "#22c55e", "#16a34a", "#15803d", "#166534", "#14532d",
+        // lime / olive
+        "#84cc16", "#65a30d", "#4d7c0f", "#3f6212",
+        // yellow
+        "#eab308", "#ca8a04", "#a16207",
+        // amber
+        "#f59e0b", "#d97706", "#b45309",
+        // orange / rust
+        "#f97316", "#ea580c", "#c2410c", "#9a3412",
+        // brown
+        "#92400e", "#78350f", "#5c3317",
+        // stone
+        "#78716c", "#57534e", "#44403c",
+        // slate
+        "#64748b", "#475569", "#334155", "#1e293b",
+        // black
+        "#1a1a1a",
     ];
     // normalizeAppConfig already enforces #rrggbb strings; the typeof check
     // keeps a malformed value from throwing in the derived below and taking
