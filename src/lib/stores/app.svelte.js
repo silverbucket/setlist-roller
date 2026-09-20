@@ -846,10 +846,23 @@ export function createAppStore(repo) {
             void mirror?.putKv("config", normalized).catch(() => {});
             appConfig = normalized;
             generationOptions = deepMerge(defaultGenerationOptions(normalized), generationOptions || {});
+            rememberBandName(normalized.bandName);
         } else {
             void mirror?.deleteKv("config").catch(() => {});
             appConfig = null;
         }
+    }
+
+    // Keep the account switcher's label in step with the config. The
+    // `connected` handler saves the account before the config has arrived
+    // (first login, first-run setup), so without this the menu shows
+    // "Unnamed" until the next disconnect or settings save.
+    function rememberBandName(bandName) {
+        if (!currentUserAddress || !bandName) return;
+        const known = knownAccounts.find((a) => a.address === currentUserAddress);
+        if (known?.metadata?.bandName === bandName) return;
+        saveKnownAccount(currentUserAddress, { bandName }, repo.getToken());
+        knownAccounts = getKnownAccounts();
     }
 
     function setBootstrapLocal(meta) {
@@ -2292,10 +2305,6 @@ export function createAppStore(repo) {
             if (revision !== configSaveRevision) return true;
             setConfigLocal(saved);
             persistGenerationOptions();
-            if (currentUserAddress && appConfig?.bandName) {
-                saveKnownAccount(currentUserAddress, { bandName: appConfig.bandName }, repo.getToken());
-                knownAccounts = getKnownAccounts();
-            }
             return true;
         } catch (error) {
             toastError(error?.message || errorMessage);
