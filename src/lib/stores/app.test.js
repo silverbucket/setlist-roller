@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as accounts from "../accounts.js";
 import { accountSlot } from "../accounts.js";
 import { openAccountDb } from "../local-db.js";
 import { migrator } from "../migrations.js";
@@ -1121,6 +1122,90 @@ describe("incremental remote sync", () => {
         expect(store.syncState).toBe("synced");
         expect(store.songs.map((s) => s.name)).toEqual(["Keep"]);
         expect(store.initialSyncDone).toBe(true);
+        teardown();
+    });
+});
+
+describe("rememberBandName", () => {
+    let restoreEnv;
+
+    beforeEach(() => {
+        restoreEnv = installBrowserEnv();
+    });
+    afterEach(() => {
+        restoreEnv();
+    });
+
+    it("syncs the account menu label when config arrives after connect", async () => {
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        expect(store.knownAccounts.find((a) => a.address === "user@example.com")?.metadata?.bandName).toBeUndefined();
+
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "The Remotes", schemaVersion: 2 },
+        });
+        await settle();
+
+        expect(store.knownAccounts.find((a) => a.address === "user@example.com")?.metadata?.bandName).toBe(
+            "The Remotes",
+        );
+        teardown();
+    });
+
+    it("syncs the band name from the initial repo cache seed", async () => {
+        const repo = buildRepo();
+        repo.loadAll = vi.fn(async () => ({
+            songs: [],
+            config: { bandName: "Cached Band", schemaVersion: 2 },
+            bootstrap: null,
+            setlists: [],
+            members: {},
+            pendingBodies: 0,
+            errors: {},
+        }));
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        expect(store.knownAccounts.find((a) => a.address === "user@example.com")?.metadata?.bandName).toBe(
+            "Cached Band",
+        );
+        teardown();
+    });
+
+    it("does not rewrite the registry when the band name is already current", async () => {
+        const saveSpy = vi.spyOn(accounts, "saveKnownAccount");
+        const repo = buildRepo();
+        const store = createAppStore(repo);
+        const teardown = store.init();
+        repo.fire("connected");
+        await settle();
+
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "The Remotes", schemaVersion: 2 },
+        });
+        await settle();
+
+        saveSpy.mockClear();
+
+        repo.fireChange({
+            relativePath: "settings/app-config",
+            origin: "remote",
+            newValue: { bandName: "The Remotes", schemaVersion: 2, general: { count: 5 } },
+        });
+        await settle();
+
+        expect(saveSpy).not.toHaveBeenCalled();
+        saveSpy.mockRestore();
         teardown();
     });
 });
