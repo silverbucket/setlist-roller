@@ -29,7 +29,28 @@ function harness() {
         toastInfo: vi.fn(),
         toastError: vi.fn(),
     };
-    const store = createDataIoStore(repo, dependencies);
+    const stores = {
+        accounts: { storageKey: dependencies.storageKey, sessionGuard: dependencies.sessionGuard },
+        catalog: Object.assign(state, {
+            upsertSongLocal: dependencies.upsertSongLocal,
+            setConfigLocal: dependencies.setConfigLocal,
+            upsertMemberLocal: dependencies.upsertMemberLocal,
+            upsertSetlistLocal: dependencies.upsertSetlistLocal,
+            setBootstrapLocal: dependencies.setBootstrapLocal,
+        }),
+        connection: { withSync: dependencies.withSync },
+        ui: {
+            get busyMessage() {
+                return state.busyMessage;
+            },
+            set busyMessage(value) {
+                state.busyMessage = value;
+            },
+            toastInfo: dependencies.toastInfo,
+            toastError: dependencies.toastError,
+        },
+    };
+    const store = createDataIoStore(repo, stores);
     return { store, repo, state, dependencies, switchAccount: () => session++ };
 }
 

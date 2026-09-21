@@ -106,6 +106,84 @@ async function markCatalogSettled() {
     db.close();
 }
 
+describe("composed store lifecycle", () => {
+    it("isolates editor, catalog, band and UI state between app instances", async () => {
+        vi.useFakeTimers();
+        const repo = {
+            putMember: vi.fn(async (_name, member) => member),
+            putSong: vi.fn(async (song) => song),
+        };
+        const first = createAppStore(repo);
+        const second = createAppStore(repo);
+        first.songSearch = "First catalog";
+        first.songFilter = "covers";
+        first.toggleKeyFilter("C");
+        first.firstRunBandName = "First band";
+        first.bandSubView = "member-edit";
+        first.editingMemberName = "Alice";
+        await first.addBandMember("Alice");
+        first.openNewSong();
+        first.updateSongField("name", "First song");
+        await first.saveSong();
+        first.openNewSong();
+        first.updateSongField("name", "Unsaved song");
+        first.editReturnView = "saved";
+        const confirmation = first.requestConfirm({ title: "First app only" });
+
+        expect(first.songs[0].name).toBe("First song");
+        expect(first.bandMembers.Alice).toBeDefined();
+        expect(first.editorSong.name).toBe("Unsaved song");
+        expect(second.songs).toEqual([]);
+        expect(second.bandMembers).toEqual({});
+        expect(second.editorSong).toBeNull();
+        expect(second.editReturnView).toBe("");
+        expect(second.songSearch).toBe("");
+        expect(second.songFilter).toBe("all");
+        expect(second.songKeyFilters.size).toBe(0);
+        expect(second.firstRunBandName).toBe("");
+        expect(second.bandSubView).toBe("main");
+        expect(second.editingMemberName).toBe("");
+        expect(second.toastMessages).toEqual([]);
+        expect(second.confirmRequest).toBeNull();
+        expect(second.syncActivelyRunning).toBe(false);
+        first.resolveConfirm(false);
+        await expect(confirmation).resolves.toBe(false);
+    });
+
+    it("teardown detaches remote changes and cancels the band autosave", async () => {
+        const restore = installBrowserEnv();
+        let teardown;
+        try {
+            const repo = buildRepo();
+            repo.putConfig = vi.fn(async (config) => config);
+            const store = createAppStore(repo);
+            teardown = store.init();
+            repo.fire("connected");
+            await settle();
+            repo.fireChange({
+                origin: "remote",
+                relativePath: "settings/app-config",
+                newValue: { bandName: "Original" },
+            });
+            vi.useFakeTimers();
+            store.updateConfigField("bandName", "Pending edit");
+            teardown();
+            teardown = null;
+            repo.fireChange({
+                origin: "remote",
+                relativePath: "songs/late",
+                newValue: { id: "late", name: "Late song" },
+            });
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(repo.putConfig).not.toHaveBeenCalled();
+            expect(store.songs).toEqual([]);
+        } finally {
+            teardown?.();
+            restore();
+        }
+    });
+});
+
 describe("normalizeAuthToken", () => {
     it("keeps non-empty string tokens", () => {
         expect(normalizeAuthToken("saved-token")).toBe("saved-token");
