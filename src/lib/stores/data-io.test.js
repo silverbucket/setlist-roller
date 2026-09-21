@@ -51,7 +51,7 @@ function harness() {
         },
     };
     const store = createDataIoStore(repo, stores);
-    return { store, repo, state, dependencies, switchAccount: () => session++ };
+    return { store, stores, repo, state, dependencies, switchAccount: () => session++ };
 }
 
 function file(payload) {
@@ -167,6 +167,77 @@ describe("data I/O store", () => {
         expect(dependencies.upsertSongLocal).not.toHaveBeenCalled();
         expect(repo.putBootstrapMeta).not.toHaveBeenCalled();
         expect(dependencies.toastError).toHaveBeenCalledWith("Import stopped — the account changed mid-way.");
+        expect(state.busyMessage).toBe("");
+    });
+
+    it.each([
+        "deleteSong",
+        "deleteSetlist",
+        "deleteMember",
+    ])("does not touch the new account mirror when switching during %s", async (method) => {
+        const { store, stores, repo, state, dependencies, switchAccount } = harness();
+        const makeMirror = () => ({
+            deleteSong: vi.fn(async () => {}),
+            deleteSetlist: vi.fn(async () => {}),
+            deleteMember: vi.fn(async () => {}),
+            deleteKv: vi.fn(async () => {}),
+        });
+        const oldMirror = makeMirror();
+        const newMirror = makeMirror();
+        stores.accounts.mirror = oldMirror;
+        stores.ui.requestConfirm = vi.fn(async () => true);
+        Object.assign(repo, {
+            listSongs: vi.fn(async () => ({ songs: [{ id: "shared-song" }] })),
+            listSetlists: vi.fn(async () => ({ setlists: [{ id: "shared-set" }] })),
+            listMembers: vi.fn(async () => ({ members: { Alice: {} } })),
+            deleteSong: vi.fn(async () => {}),
+            deleteSetlist: vi.fn(async () => {}),
+            deleteMember: vi.fn(async () => {}),
+            deleteConfig: vi.fn(async () => {}),
+        });
+        let finishDelete;
+        let markStarted;
+        const pendingDelete = new Promise((resolve) => {
+            finishDelete = resolve;
+        });
+        const started = new Promise((resolve) => {
+            markStarted = resolve;
+        });
+        repo[method].mockImplementation(() => {
+            markStarted();
+            return pendingDelete;
+        });
+
+        const deleting = store.deleteAllData();
+        await started;
+        switchAccount();
+        stores.accounts.mirror = newMirror;
+        state.songs = [{ id: "shared-song", name: "Other account song" }];
+        state.savedSetlists = [{ id: "shared-set" }];
+        state.bandMembers = { Alice: {} };
+        state.appConfig = { bandName: "Other account" };
+        finishDelete();
+        await deleting;
+
+        for (const remove of Object.values(newMirror)) expect(remove).not.toHaveBeenCalled();
+        expect(oldMirror[method]).not.toHaveBeenCalled();
+        const operations = [
+            "deleteSong",
+            "listSetlists",
+            "deleteSetlist",
+            "listMembers",
+            "deleteMember",
+            "deleteConfig",
+        ];
+        for (const later of operations.slice(operations.indexOf(method) + 1)) {
+            expect(repo[later]).not.toHaveBeenCalled();
+        }
+        expect(state.songs).toEqual([{ id: "shared-song", name: "Other account song" }]);
+        expect(state.savedSetlists).toEqual([{ id: "shared-set" }]);
+        expect(state.bandMembers).toEqual({ Alice: {} });
+        expect(state.appConfig).toEqual({ bandName: "Other account" });
+        expect(dependencies.toastInfo).not.toHaveBeenCalled();
+        expect(dependencies.toastError).toHaveBeenCalledWith("Deletion stopped — the account changed mid-way.");
         expect(state.busyMessage).toBe("");
     });
 

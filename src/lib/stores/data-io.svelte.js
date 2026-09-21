@@ -212,6 +212,7 @@ export function createDataIoStore(repo, stores) {
             for (const id of allSongIds) {
                 abortIfSwitched();
                 await repo.deleteSong(id);
+                abortIfSwitched();
                 void stores.accounts.mirror?.deleteSong(id).catch(() => {});
             }
             // Delete all setlists from RS (list from remote to catch any beyond in-memory state)
@@ -219,6 +220,7 @@ export function createDataIoStore(repo, stores) {
             for (const setlist of allSetlists) {
                 abortIfSwitched();
                 await repo.deleteSetlist(setlist.id);
+                abortIfSwitched();
                 void stores.accounts.mirror?.deleteSetlist(setlist.id).catch(() => {});
             }
             // Delete all members from RS (list from remote to catch any beyond in-memory state)
@@ -226,6 +228,7 @@ export function createDataIoStore(repo, stores) {
             for (const name of Object.keys(allMembers)) {
                 abortIfSwitched();
                 await repo.deleteMember(name);
+                abortIfSwitched();
                 void stores.accounts.mirror?.deleteMember(name).catch(() => {});
             }
             // Delete config from RS so first-run triggers on reload
