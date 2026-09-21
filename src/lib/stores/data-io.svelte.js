@@ -85,6 +85,7 @@ export function createDataIoStore(repo, stores) {
         try {
             stores.ui.busyMessage = "Importing...";
             const text = await importFile.text();
+            abortIfSwitched();
             const payload = JSON.parse(text);
             const existing = new Map(stores.catalog.songs.map((s) => [s.id, s]));
             const imported = normalizeImportPayload(payload);

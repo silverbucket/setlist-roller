@@ -122,6 +122,39 @@ describe("data I/O store", () => {
         expect(dependencies.setBootstrapLocal).toHaveBeenCalledWith(expect.objectContaining({ importedSongs: 1 }));
     });
 
+    it.each([
+        ["songs", [{ id: "song", name: "Imported song" }]],
+        ["config", { general: {}, show: {}, props: {}, bandName: "Imported band" }],
+        ["members", { songs: [], bandMembers: { Alice: { instruments: [] } } }],
+        ["setlists", { songs: [], savedSetlists: [{ id: "set", songs: [] }] }],
+        ["metadata", []],
+    ])("does not write %s if the account changes while reading the import file", async (_kind, payload) => {
+        const { store, repo, state, dependencies, switchAccount } = harness();
+        let finishRead;
+        const contents = new Promise((resolve) => {
+            finishRead = resolve;
+        });
+        store.importFile = { name: "catalog.json", text: () => contents };
+
+        const importing = store.importFromFile();
+        expect(state.busyMessage).toBe("Importing...");
+        switchAccount();
+        finishRead(JSON.stringify(payload));
+        await importing;
+
+        for (const write of [repo.putSong, repo.putConfig, repo.putMember, repo.putSetlist, repo.putBootstrapMeta]) {
+            expect(write).not.toHaveBeenCalled();
+        }
+        expect(dependencies.upsertSongLocal).not.toHaveBeenCalled();
+        expect(dependencies.setConfigLocal).not.toHaveBeenCalled();
+        expect(dependencies.upsertMemberLocal).not.toHaveBeenCalled();
+        expect(dependencies.upsertSetlistLocal).not.toHaveBeenCalled();
+        expect(dependencies.setBootstrapLocal).not.toHaveBeenCalled();
+        expect(dependencies.toastInfo).not.toHaveBeenCalled();
+        expect(dependencies.toastError).toHaveBeenCalledWith("Import stopped — the account changed mid-way.");
+        expect(state.busyMessage).toBe("");
+    });
+
     it("discards an import response when the account changes during a write", async () => {
         const { store, repo, state, dependencies, switchAccount } = harness();
         repo.putSong.mockImplementation(async (song) => {
