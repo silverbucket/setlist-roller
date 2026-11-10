@@ -162,11 +162,12 @@
     {#if store.bandSubView === "member-edit"}
         <!-- MEMBER EDIT SUB-VIEW -->
         <div class="sub-header">
-            <button type="button" class="btn btn-sm back-btn" onclick={handleBackToMain}>&larr; Back</button>
+            <button type="button" class="icon-btn back-btn" onclick={handleBackToMain} aria-label="Back"><Icon name="chevron-left" size={24} stroke={2.2} /></button>
             <h2 class="screen-title sub-title">Edit Member</h2>
         </div>
 
         {#each store.bandMemberEntries.filter(([name]) => name === store.editingMemberName) as [memberName, memberConfig]}
+            <div class="member-edit-grid">
             <div class="card">
                 <label class="field-group">
                     <span class="field-label">Member name</span>
@@ -212,7 +213,7 @@
                                 <span class="pill badge">{instrument.defaultTuning}</span>
                             {/if}
                             {#if store.songsUsingInstrument(memberName, instrument.name).length > 0}
-                                <span class="ref-count">{store.songsUsingInstrument(memberName, instrument.name).length}</span>
+                                <span class="ref-count">{store.songsUsingInstrument(memberName, instrument.name).length} songs</span>
                             {/if}
                             <svg aria-hidden="true" class="chevron-down" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </summary>
@@ -327,17 +328,19 @@
                     <button type="button" class="btn btn-ink add-sm-btn" onclick={() => handleAddInstrument(memberName)}>Add</button>
                 </div>
             </div>
+            </div>
         {/each}
 
     {:else if store.bandSubView === "advanced"}
         <!-- ADVANCED CONFIG SUB-VIEW -->
         <div class="sub-header">
-            <button type="button" class="btn btn-sm back-btn" onclick={handleBackToMain}>&larr; Back</button>
+            <button type="button" class="icon-btn back-btn" onclick={handleBackToMain} aria-label="Back"><Icon name="chevron-left" size={24} stroke={2.2} /></button>
             <h2 class="screen-title sub-title">Advanced Config</h2>
         </div>
 
         <p class="autosave-hint">Changes save automatically.</p>
 
+        <div class="advanced-grid">
         {#each store.CONFIG_SECTIONS.filter((s) => s.id !== "identity") as section}
             <details class="section-details">
                 <summary class="section-summary"><span class="section-summary-label">{section.title}</span><svg aria-hidden="true" class="chevron-down" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></summary>
@@ -392,6 +395,7 @@
                 </div>
             </details>
         {/each}
+        </div>
 
     {:else}
         <!-- MAIN VIEW -->
@@ -424,7 +428,7 @@
                                 <span class="die-color-current" style="background: {persistedDieColor ?? DEFAULT_DIE_COLOR};"></span>
                                 <span class="die-color-text">
                                     <span class="field-label">Die color</span>
-                                    <span class="die-color-hint">Also the accent colour across the app</span>
+                                    <span class="die-color-hint">Also the accent color across the app</span>
                                 </span>
                                 <svg aria-hidden="true" class="chevron-down" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                             </summary>
@@ -490,7 +494,7 @@
                                     {/if}
                                 </div>
                                 {#if store.songsUsingMember(memberName).length > 0}
-                                    <span class="ref-count">{store.songsUsingMember(memberName).length}</span>
+                                    <span class="ref-count">{store.songsUsingMember(memberName).length} songs</span>
                                 {/if}
                                 <Icon name="chevron-right" size={18} class="chevron-icon" />
                             </button>
@@ -626,10 +630,23 @@
             align-items: start;
         }
 
-        /* Sub-views are single forms; keep them at a readable measure. */
-        .band-screen > :global(:not(.band-grid):not(.screen-header):not(.app-footer)) {
-            max-width: 640px;
+        .member-edit-grid {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+            gap: var(--space-6);
+            align-items: start;
         }
+
+        .advanced-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: start;
+        }
+    }
+
+    .member-edit-grid,
+    .advanced-grid {
+        display: grid;
+        gap: var(--space-4);
+        min-width: 0;
     }
 
     .screen-header {
@@ -638,14 +655,12 @@
         align-items: center;
     }
 
+    /* Same back affordance as the song editor: a chevron, then the title. */
     .sub-header {
         display: flex;
         align-items: center;
-        gap: var(--space-3);
-    }
-
-    .sub-title {
-        font-size: 1.4rem;
+        gap: var(--space-1);
+        margin-left: -0.6rem;
     }
 
     /* Card / panel */
@@ -784,8 +799,8 @@
         font-weight: 600;
         color: var(--ink-2);
         background: var(--hover-strong);
-        min-width: 1.6rem;
         height: 1.5rem;
+        white-space: nowrap;
         display: inline-flex;
         align-items: center;
         justify-content: center;

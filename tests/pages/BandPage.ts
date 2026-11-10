@@ -62,7 +62,7 @@ export class BandPage {
         this.footer = this.screen.locator(".app-footer");
 
         // Member edit subview
-        this.memberBackButton = this.screen.getByRole("button", { name: /\u2190 Back/ }).first();
+        this.memberBackButton = this.screen.getByRole("button", { name: "Back", exact: true }).first();
         this.memberEditTitle = this.screen.getByRole("heading", { name: "Edit Member" });
         // Note: the member name field appears in both subviews; scope by .sub-header sibling.
         this.memberNameInput = this.screen.locator(".card").first().locator('input[type="text"]').first();

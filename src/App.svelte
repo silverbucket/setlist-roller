@@ -7,13 +7,14 @@
     import TopBar from "./lib/components/layout/TopBar.svelte";
     import RollScreen from "./lib/components/roll/RollScreen.svelte";
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
+    import DieMark from "./lib/components/shared/DieMark.svelte";
     import Icon from "./lib/components/shared/Icon.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
     import { createRemoteStorageRepository } from "./lib/remotestorage.js";
     import { createAppStore } from "./lib/stores/app.svelte.js";
     import { getEffectiveTheme } from "./lib/theme.svelte.js";
-    import { accentForTheme, DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
+    import { accentFillFor, accentForTheme, DEFAULT_DIE_COLOR, darkenHex, hexToRgba } from "./lib/utils.js";
 
     const repo = createRemoteStorageRepository();
     const store = createAppStore(repo);
@@ -103,7 +104,7 @@
         if (!custom) {
             // No custom die colour: let each theme's own accent tokens in
             // app.css apply instead of pinning the light-theme default.
-            for (const name of ["--accent", "--accent-strong", "--accent-soft", "--accent-line"]) {
+            for (const name of ["--accent", "--accent-strong", "--accent-soft", "--accent-line", "--accent-fill"]) {
                 root.style.removeProperty(name);
             }
             return;
@@ -116,6 +117,9 @@
         root.style.setProperty("--accent-strong", darkenHex(accent, 0.85));
         root.style.setProperty("--accent-soft", hexToRgba(accent, 0.12));
         root.style.setProperty("--accent-line", hexToRgba(accent, 0.24));
+        // Filled controls carry white text, so their background is derived
+        // separately: the die colour darkened until that text is legible.
+        root.style.setProperty("--accent-fill", accentFillFor(custom));
     });
 
 </script>
@@ -161,7 +165,7 @@
     <main class="connect-shell">
         <section class="connect-card">
             <div class="connect-brand">
-                <img class="connect-die" src={faviconHref} alt="" width="56" height="56" />
+                <DieMark size={52} />
                 {#if isStaging}<span class="badge badge-warn">Staging</span>{/if}
             </div>
             <div class="connect-intro">
@@ -339,16 +343,6 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-    }
-
-    .connect-die {
-        display: block;
-        width: 56px;
-        height: 56px;
-        /* A die mid-tumble: the one bit of personality on an otherwise
-           plain form. */
-        transform: rotate(-8deg);
-        filter: drop-shadow(0 6px 10px rgba(18, 22, 30, 0.18));
     }
 
     .connect-intro {

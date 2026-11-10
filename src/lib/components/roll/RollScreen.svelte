@@ -174,6 +174,9 @@
     anxietyLevel.scaled <= 3 ? "var(--success)" : anxietyLevel.scaled <= 6 ? "var(--warning)" : "var(--danger)"
   );
   let settingsEl = $state(null);
+  // Mirrors the <details> state so the idle illustration can step aside
+  // on phones while the options are open.
+  let optionsOpen = $state(false);
 
   const SET_SHAPES = [
     ["build", "Build steadily"],
@@ -388,7 +391,7 @@
   }
 </script>
 
-<div class="roll-screen" class:has-result={!!store.displayedSetlist}>
+<div class="roll-screen" class:has-result={!!store.displayedSetlist} class:options-open={optionsOpen}>
   <div class="roll-side">
     <!-- Hero area -->
     <div class="hero card">
@@ -424,7 +427,7 @@
       </div>
 
       <!-- Settings (inside hero) -->
-      <details class="settings-drawer" bind:this={settingsEl}>
+      <details class="settings-drawer" bind:this={settingsEl} ontoggle={(e) => { optionsOpen = e.currentTarget.open; }}>
         <summary class="settings-toggle">
           <Icon name="sliders" size={16} />
           <span>Options</span>
@@ -462,16 +465,16 @@
             <div class="quick-row">
               <div class="adv-field field">
                 <span class="field-label">Max covers</span>
-                <input
-                  class="input"
-                  type="number"
-                  min="0"
-                  aria-label="Max covers"
-                  placeholder="No limit"
-                  disabled={store.generationOptions.maxCovers < 0}
-                  value={store.generationOptions.maxCovers < 0 ? "" : store.generationOptions.maxCovers}
-                  oninput={(e) => store.updateGenerationField("maxCovers", Number(e.currentTarget.value))}
-                />
+                {#if store.generationOptions.maxCovers >= 0}
+                  <input
+                    class="input"
+                    type="number"
+                    min="0"
+                    aria-label="Max covers"
+                    value={store.generationOptions.maxCovers}
+                    oninput={(e) => store.updateGenerationField("maxCovers", Number(e.currentTarget.value))}
+                  />
+                {/if}
                 <label class="no-limit-toggle">
                   <input
                     type="checkbox"
@@ -483,16 +486,16 @@
               </div>
               <div class="adv-field field">
                 <span class="field-label">Max instrumentals</span>
-                <input
-                  class="input"
-                  type="number"
-                  min="0"
-                  aria-label="Max instrumentals"
-                  placeholder="No limit"
-                  disabled={store.generationOptions.maxInstrumentals < 0}
-                  value={store.generationOptions.maxInstrumentals < 0 ? "" : store.generationOptions.maxInstrumentals}
-                  oninput={(e) => store.updateGenerationField("maxInstrumentals", Number(e.currentTarget.value))}
-                />
+                {#if store.generationOptions.maxInstrumentals >= 0}
+                  <input
+                    class="input"
+                    type="number"
+                    min="0"
+                    aria-label="Max instrumentals"
+                    value={store.generationOptions.maxInstrumentals}
+                    oninput={(e) => store.updateGenerationField("maxInstrumentals", Number(e.currentTarget.value))}
+                  />
+                {/if}
                 <label class="no-limit-toggle">
                   <input
                     type="checkbox"
@@ -650,16 +653,23 @@
             <button type="button" class="btn btn-sm btn-ghost" onclick={store.clearCurrentSetlist}>Clear list</button>
           </div>
           {#if store.setlistLocked}
-            <div class="commit-row">
-              <div class="locked-badge"><Icon name="lock" size={16} /> Locked in</div>
+            <!-- Status, not controls: plain text with icons. Locking and
+                 saving are separate steps, so say which have happened. -->
+            <div class="commit-status" role="status">
+              <span class="locked-badge"><Icon name="lock" size={16} /> Locked in</span>
               {#if store.setlistSaved}
-                <div class="saved-badge"><Icon name="check" size={16} stroke={2.6} /> Saved</div>
+                <span class="saved-badge"><Icon name="check" size={16} stroke={2.6} /> Saved to drafts</span>
+                <button type="button" class="btn btn-sm btn-accent-ghost view-saved-btn" onclick={() => store.navigate("saved")}>View</button>
               {:else}
-                <button type="button" class="btn btn-ink save-draft-btn" onclick={handleSaveSetlist}>Save draft</button>
+                <span class="commit-hint">Not saved yet</span>
               {/if}
             </div>
+            {#if !store.setlistSaved}
+              <button type="button" class="btn btn-ink btn-block save-draft-btn" onclick={handleSaveSetlist}>Save draft</button>
+            {/if}
           {:else}
             <button type="button" class="btn btn-ink btn-block lock-btn" onclick={handleLock}><Icon name="lock" size={17} /> Lock it in</button>
+            <p class="commit-note">Locking guards against accidental rerolls. You can save it as a draft afterwards.</p>
           {/if}
         </div>
       </div>
@@ -962,7 +972,8 @@
   }
 
   .roll-btn.disabled {
-    opacity: 0.4;
+    background: var(--hover-strong);
+    color: var(--muted);
     cursor: not-allowed;
     pointer-events: none;
     box-shadow: none;
@@ -1008,6 +1019,11 @@
 
   .dice-container.rolling {
     animation: dice-roll 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+  }
+
+  .roll-btn.disabled .dice-container {
+    opacity: 0.45;
+    filter: grayscale(1);
   }
 
   .dice-svg {
@@ -1471,30 +1487,40 @@
     font-size: 1rem;
   }
 
-  .commit-row {
+  .commit-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
-  }
-
-  .commit-row > * {
-    flex: 1;
+    gap: 0.25rem 1rem;
+    min-height: 36px;
+    padding: 0 var(--space-1);
   }
 
   .saved-badge,
   .locked-badge {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    min-height: 48px;
-    padding: 0 0.9rem;
-    border-radius: var(--radius-md);
-    background: var(--success-soft);
+    gap: 0.35rem;
     color: var(--success);
     font-size: 0.94rem;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .commit-hint,
+  .commit-note {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .commit-note {
+    margin-top: calc(var(--space-1) * -1);
+    padding: 0 var(--space-1);
+    line-height: 1.45;
+  }
+
+  .view-saved-btn {
+    margin-left: auto;
   }
 
   /* ---- Pre-roll pins ---- */
@@ -1553,11 +1579,6 @@
 
   .add-song-list {
     flex: 1;
-  }
-
-  .add-song-item.in-setlist .pick-item-name {
-    text-decoration: line-through;
-    text-decoration-color: var(--line-strong);
   }
 
   .extend-count-field {
@@ -1683,12 +1704,21 @@
     transform: translate(-50%, -50%);
   }
 
+  /* Phones: with the options drawer open, the floating die would end up
+     cut off by the tab bar — let the options have the screen. */
+  @media (max-width: 999px) {
+    .roll-screen.options-open .idle-nudge {
+      display: none;
+    }
+  }
+
   .idle-tagline {
+    text-wrap: balance;
     font-family: var(--font-display);
     color: var(--ink-2);
     font-size: 1.15rem;
     font-weight: 600;
-    max-width: 22ch;
+    max-width: 24ch;
     line-height: 1.35;
   }
 

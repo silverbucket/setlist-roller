@@ -1,7 +1,6 @@
 <script>
   import { getContext } from "svelte";
-  import { generateDieSvgString } from "../../pwa-icon.js";
-  import { DEFAULT_DIE_COLOR } from "../../utils.js";
+  import DieMark from "../shared/DieMark.svelte";
   import Icon from "../shared/Icon.svelte";
 
   const store = getContext("app");
@@ -13,16 +12,12 @@
     { id: "band", label: "Band", icon: "users" },
     { id: "help", label: "Help", icon: "help" },
   ];
-
-  let dieHref = $derived(
-    `data:image/svg+xml,${encodeURIComponent(generateDieSvgString(store.appConfig?.ui?.dieColor || DEFAULT_DIE_COLOR))}`
-  );
 </script>
 
 <nav class="bottom-nav" aria-label="Main">
   <!-- Wordmark: only shown when the nav is a desktop sidebar. -->
   <div class="brand" aria-hidden="true">
-    <img class="brand-die" src={dieHref} alt="" width="28" height="28" />
+    <DieMark size={26} />
     <span class="brand-name">Setlist Roller</span>
   </div>
 
@@ -132,12 +127,6 @@
       height: 40px;
       padding: 0 10px;
       margin-bottom: var(--space-5);
-    }
-
-    .brand-die {
-      width: 28px;
-      height: 28px;
-      transform: rotate(-8deg);
     }
 
     .brand-name {

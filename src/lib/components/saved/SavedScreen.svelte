@@ -328,8 +328,15 @@
         <div class="print-setlist" bind:this={printEl}>
           <div class="print-top">
             <button type="button" class="icon-btn modal-close no-print" onclick={handleClose} aria-label="Close"><Icon name="x" size={20} /></button>
-            <h2 class="print-band">{store.appTitle.replace(/ — Setlist Roller$/, "")}</h2>
-            <p class="print-subtitle">{viewingSet.name || "Setlist"} &middot; {viewingSet.performedAt ? `Performed ${formatDate(viewingSet.performedAt)}${viewingSet.venue ? ` at ${viewingSet.venue}` : ""}` : `Draft updated ${formatDate(viewingSet.savedAt)}`}</p>
+            <!-- On screen the setlist's own name leads; the printed sheet
+                 keeps the band name as its masthead (print-only pair below). -->
+            <h2 class="viewer-title no-print">{viewingSet.name || "Setlist"}</h2>
+            <p class="viewer-subtitle no-print">
+                <span>{store.appTitle.replace(/ — Setlist Roller$/, "")}</span>
+                <span>{viewingSet.performedAt ? `Performed ${formatDate(viewingSet.performedAt)}${viewingSet.venue ? ` at ${viewingSet.venue}` : ""}` : `Draft, updated ${formatDate(viewingSet.savedAt)}`}</span>
+            </p>
+            <h2 class="print-band print-only">{store.appTitle.replace(/ — Setlist Roller$/, "")}</h2>
+            <p class="print-subtitle print-only">{viewingSet.name || "Setlist"} &middot; {viewingSet.performedAt ? `Performed ${formatDate(viewingSet.performedAt)}${viewingSet.venue ? ` at ${viewingSet.venue}` : ""}` : `Draft updated ${formatDate(viewingSet.savedAt)}`}</p>
           </div>
 
           <div class="print-songs">
@@ -348,7 +355,7 @@
                   <div class="print-changes">
                     {#each changes as line}
                       <div class="print-change" class:setup={line.isSetup}>
-                        <span class="print-change-member">{line.member}:</span>
+                        <span class="print-change-member">{line.member}</span>
                         <span class="print-change-detail">
                           {#each line.changes as change}
                             <span class="print-chip {change.kind}">{#if !line.isSetup && change.kind === "tuning"}<svg class="print-chip-icon" aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7a4 4 0 0 0 8 0V3"/><path d="M12 14v7"/></svg> {/if}{#if !line.isSetup && CHANGE_PREFIX[change.kind]}<span class="print-chip-kind">{CHANGE_PREFIX[change.kind]}</span> {/if}{change.label}</span>
@@ -426,12 +433,13 @@
   .saved-screen {
     display: grid;
     gap: var(--space-4);
-    max-width: 760px;
+    max-width: 640px;
     margin: 0 auto;
   }
 
   @media (min-width: 900px) {
     .saved-screen {
+      max-width: none;
       margin: 0;
     }
   }
@@ -456,6 +464,13 @@
   .saved-list {
     display: grid;
     gap: var(--space-3);
+  }
+
+  @media (min-width: 900px) {
+    .saved-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-4);
+    }
   }
 
   .saved-card {
@@ -498,6 +513,7 @@
     font-size: 0.86rem;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .saved-meta {
@@ -632,7 +648,12 @@
     border-bottom: 2px solid var(--ink);
   }
 
-  .print-band {
+  /* Print-only masthead: hidden here, shown by the print popup's own CSS. */
+  .print-only {
+    display: none;
+  }
+
+  .viewer-title {
     font-size: 1.6rem;
     font-weight: 700;
     letter-spacing: -0.025em;
@@ -641,10 +662,22 @@
     line-height: 1.15;
   }
 
-  .print-subtitle {
+  .viewer-subtitle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.5rem;
     font-size: 0.9rem;
     color: var(--muted);
-    margin: 0.25rem 0 0;
+    margin: 0.3rem 0 0;
+  }
+
+  .viewer-subtitle span:first-child {
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+
+  .viewer-subtitle span {
+    white-space: nowrap;
   }
 
   .print-songs {
@@ -744,8 +777,8 @@
   }
 
   .print-chip.tuning {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
     color: var(--on-accent);
   }
 
@@ -816,5 +849,26 @@
   .modal-actions .modal-btn {
     flex: 1;
     padding: 0 0.6rem;
+  }
+
+  /* Phones: the viewer docks to the bottom edge and covers the tab bar,
+     like every other dialog. The top inset stays (status bar / notch). */
+  @media (max-width: 599px) {
+    .modal-backdrop {
+      align-items: end;
+      padding-right: 0;
+      padding-bottom: 0;
+      padding-left: 0;
+    }
+
+    .modal-backdrop .modal-sheet {
+      width: 100%;
+      max-height: calc(100dvh - max(1rem, var(--safe-top, 0px)));
+      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    }
+
+    .modal-backdrop .modal-actions {
+      padding-bottom: calc(var(--space-4) + var(--safe-bottom, 0px));
+    }
   }
 </style>

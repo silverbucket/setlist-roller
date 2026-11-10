@@ -38,6 +38,10 @@
     --accent-soft: rgba(225, 91, 55, 0.1);
     --accent-line: rgba(225, 91, 55, 0.28);
     --accent-text: color-mix(in srgb, var(--accent) 78%, #000);
+    /* Background for filled controls with white text: the die colour
+       darkened to 4.5:1 against white (accentFillFor in utils.js; App.svelte
+       overrides it for custom die colours). */
+    --accent-fill: #bf4d2f;
 
     --line: #e4e7eb;
     --line-strong: #cfd4db;
@@ -230,6 +234,19 @@ h3 {
     line-height: 1.15;
 }
 
+/* No orphaned last words in headings or short copy. */
+h1,
+h2,
+h3,
+.dialog-title,
+.empty-title {
+    text-wrap: balance;
+}
+
+p {
+    text-wrap: pretty;
+}
+
 /* Keyboard focus: one visible ring everywhere. Mouse/touch focus stays
    quiet (:focus-visible), text fields get their own ring in components. */
 :focus-visible {
@@ -325,17 +342,27 @@ select {
 }
 
 .btn-primary {
-    background: var(--accent);
+    background: var(--accent-fill);
     border-color: transparent;
     color: var(--on-accent);
 }
 
 .btn-primary:hover {
-    background: color-mix(in srgb, var(--accent) 90%, #000);
+    background: color-mix(in srgb, var(--accent-fill) 90%, #000);
 }
 
 .btn-primary:active {
-    background: color-mix(in srgb, var(--accent) 82%, #000);
+    background: color-mix(in srgb, var(--accent-fill) 82%, #000);
+}
+
+/* Disabled filled buttons go neutral rather than fading the accent, which
+   washes out to salmon on light and mud on dark. */
+.btn-primary:disabled,
+.btn-ink:disabled,
+.btn-danger:disabled {
+    background: var(--hover-strong);
+    color: var(--muted);
+    opacity: 1;
 }
 
 /* Solid neutral — the "commit" action when the accent is already spoken

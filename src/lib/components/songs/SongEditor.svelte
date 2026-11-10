@@ -441,6 +441,7 @@
                             aria-expanded={expandedMember === memberName}
                         >
                             <span class="member-name">{memberName}</span>
+                            <span class="badge override-badge" title="This song uses its own setup instead of the usual one">Custom</span>
                             {#if issue}
                                 <span class="member-issue">{issue}</span>
                             {:else}
@@ -709,19 +710,17 @@
         white-space: nowrap;
     }
 
-    /* Save is quiet until there is something to save. */
+    /* Save is neutral until there is something to save, then it takes
+       the accent. */
     .save-btn {
         min-width: 76px;
         flex-shrink: 0;
-        opacity: 0.55;
     }
 
-    .save-btn.dirty {
-        opacity: 1;
-    }
-
-    .save-btn:disabled {
-        opacity: 0.35;
+    .save-btn:not(.dirty):not(:disabled) {
+        background: var(--surface);
+        border-color: var(--line-strong);
+        color: var(--ink-2);
     }
 
     .editor-body {
@@ -909,6 +908,12 @@
     .member-name {
         font-weight: 600;
         font-size: 1rem;
+    }
+
+    .override-badge {
+        flex-shrink: 0;
+        background: var(--surface);
+        color: var(--accent-text);
     }
 
     .member-instrument-summary {

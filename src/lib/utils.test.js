@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accentForTheme, DEFAULT_DIE_COLOR } from "./utils.js";
+import { accentFillFor, accentForTheme, DEFAULT_DIE_COLOR } from "./utils.js";
 
 function luminance(hex) {
     const [r, g, b] = [1, 3, 5].map((i) => {
@@ -44,5 +44,26 @@ describe("accentForTheme", () => {
 
     it("falls back to the default colour for malformed input", () => {
         expect(accentForTheme("nope", "light")).toBe(DEFAULT_DIE_COLOR);
+    });
+});
+
+describe("accentFillFor", () => {
+    it("gives white text at least 4.5:1 on every fill", () => {
+        for (const hex of [DEFAULT_DIE_COLOR, "#ffffff", "#eab308", "#84cc16", "#f97316", "#0ea5e9", "#1a1a1a"]) {
+            expect(contrast(accentFillFor(hex), "#ffffff")).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it("leaves colours that already pass untouched", () => {
+        expect(accentFillFor("#1d4ed8")).toBe("#1d4ed8");
+        expect(accentFillFor("#9f1239")).toBe("#9f1239");
+    });
+
+    it("keeps the hue of colours it has to darken", () => {
+        const fill = accentFillFor(DEFAULT_DIE_COLOR);
+        expect(fill).not.toBe(DEFAULT_DIE_COLOR);
+        const [r, g, b] = [1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16));
+        expect(r).toBeGreaterThan(g);
+        expect(g).toBeGreaterThan(b);
     });
 });

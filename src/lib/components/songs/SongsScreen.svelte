@@ -37,6 +37,7 @@
         <button type="button" class="btn btn-primary add-btn" onclick={() => store.openNewSong()}>+ Add</button>
     </header>
 
+    <div class="songs-layout">
     <div class="filters">
         <div class="search-wrap">
             <Icon name="search" size={18} class="search-icon" />
@@ -49,16 +50,19 @@
             />
         </div>
 
-        <div class="filter-row">
-            <div class="type-segmented segmented">
-                {#each TYPE_FILTERS as filter}
-                    <button type="button"
-                        class="seg-btn"
-                        class:active={store.songFilter === filter.id}
-                        onclick={() => (store.songFilter = filter.id)}
-                    >{filter.label}</button>
-                {/each}
-            </div>
+        <div class="type-segmented segmented">
+            {#each TYPE_FILTERS as filter}
+                <button type="button"
+                    class="seg-btn"
+                    class:active={store.songFilter === filter.id}
+                    onclick={() => (store.songFilter = filter.id)}
+                >{filter.label}</button>
+            {/each}
+        </div>
+
+        <!-- One row on phones (scrolls sideways) so filters don't push the
+             list down; wraps into the side rail on desktop. -->
+        <div class="chip-scroller">
             <div class="status-filters">
                 {#each STATUS_FILTERS as sf}
                     {@const count = store[sf.countKey]}
@@ -72,28 +76,29 @@
                     {/if}
                 {/each}
             </div>
-        </div>
 
-        {#if store.usedKeys.length > 0}
-            <div class="key-filter-section">
-                <span class="key-filter-label">Key</span>
-                <div class="key-chips">
-                    {#each store.usedKeys as key}
-                        <ChipToggle
-                            checked={store.songKeyFilters.has(key)}
-                            onchange={() => store.toggleKeyFilter(key)}
-                        >{key}</ChipToggle>
-                    {/each}
-                    {#if store.songKeyFilters.size > 0}
-                        <button type="button" class="btn btn-sm btn-accent-ghost key-clear-btn" onclick={() => store.clearKeyFilters()}>
-                            Clear
-                        </button>
-                    {/if}
+            {#if store.usedKeys.length > 0}
+                <div class="key-filter-section">
+                    <span class="key-filter-label">Key</span>
+                    <div class="key-chips">
+                        {#each store.usedKeys as key}
+                            <ChipToggle
+                                checked={store.songKeyFilters.has(key)}
+                                onchange={() => store.toggleKeyFilter(key)}
+                            >{key}</ChipToggle>
+                        {/each}
+                        {#if store.songKeyFilters.size > 0}
+                            <button type="button" class="btn btn-sm btn-accent-ghost key-clear-btn" onclick={() => store.clearKeyFilters()}>
+                                Clear
+                            </button>
+                        {/if}
+                    </div>
                 </div>
-            </div>
-        {/if}
+            {/if}
+        </div>
     </div>
 
+    <div class="songs-results">
     {#if store.emptyCatalog}
         <div class="empty-state">
             <p class="empty-title">Crickets...</p>
@@ -146,6 +151,8 @@
             {/each}
         </ul>
     {/if}
+    </div>
+    </div>
 
     {#if store.editorSong}
         <SongEditor />
@@ -156,13 +163,41 @@
     .songs-screen {
         display: grid;
         gap: var(--space-4);
-        max-width: 760px;
+        max-width: 640px;
         margin: 0 auto;
     }
 
-    @media (min-width: 900px) {
+    .songs-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-4);
+    }
+
+    .songs-results {
+        min-width: 0;
+    }
+
+    /* Desktop: same two-column grid as the Roll screen — filters in the
+       left rail, the catalogue in the wide column. */
+    @media (min-width: 1000px) {
         .songs-screen {
+            max-width: none;
             margin: 0;
+        }
+
+        .songs-layout {
+            grid-template-columns: 340px minmax(0, 1fr);
+            gap: var(--space-6);
+            align-items: start;
+        }
+
+        .filters {
+            position: sticky;
+            top: 0;
+            padding: var(--space-4);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
         }
     }
 
@@ -208,37 +243,63 @@
         cursor: pointer;
     }
 
-    .filter-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2) var(--space-3);
-        align-items: center;
-    }
-
     .type-segmented {
         display: flex;
-        flex: 1 1 100%;
     }
 
-    .seg-btn {
-        padding: 0 0.5rem !important;
+    .type-segmented .seg-btn {
+        padding: 0 0.4rem;
     }
 
-    @media (min-width: 560px) {
-        .type-segmented {
-            display: inline-flex;
-            flex: 0 0 auto;
-        }
+    .chip-scroller {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        margin: 0 calc(var(--space-4) * -1);
+        padding: 2px var(--space-4);
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
 
-        .seg-btn {
-            padding: 0 0.9rem !important;
-        }
+    .chip-scroller::-webkit-scrollbar {
+        display: none;
     }
 
     .status-filters {
         display: flex;
         gap: 0.4rem;
-        flex-wrap: wrap;
+        flex-shrink: 0;
+    }
+
+    .status-filters:empty {
+        display: none;
+    }
+
+    @media (min-width: 1000px) {
+        .chip-scroller {
+            flex-direction: column;
+            align-items: stretch;
+            gap: var(--space-3);
+            margin: 0;
+            padding: 0;
+            overflow: visible;
+        }
+
+        .status-filters,
+        .key-chips {
+            flex-wrap: wrap;
+        }
+
+        .key-filter-section {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--space-1);
+        }
+
+        .key-filter-label {
+            line-height: 1.4;
+        }
     }
 
     /* Attention filters ("Incomplete", "Unpracticed") only appear when
@@ -255,6 +316,7 @@
         font-size: 0.9rem;
         font-weight: 600;
         color: var(--warning);
+        white-space: nowrap;
         cursor: pointer;
         touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
@@ -278,8 +340,9 @@
 
     .key-filter-section {
         display: flex;
-        align-items: flex-start;
-        gap: var(--space-3);
+        align-items: center;
+        gap: var(--space-2);
+        flex-shrink: 0;
     }
 
     .key-filter-label {
@@ -292,7 +355,6 @@
 
     .key-chips {
         display: flex;
-        flex-wrap: wrap;
         gap: 0.4rem;
         align-items: center;
     }

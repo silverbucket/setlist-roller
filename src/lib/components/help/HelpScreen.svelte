@@ -8,6 +8,7 @@
     <h1 class="screen-title help-title">How Setlist Roller Works</h1>
     <p class="help-intro">Setlist Roller builds setlists that flow well on stage. It looks at tuning changes, instrument swaps, capo moves, and other gear transitions to put your songs in an order that keeps the chaos to a minimum.</p>
 
+    <div class="help-sections">
     <section class="help-section">
         <h2 class="section-title">Getting started</h2>
         <ol class="steps">
@@ -60,6 +61,7 @@
         <h2 class="section-title">Data & backups</h2>
         <p>Your songs and settings live in remoteStorage. Saved setlists are stored locally on this device. Use <strong>Export</strong> from the <button type="button" class="inline-link" onclick={() => store.navigate("band")}>Band</button> tab to download everything as a JSON file — songs, config, and saved setlists. Keep backups!</p>
     </section>
+    </div>
 </div>
 
 <style>
@@ -73,9 +75,33 @@
         padding-bottom: var(--space-4);
     }
 
-    @media (min-width: 900px) {
+    .help-sections {
+        display: grid;
+        gap: var(--space-6);
+    }
+
+    /* Desktop: the page uses the full content width like every other
+       screen; the intro keeps a readable measure and the sections flow
+       into two columns. */
+    @media (min-width: 1000px) {
         .help-screen {
+            max-width: none;
             margin: 0;
+        }
+
+        .help-intro {
+            max-width: 62ch;
+        }
+
+        .help-sections {
+            display: block;
+            columns: 2;
+            column-gap: var(--space-8);
+        }
+
+        .help-section {
+            break-inside: avoid;
+            margin-bottom: var(--space-6);
         }
     }
 

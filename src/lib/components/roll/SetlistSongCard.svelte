@@ -19,6 +19,13 @@
   function toggleExpand() {
     expanded = !expanded;
   }
+
+  // Notes are clamped to two lines while collapsed. When there is more than
+  // that (usually a chord chart), say so and offer a way to read it all.
+  const notesOverflow = $derived.by(() => {
+    const notes = song.notes?.trim() || "";
+    return notes.split("\n").length > 2 || notes.length > 90;
+  });
 </script>
 
 <div class="song-card" class:expanded class:dragging class:pinned={song.pinned} class:tuning-change={tuningChange}>
@@ -29,6 +36,9 @@
     <div class="card-body">
       <div class="title-row">
         <span class="song-name">{song.name}</span>
+        {#if song.key}
+          <span class="key-badge" title="Key: {song.key}">{song.key}</span>
+        {/if}
         {#if song.keepApartConflict}
           <span
             class="conflict-badge badge badge-warn"
@@ -64,13 +74,15 @@
 
       {#if song.notes?.trim()}
         <div class="song-notes">{song.notes}</div>
+        {#if notesOverflow}
+          <button type="button" class="notes-toggle" onclick={(e) => { e.stopPropagation(); toggleExpand(); }}>
+            {expanded ? "Show less" : "Show all notes"}
+          </button>
+        {/if}
       {/if}
     </div>
 
     <div class="card-aside">
-      {#if song.key}
-        <span class="key-badge">{song.key}</span>
-      {/if}
       <button
         type="button"
         class="pin-btn"
@@ -156,7 +168,7 @@
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
-    padding: 0.7rem 0.4rem 0.7rem 0.85rem;
+    padding: 0.7rem 0.15rem 0.7rem 0.85rem;
     cursor: pointer;
     border-radius: inherit;
     -webkit-tap-highlight-color: transparent;
@@ -195,12 +207,30 @@
     padding-top: 0.05rem;
   }
 
+  /* Inline flow, so the key badge trails the last word of the title
+     instead of dropping onto a line of its own when the title wraps. */
   .title-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
     min-height: 1.5rem;
+    line-height: 1.4;
+  }
+
+  /* The key rides along with the title, so the right edge only holds the
+     two things you can touch. */
+  .title-row .key-badge,
+  .title-row .conflict-badge {
+    display: inline-grid;
+    margin-left: 0.4rem;
+    vertical-align: 0.12em;
+  }
+
+  .title-row .key-badge {
+    min-width: 1.9rem;
+    height: 1.4rem;
+    font-size: 0.78rem;
+  }
+
+  .title-row .conflict-badge {
+    display: inline-flex;
   }
 
   .song-name {
@@ -220,20 +250,17 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    height: 36px;
-    margin-top: -0.3rem;
+    height: 44px;
+    margin: -0.6rem 0 -0.6rem -0.25rem;
   }
 
-  .card-aside .key-badge {
-    margin-right: 0.25rem;
-  }
-
+  /* Pin and grip each get their own full 44px target, side by side. */
   .pin-btn {
     flex-shrink: 0;
     display: inline-grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
@@ -268,8 +295,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    /* WCAG 2.5.5 / iOS HIG recommend ≥44px tappable height. */
+    /* WCAG 2.5.5 / iOS HIG recommend ≥44px tap targets. */
+    width: 44px;
     height: 44px;
     color: var(--faint);
     cursor: grab;
@@ -379,8 +406,8 @@
 
   /* Tuning: loudest — solid accent fill. */
   .change-chip.tuning {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
     color: var(--on-accent);
   }
 
@@ -438,6 +465,24 @@
   .song-card.expanded .song-notes {
     display: block;
     overflow: visible;
+  }
+
+  .notes-toggle {
+    justify-self: start;
+    min-height: 32px;
+    margin: -0.15rem 0 -0.35rem -0.5rem;
+    padding: 0 0.5rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--accent-text);
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .notes-toggle:hover {
+    background: var(--accent-soft);
   }
 
   .expanded-actions {
