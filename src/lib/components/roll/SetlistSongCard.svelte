@@ -94,7 +94,6 @@
         class="pin-btn"
         class:pinned={song.pinned}
         aria-label={song.pinned ? `Unpin ${song.name}` : `Pin ${song.name}`}
-        aria-pressed={song.pinned}
         title={song.pinned ? "Unpin song" : "Keep this song and position on reroll"}
         onclick={(e) => { e.stopPropagation(); onTogglePin?.(song.id); }}
       ><Icon name="pin" size={17} /></button>

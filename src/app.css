@@ -67,7 +67,9 @@
     --toast-fg: #fff;
     --toast-danger: #b3321f;
     --toast-warning: #8a6210;
-    --focus-ring: 0 0 0 3px var(--accent-soft);
+    /* Ring behind focused fields: the accent at ~30% so it reads clearly
+       next to the 1px accent border. */
+    --focus-ring: 0 0 0 3px var(--accent-line);
 
     /* Shadows — one soft elevation for cards-in-motion, one for overlays. */
     --shadow: 0 24px 64px rgba(18, 22, 30, 0.18), 0 2px 8px rgba(18, 22, 30, 0.06);

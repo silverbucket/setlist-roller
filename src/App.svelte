@@ -221,8 +221,8 @@
 
 {#if store.showFirstRunPrompt}
     <div class="modal-backdrop dialog-backdrop first-run-backdrop">
-        <div class="modal dialog">
-            <h3 class="dialog-title">Name your band</h3>
+        <div class="modal dialog" role="dialog" aria-modal="true" aria-labelledby="first-run-title">
+            <h3 id="first-run-title" class="dialog-title">Name your band</h3>
             <p class="modal-desc dialog-desc">What do we call this operation? Don't overthink it.</p>
             <label class="field">
                 <span class="field-label">Band name</span>
