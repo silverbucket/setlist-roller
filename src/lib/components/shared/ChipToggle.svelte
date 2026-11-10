@@ -27,8 +27,10 @@
         user-select: none;
         -webkit-tap-highlight-color: transparent;
     }
+    @media (hover: hover) {
     .chip-toggle:hover {
         background: var(--surface-2);
+    }
     }
     .chip-toggle input {
         position: absolute;

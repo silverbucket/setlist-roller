@@ -486,9 +486,11 @@
     transition: border-color 140ms ease, box-shadow 140ms ease;
   }
 
+  @media (hover: hover) {
   .saved-card:hover {
     border-color: var(--line-strong);
     box-shadow: var(--shadow-sm);
+  }
   }
 
   .saved-top {
@@ -547,9 +549,11 @@
     color: var(--muted);
   }
 
+  @media (hover: hover) {
   .card-btn.remove:hover {
     color: var(--danger);
     background: var(--danger-soft);
+  }
   }
 
   .edit-form {
@@ -645,7 +649,7 @@
 
   .print-top {
     padding: 0 2.5rem var(--space-3) 0;
-    border-bottom: 2px solid var(--ink);
+    border-bottom: 1px solid var(--line-strong);
   }
 
   /* Print-only masthead: hidden here, shown by the print popup's own CSS. */
@@ -823,7 +827,7 @@
   .print-anxiety {
     margin-top: -1px;
     padding-top: var(--space-3);
-    border-top: 2px solid var(--ink);
+    border-top: 1px solid var(--line-strong);
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;

@@ -20,6 +20,11 @@
     expanded = !expanded;
   }
 
+  // Split the name so its last word can be kept together with the key badge.
+  const titleSplit = $derived((song.name || "").lastIndexOf(" ") + 1);
+  const titleHead = $derived((song.name || "").slice(0, titleSplit));
+  const titleLast = $derived((song.name || "").slice(titleSplit));
+
   // Notes are clamped to two lines while collapsed. When there is more than
   // that (usually a chord chart), say so and offer a way to read it all.
   const notesOverflow = $derived.by(() => {
@@ -35,10 +40,11 @@
 
     <div class="card-body">
       <div class="title-row">
-        <span class="song-name">{song.name}</span>
-        {#if song.key}
-          <span class="key-badge" title="Key: {song.key}">{song.key}</span>
-        {/if}
+        <!-- The title's last word and the key badge sit in one nowrap span so
+             the badge can never wrap onto a line of its own. The key is drawn
+             from data-key (CSS content), which keeps .song-name's text equal
+             to the song name. -->
+        <span class="song-name">{titleHead}<span class="title-tail">{titleLast}{#if song.key}<span class="key-badge" data-key={song.key} role="img" aria-label="Key {song.key}" title="Key: {song.key}"></span>{/if}</span></span>
         {#if song.keepApartConflict}
           <span
             class="conflict-badge badge badge-warn"
@@ -179,8 +185,10 @@
   }
 
   @media (hover: hover) {
+    @media (hover: hover) {
     .song-card:not(.dragging) .card-main:hover {
       background: var(--hover);
+    }
     }
   }
 
@@ -219,8 +227,11 @@
   .title-row .key-badge,
   .title-row .conflict-badge {
     display: inline-grid;
-    margin-left: 0.4rem;
     vertical-align: 0.12em;
+  }
+
+  .title-row .conflict-badge {
+    margin-left: 0.4rem;
   }
 
   .title-row .key-badge {
@@ -231,6 +242,18 @@
 
   .title-row .conflict-badge {
     display: inline-flex;
+  }
+
+  .title-tail {
+    white-space: nowrap;
+  }
+
+  .title-row .key-badge {
+    margin-left: 0.45rem;
+  }
+
+  .title-row .key-badge::before {
+    content: attr(data-key);
   }
 
   .song-name {
@@ -271,9 +294,11 @@
     transition: color 140ms ease, background 140ms ease;
   }
 
+  @media (hover: hover) {
   .pin-btn:hover {
     color: var(--ink-2);
     background: var(--hover-strong);
+  }
   }
 
   .pin-btn.pinned {
@@ -311,9 +336,11 @@
       box-shadow 160ms ease;
   }
 
+  @media (hover: hover) {
   .drag-handle:hover {
     color: var(--ink-2);
     background: var(--hover-strong);
+  }
   }
 
   .drag-handle:active {
@@ -481,8 +508,10 @@
     cursor: pointer;
   }
 
+  @media (hover: hover) {
   .notes-toggle:hover {
     background: var(--accent-soft);
+  }
   }
 
   .expanded-actions {

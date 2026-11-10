@@ -3,7 +3,7 @@
   import { flip } from "svelte/animate";
   import { anxietyLabel } from "../../anxiety.js";
   import { memberHasVariableSetup } from "../../defaults.js";
-  import { DEFAULT_DIE_COLOR, darkenHex, hexToRgb } from "../../utils.js";
+  import { accentFillFor, DEFAULT_DIE_COLOR, darkenHex, hexToRgb } from "../../utils.js";
   import ChipToggle from "../shared/ChipToggle.svelte";
   import Icon from "../shared/Icon.svelte";
   import NumberStepper from "../shared/NumberStepper.svelte";
@@ -65,8 +65,12 @@
 
   // ---- Die color ----
   let pipColor = $derived(store.appConfig?.ui?.dieColor || DEFAULT_DIE_COLOR);
-  let pipColorDark = $derived(darkenHex(pipColor, 0.78));
+  // The button itself uses the same accessible fill as every other filled
+  // control (white label ≥ 4.5:1); the pips keep the die's true colour.
+  let btnColor = $derived(accentFillFor(pipColor));
+  let pipColorDark = $derived(darkenHex(btnColor, 0.82));
   let pipColorRgb = $derived(hexToRgb(pipColor));
+  let btnColorRgb = $derived(hexToRgb(btnColor));
 
   // Dice pip layouts: [x, y] positions on a 0-1 grid for each face value
   const PIP_LAYOUTS = {
@@ -85,7 +89,7 @@
   const ROLL_NUDGES = [
     "The setlist isn't going to roll itself.",
     "That die up there? It's getting lonely.",
-    "Tap Roll. Trust the dice.",
+    "Hit Roll. Trust the dice.",
     "Your songs are ready. Are you?",
     "Fortune favors the bold. Hit Roll.",
     "No setlist survives first contact with the stage. Roll one anyway.",
@@ -406,7 +410,7 @@
             onchange={(v) => store.updateGenerationField("count", v)}
           />
         </div>
-        <button type="button" class="roll-btn" class:rolling={store.isGenerating} class:landed class:disabled={!readyToRoll} disabled={!readyToRoll} onclick={handleRoll} aria-label="Roll setlist" style="--btn-color: {pipColor}; --btn-color-dark: {pipColorDark}; --btn-rgb: {pipColorRgb};">
+        <button type="button" class="roll-btn" class:rolling={store.isGenerating} class:landed class:disabled={!readyToRoll} disabled={!readyToRoll} onclick={handleRoll} aria-label="Roll setlist" style="--btn-color: {btnColor}; --btn-color-dark: {pipColorDark}; --btn-rgb: {btnColorRgb};">
           <span class="dice-container" class:rolling={store.isGenerating}>
             <svg aria-hidden="true" class="dice-svg" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
               <rect x="3" y="3" width="50" height="50" rx="11" ry="11" fill="#fff"/>
@@ -967,8 +971,10 @@
     overflow: hidden;
   }
 
+  @media (hover: hover) {
   .roll-btn:hover {
     background: color-mix(in srgb, var(--btn-color) 92%, #000);
+  }
   }
 
   .roll-btn.disabled {
@@ -1013,8 +1019,10 @@
     transform: rotate(-8deg);
   }
 
+  @media (hover: hover) {
   .roll-btn:hover .dice-container:not(.rolling) {
     animation: dice-hover 500ms ease;
+  }
   }
 
   .dice-container.rolling {
@@ -1166,8 +1174,10 @@
     display: none;
   }
 
+  @media (hover: hover) {
   .settings-toggle:hover {
     background: var(--hover);
+  }
   }
 
   .settings-toggle :global(svg) {

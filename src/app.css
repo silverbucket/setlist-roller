@@ -59,6 +59,10 @@
     --on-ink: #fff;
     --hover: rgba(22, 25, 31, 0.045);
     --hover-strong: rgba(22, 25, 31, 0.09);
+    /* Solid neutral button (.btn-ink). */
+    --ink-fill: #16191f;
+    --on-ink-fill: #fff;
+    --ink-fill-line: transparent;
     --toast-bg: #16191f;
     --toast-fg: #fff;
     --toast-danger: #b3321f;
@@ -141,6 +145,11 @@
     --on-ink: #16191f;
     --hover: rgba(255, 255, 255, 0.055);
     --hover-strong: rgba(255, 255, 255, 0.1);
+    /* A raised surface rather than inverted ink: a white slab would
+       outshine the Roll button on a dark screen. */
+    --ink-fill: #2c333e;
+    --on-ink-fill: #f2f4f7;
+    --ink-fill-line: #454e5c;
     --toast-bg: #e8eaee;
     --toast-fg: #16191f;
     --toast-danger: #ef6b5a;
@@ -322,8 +331,10 @@ select {
         transform 80ms ease;
 }
 
-.btn:hover {
-    background: var(--surface-2);
+@media (hover: hover) {
+    .btn:hover {
+        background: var(--surface-2);
+    }
 }
 
 .btn:active {
@@ -347,8 +358,10 @@ select {
     color: var(--on-accent);
 }
 
-.btn-primary:hover {
-    background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+@media (hover: hover) {
+    .btn-primary:hover {
+        background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+    }
 }
 
 .btn-primary:active {
@@ -368,14 +381,16 @@ select {
 /* Solid neutral — the "commit" action when the accent is already spoken
    for on the same screen (e.g. next to the Roll button). */
 .btn-ink {
-    background: var(--ink);
-    border-color: transparent;
-    color: var(--on-ink);
+    background: var(--ink-fill);
+    border-color: var(--ink-fill-line);
+    color: var(--on-ink-fill);
 }
 
-.btn-ink:hover,
-.btn-ink:active {
-    background: color-mix(in srgb, var(--ink) 86%, var(--surface));
+@media (hover: hover) {
+    .btn-ink:hover,
+    .btn-ink:active {
+        background: color-mix(in srgb, var(--ink-fill) 86%, var(--muted));
+    }
 }
 
 .btn-ghost {
@@ -384,8 +399,10 @@ select {
     color: var(--ink-2);
 }
 
-.btn-ghost:hover {
-    background: var(--hover);
+@media (hover: hover) {
+    .btn-ghost:hover {
+        background: var(--hover);
+    }
 }
 
 .btn-accent-ghost {
@@ -394,8 +411,10 @@ select {
     color: var(--accent-text);
 }
 
-.btn-accent-ghost:hover {
-    background: var(--accent-soft);
+@media (hover: hover) {
+    .btn-accent-ghost:hover {
+        background: var(--accent-soft);
+    }
 }
 
 .btn-danger {
@@ -404,9 +423,11 @@ select {
     color: #fff;
 }
 
-.btn-danger:hover,
-.btn-danger:active {
-    background: color-mix(in srgb, var(--danger) 88%, #000);
+@media (hover: hover) {
+    .btn-danger:hover,
+    .btn-danger:active {
+        background: color-mix(in srgb, var(--danger) 88%, #000);
+    }
 }
 
 .btn-danger-ghost {
@@ -415,9 +436,11 @@ select {
     color: var(--danger);
 }
 
-.btn-danger-ghost:hover,
-.btn-danger-ghost:active {
-    background: var(--danger-soft);
+@media (hover: hover) {
+    .btn-danger-ghost:hover,
+    .btn-danger-ghost:active {
+        background: var(--danger-soft);
+    }
 }
 
 .btn-sm {
@@ -451,9 +474,11 @@ select {
         color 120ms ease;
 }
 
-.icon-btn:hover {
-    background: var(--hover);
-    color: var(--ink);
+@media (hover: hover) {
+    .icon-btn:hover {
+        background: var(--hover);
+        color: var(--ink);
+    }
 }
 
 .icon-btn:active {
@@ -498,8 +523,10 @@ select {
         box-shadow 120ms ease;
 }
 
-.input:hover {
-    border-color: color-mix(in srgb, var(--line-strong) 60%, var(--muted));
+@media (hover: hover) {
+    .input:hover {
+        border-color: color-mix(in srgb, var(--line-strong) 60%, var(--muted));
+    }
 }
 
 .input:focus {
@@ -636,8 +663,10 @@ textarea.input {
         color 120ms ease;
 }
 
-.segmented > button:hover {
-    color: var(--ink);
+@media (hover: hover) {
+    .segmented > button:hover {
+        color: var(--ink);
+    }
 }
 
 .segmented > button.active {
@@ -755,8 +784,10 @@ textarea.input {
     -webkit-tap-highlight-color: transparent;
 }
 
-.pick-item:hover:not(:disabled) {
-    background: var(--hover);
+@media (hover: hover) {
+    .pick-item:hover:not(:disabled) {
+        background: var(--hover);
+    }
 }
 
 .pick-item:active:not(:disabled) {

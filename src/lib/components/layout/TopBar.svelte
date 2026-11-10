@@ -365,8 +365,10 @@
     touch-action: manipulation;
   }
 
+  @media (hover: hover) {
   .dropdown-item:hover {
     background: var(--hover);
+  }
   }
 
   .dropdown-item:active {

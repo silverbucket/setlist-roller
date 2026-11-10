@@ -46,7 +46,9 @@
         padding: 0;
         -webkit-tap-highlight-color: transparent;
     }
+    @media (hover: hover) {
     .step-btn:hover { background: var(--hover); color: var(--ink); }
+    }
     .step-btn:active { background: var(--hover-strong); }
     .step-btn:disabled { opacity: 0.3; cursor: not-allowed; background: transparent; }
     .step-btn:focus-visible { outline-offset: -2px; }

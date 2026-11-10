@@ -77,8 +77,10 @@
     transition: color 0.15s ease;
   }
 
+  @media (hover: hover) {
   .tab:hover {
     color: var(--ink);
+  }
   }
 
   .tab-icon {
@@ -149,8 +151,10 @@
       color: var(--ink-2);
     }
 
+    @media (hover: hover) {
     .tab:hover {
       background: var(--hover);
+    }
     }
 
     .tab-icon {

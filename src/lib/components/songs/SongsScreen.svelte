@@ -116,23 +116,27 @@
                 <li>
                     <button type="button" class="song-row" onclick={() => store.openSong(song)}>
                         <div class="song-content">
-                            <div class="song-top">
-                                <span class="song-name">{song.name || "Untitled"}</span>
-                                {#if song.unpracticed}
-                                    <span class="pill warn badge badge-warn">unpracticed</span>
-                                {/if}
-                                {#if store.isSongIncomplete(song)}
-                                    <span class="pill warn badge badge-warn" title={reasons.join(", ")}>incomplete</span>
-                                {/if}
-                                {#if song.cover}
-                                    <span class="pill badge">cover</span>
-                                {/if}
-                                {#if song.instrumental}
-                                    <span class="pill badge">instrumental</span>
-                                {/if}
-                            </div>
-                            {#if memberSummary(song)}
-                                <div class="song-members">{memberSummary(song)}</div>
+                            <span class="song-name">{song.name || "Untitled"}</span>
+                            <!-- Tags share the second line with the line-up, so a
+                                 long title never strands a tag on its own row. -->
+                            {#if song.unpracticed || store.isSongIncomplete(song) || song.cover || song.instrumental || memberSummary(song)}
+                                <div class="song-sub">
+                                    {#if song.unpracticed}
+                                        <span class="pill warn badge badge-warn">unpracticed</span>
+                                    {/if}
+                                    {#if store.isSongIncomplete(song)}
+                                        <span class="pill warn badge badge-warn" title={reasons.join(", ")}>incomplete</span>
+                                    {/if}
+                                    {#if song.cover}
+                                        <span class="pill badge">cover</span>
+                                    {/if}
+                                    {#if song.instrumental}
+                                        <span class="pill badge">instrumental</span>
+                                    {/if}
+                                    {#if memberSummary(song)}
+                                        <span class="song-members">{memberSummary(song)}</span>
+                                    {/if}
+                                </div>
                             {/if}
                             {#if reasons.length > 0}
                                 <div class="incomplete-reasons">
@@ -291,15 +295,6 @@
             flex-wrap: wrap;
         }
 
-        .key-filter-section {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: var(--space-1);
-        }
-
-        .key-filter-label {
-            line-height: 1.4;
-        }
     }
 
     /* Attention filters ("Incomplete", "Unpracticed") only appear when
@@ -394,8 +389,10 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    @media (hover: hover) {
     .song-row:hover {
         background: var(--hover);
+    }
     }
 
     .song-row:active {
@@ -418,11 +415,16 @@
         color: var(--faint);
     }
 
-    .song-top {
-        display: flex;
-        align-items: center;
-        gap: 0.2rem 0.45rem;
-        flex-wrap: wrap;
+    /* Inline flow: tags lead, the line-up text continues on the same line
+       and wraps like prose. */
+    .song-sub {
+        line-height: 1.45;
+        text-wrap: balance;
+    }
+
+    .song-sub .pill {
+        margin-right: 0.3rem;
+        vertical-align: 0.08em;
     }
 
     .song-name {
@@ -440,7 +442,6 @@
     .song-members {
         font-size: 0.88rem;
         color: var(--muted);
-        line-height: 1.35;
     }
 
     .incomplete-reasons {
@@ -462,5 +463,18 @@
         overflow: hidden;
         clip-path: inset(50%);
         white-space: nowrap;
+    }
+
+    /* Desktop rail: label above its chips, left-aligned like the rest. */
+    @media (min-width: 1000px) {
+        .key-filter-section {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--space-2);
+        }
+
+        .key-filter-label {
+            line-height: 1.4;
+        }
     }
 </style>

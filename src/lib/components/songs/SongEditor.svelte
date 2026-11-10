@@ -825,8 +825,10 @@
         touch-action: manipulation;
     }
 
+    @media (hover: hover) {
     .keep-apart-remove:hover {
         background: var(--hover-strong);
+    }
     }
 
     .keep-apart-add {

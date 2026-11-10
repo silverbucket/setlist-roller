@@ -200,8 +200,10 @@
         text-underline-offset: 3px;
     }
 
+    @media (hover: hover) {
     .inline-link:hover {
         text-decoration-thickness: 2.5px;
+    }
     }
 
     .example-pill {

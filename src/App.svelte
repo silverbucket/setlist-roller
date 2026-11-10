@@ -477,8 +477,10 @@
         transition: border-color 120ms ease;
     }
 
+    @media (hover: hover) {
     .recent-account:hover {
         border-color: var(--line-strong);
+    }
     }
 
     .recent-account-btn {
@@ -499,8 +501,10 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    @media (hover: hover) {
     .recent-account-btn:hover {
         background: var(--hover);
+    }
     }
 
     .recent-account-btn:active {
@@ -657,8 +661,10 @@
         cursor: pointer;
     }
 
+    @media (hover: hover) {
     .toast-dismiss:hover {
         opacity: 1;
+    }
     }
 
     .toast-pill.danger {

@@ -760,8 +760,10 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    @media (hover: hover) {
     .member-row:hover {
         background: var(--hover);
+    }
     }
 
     .member-row:active {
@@ -851,9 +853,11 @@
         transition: border-color 140ms ease, background 140ms ease;
     }
 
+    @media (hover: hover) {
     .link-card:hover {
         border-color: var(--line-strong);
         background: var(--surface-2);
+    }
     }
 
     .link-card-text {
@@ -936,8 +940,10 @@
         min-height: 56px;
     }
 
+    @media (hover: hover) {
     .instrument-summary:hover {
         background: var(--hover);
+    }
     }
 
     .instrument-summary::-webkit-details-marker {
@@ -1008,9 +1014,11 @@
         border-radius: 50%;
     }
 
+    @media (hover: hover) {
     .chip-remove:hover {
         color: var(--danger);
         background: var(--danger-soft);
+    }
     }
 
     /* Collapsible sections (advanced) */
@@ -1036,8 +1044,10 @@
         min-height: 56px;
     }
 
+    @media (hover: hover) {
     .section-summary:hover {
         background: var(--hover);
+    }
     }
 
     .section-summary::-webkit-details-marker {
@@ -1160,8 +1170,10 @@
         font-weight: 600;
     }
 
+    @media (hover: hover) {
     .app-footer-link:hover {
         text-decoration: underline;
+    }
     }
 
     /* ---- Die color picker ----
@@ -1184,8 +1196,10 @@
         display: none;
     }
 
+    @media (hover: hover) {
     .die-color-summary:hover {
         background: var(--hover);
+    }
     }
 
     .die-color-current {
@@ -1230,8 +1244,10 @@
         padding: 0;
     }
 
+    @media (hover: hover) {
     .pip-swatch:hover {
         transform: scale(1.12);
+    }
     }
 
     .pip-swatch.active {
