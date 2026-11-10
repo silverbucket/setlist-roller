@@ -186,6 +186,23 @@ const ACCENT_SURFACE = { light: [255, 255, 255], dark: [26, 30, 38] };
 const ACCENT_MIN_CONTRAST = { light: 3, dark: 4.5 };
 
 /**
+ * Background for accent-FILLED controls that carry white text (primary
+ * buttons, "Tune" chips). The raw die colour is often too light for small
+ * white labels (the default is 3.6:1), so darken it just far enough to
+ * reach WCAG AA (4.5:1). Colours that already pass come back untouched.
+ */
+export function accentFillFor(hex) {
+    const base = parseHex(hex);
+    for (let step = 0; step <= 20; step += 1) {
+        const mixed = base.map((v) => v * (1 - step / 20));
+        if (contrastRatio(mixed, [255, 255, 255]) >= 4.5) {
+            return `#${mixed.map(toHexByte).join("")}`;
+        }
+    }
+    return "#000000";
+}
+
+/**
  * The die colour doubles as the UI accent, but the palette (and the custom
  * picker) allows near-black and near-white, which vanish as text on the
  * dark and light themes respectively. Blend toward white (dark theme) or

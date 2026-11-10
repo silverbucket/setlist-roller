@@ -1,6 +1,7 @@
 <script>
     import { getContext } from "svelte";
     import ChipToggle from "../shared/ChipToggle.svelte";
+    import Icon from "../shared/Icon.svelte";
     import SongEditor from "./SongEditor.svelte";
 
     const store = getContext("app");
@@ -18,46 +19,38 @@
     ];
 
     function memberSummary(song) {
-        return Object.entries(song.members || {})
-            .map(([name, setup]) => {
+        // One phrase per member ("nick on guitar"); the template keeps each
+        // phrase unbroken so lines only wrap between members.
+        return Object.entries(song.members || {}).map(([name, setup]) => {
                 const instruments = (setup.instruments || [])
                     .map((i) => i.name)
                     .filter(Boolean)
                     .join(", ");
-                return instruments ? `${name}: ${instruments}` : name;
-            })
-            .join(" | ");
+                return instruments ? `${name} on ${instruments}` : name;
+            });
     }
 </script>
 
 <div class="songs-screen">
     <header class="screen-header">
-        <h2>Songs ({store.songs.length})</h2>
-        <button type="button" class="primary add-btn" onclick={() => store.openNewSong()}>+ Add</button>
+        <h2 class="screen-title">Songs <span class="title-count">({store.songs.length})</span></h2>
+        <button type="button" class="btn btn-primary add-btn" onclick={() => store.openNewSong()}>+ Add</button>
     </header>
 
-    <input
-        class="search-input"
-        type="search"
-        placeholder="Search songs..."
-        value={store.songSearch}
-        oninput={(e) => (store.songSearch = e.currentTarget.value)}
-    />
-
-    <div class="filter-row">
-        <div class="status-filters">
-            {#each STATUS_FILTERS as sf}
-                {@const count = store[sf.countKey]}
-                {#if count > 0}
-                    <button type="button"
-                        class="status-chip"
-                        class:active={store.songFilter === sf.id}
-                        onclick={() => (store.songFilter = store.songFilter === sf.id ? "all" : sf.id)}
-                    >{sf.label} <span class="status-count">{count}</span></button>
-                {/if}
-            {/each}
+    <div class="songs-layout">
+    <div class="filters">
+        <div class="search-wrap">
+            <Icon name="search" size={18} class="search-icon" />
+            <input
+                class="search-input input"
+                type="search"
+                placeholder="Search songs..."
+                value={store.songSearch}
+                oninput={(e) => (store.songSearch = e.currentTarget.value)}
+            />
         </div>
-        <div class="type-segmented">
+
+        <div class="type-segmented segmented">
             {#each TYPE_FILTERS as filter}
                 <button type="button"
                     class="seg-btn"
@@ -66,29 +59,46 @@
                 >{filter.label}</button>
             {/each}
         </div>
-    </div>
 
-    {#if store.usedKeys.length > 0}
-        <div class="key-filter-section">
-            <div class="key-filter-header">
-                <span class="key-filter-label">Key</span>
-                {#if store.songKeyFilters.size > 0}
-                    <button type="button" class="key-clear-btn" onclick={() => store.clearKeyFilters()}>
-                        Clear
-                    </button>
-                {/if}
-            </div>
-            <div class="key-chips">
-                {#each store.usedKeys as key}
-                    <ChipToggle
-                        checked={store.songKeyFilters.has(key)}
-                        onchange={() => store.toggleKeyFilter(key)}
-                    >{key}</ChipToggle>
+        <!-- One row on phones (scrolls sideways) so filters don't push the
+             list down; wraps into the side rail on desktop. -->
+        <div class="chip-scroller">
+            <div class="status-filters">
+                {#each STATUS_FILTERS as sf}
+                    {@const count = store[sf.countKey]}
+                    {#if count > 0}
+                        <button type="button"
+                            class="status-chip"
+                            class:active={store.songFilter === sf.id}
+                            aria-pressed={store.songFilter === sf.id}
+                            onclick={() => (store.songFilter = store.songFilter === sf.id ? "all" : sf.id)}
+                        >{sf.label} <span class="status-count">{count}</span></button>
+                    {/if}
                 {/each}
             </div>
-        </div>
-    {/if}
 
+            {#if store.usedKeys.length > 0}
+                <div class="key-filter-section">
+                    <span class="key-filter-label">Key</span>
+                    <div class="key-chips">
+                        {#each store.usedKeys as key}
+                            <ChipToggle
+                                checked={store.songKeyFilters.has(key)}
+                                onchange={() => store.toggleKeyFilter(key)}
+                            >{key}</ChipToggle>
+                        {/each}
+                        {#if store.songKeyFilters.size > 0}
+                            <button type="button" class="btn btn-sm btn-accent-ghost key-clear-btn" onclick={() => store.clearKeyFilters()}>
+                                Clear
+                            </button>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
+        </div>
+    </div>
+
+    <div class="songs-results">
     {#if store.emptyCatalog}
         <div class="empty-state">
             <p class="empty-title">Crickets...</p>
@@ -100,46 +110,54 @@
             <p class="empty-sub">Either your search is too picky or your catalog needs more songs.</p>
         </div>
     {:else}
-        <ul class="song-list">
+        <ul class="song-list card">
             {#each store.visibleSongs as song (song.id)}
+                {@const reasons = store.songIncompleteReasons(song)}
+                {@const lineup = memberSummary(song)}
                 <li>
                     <button type="button" class="song-row" onclick={() => store.openSong(song)}>
                         <div class="song-content">
-                            <div class="song-top">
-                                <span class="song-name">{song.name || "Untitled"}</span>
-                                {#if song.unpracticed}
-                                    <span class="pill warn">unpracticed</span>
-                                {/if}
-                                {#if store.isSongIncomplete(song)}
-                                    <span class="pill warn" title={store.songIncompleteReasons(song).join(", ")}>incomplete</span>
-                                {/if}
-                                {#if song.cover}
-                                    <span class="pill">cover</span>
-                                {/if}
-                                {#if song.instrumental}
-                                    <span class="pill">instrumental</span>
-                                {/if}
-                            </div>
-                            {#if memberSummary(song)}
-                                <div class="song-members">{memberSummary(song)}</div>
+                            <span class="song-name">{song.name || "Untitled"}</span>
+                            <!-- Tags share the second line with the line-up, so a
+                                 long title never strands a tag on its own row. -->
+                            {#if song.unpracticed || store.isSongIncomplete(song) || song.cover || song.instrumental || lineup.length > 0}
+                                <div class="song-sub">
+                                    {#if song.unpracticed}
+                                        <span class="pill warn badge badge-warn">unpracticed</span>
+                                    {/if}
+                                    {#if store.isSongIncomplete(song)}
+                                        <span class="pill warn badge badge-warn" title={reasons.join(", ")}>incomplete</span>
+                                    {/if}
+                                    {#if song.cover}
+                                        <span class="pill badge">cover</span>
+                                    {/if}
+                                    {#if song.instrumental}
+                                        <span class="pill badge">instrumental</span>
+                                    {/if}
+                                    {#if lineup.length > 0}
+                                        <span class="song-members">{#each lineup as phrase, i}<span class="lineup-phrase">{phrase}{i < lineup.length - 1 ? "," : ""}</span>{" "}{/each}</span>
+                                    {/if}
+                                </div>
                             {/if}
-                            {#if store.songIncompleteReasons(song).length > 0}
+                            {#if reasons.length > 0}
                                 <div class="incomplete-reasons">
-                                    {#each store.songIncompleteReasons(song) as reason}
+                                    {#each reasons as reason}
                                         <span class="incomplete-reason">{reason}</span>
                                     {/each}
                                 </div>
                             {/if}
-                            {#if song.key}
-                                <div class="song-key">Key: {song.key}</div>
-                            {/if}
                         </div>
-                        <svg aria-hidden="true" class="row-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>
+                        {#if song.key}
+                            <span class="song-key key-badge" title="Key: {song.key}"><span class="sr-only">Key: </span>{song.key}</span>
+                        {/if}
+                        <Icon name="chevron-right" size={18} class="row-chevron" />
                     </button>
                 </li>
             {/each}
         </ul>
     {/if}
+    </div>
+    </div>
 
     {#if store.editorSong}
         <SongEditor />
@@ -149,269 +167,319 @@
 <style>
     .songs-screen {
         display: grid;
-        gap: 0.75rem;
-        padding: 1rem;
+        gap: var(--space-4);
         max-width: 640px;
         margin: 0 auto;
+    }
+
+    .songs-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-4);
+    }
+
+    .songs-results {
+        min-width: 0;
+    }
+
+    /* Desktop: same two-column grid as the Roll screen — filters in the
+       left rail, the catalogue in the wide column. */
+    @media (min-width: 1000px) {
+        .songs-screen {
+            max-width: none;
+            margin: 0;
+        }
+
+        .songs-layout {
+            grid-template-columns: 340px minmax(0, 1fr);
+            gap: var(--space-6);
+            align-items: start;
+        }
+
+        .filters {
+            position: sticky;
+            top: 0;
+            padding: var(--space-4);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+        }
     }
 
     .screen-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: var(--space-3);
     }
 
-    .screen-header h2 {
-        font-size: 1.4rem;
-        font-weight: 800;
-        margin: 0;
+    .title-count {
+        font-weight: 500;
+        color: var(--muted);
     }
 
     .add-btn {
-        min-height: 2.6rem;
-        padding: 0.5rem 1.1rem;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.9rem;
-        border: none;
-        background: var(--accent, #e15b37);
-        color: var(--on-accent);
-        cursor: pointer;
-        touch-action: manipulation;
+        padding: 0 1.1rem;
     }
 
-    .add-btn:active {
-        opacity: 0.85;
+    .filters {
+        display: grid;
+        gap: var(--space-3);
+    }
+
+    .search-wrap {
+        position: relative;
+    }
+
+    .search-wrap :global(.search-icon) {
+        position: absolute;
+        left: 0.8rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--muted);
+        pointer-events: none;
     }
 
     .search-input {
-        width: 100%;
-        min-height: 2.8rem;
-        padding: 0.6rem 0.9rem;
-        border-radius: var(--radius-md, 12px);
-        border: 1px solid var(--line);
-        background: var(--surface);
-        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
-        font-size: 16px;
-        box-sizing: border-box;
+        padding-left: 2.5rem;
     }
 
-    .filter-row {
+    .search-input::-webkit-search-cancel-button {
+        cursor: pointer;
+    }
+
+    .type-segmented {
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.6rem;
+    }
+
+    .type-segmented .seg-btn {
+        padding: 0 0.4rem;
+    }
+
+    .chip-scroller {
+        display: flex;
         align-items: center;
+        gap: var(--space-4);
+        margin: 0 calc(var(--space-4) * -1);
+        padding: 2px var(--space-4);
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .chip-scroller::-webkit-scrollbar {
+        display: none;
     }
 
     .status-filters {
         display: flex;
         gap: 0.4rem;
-        flex-wrap: wrap;
-    }
-
-    .status-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.3rem;
-        padding: 0.35rem 0.7rem;
-        border-radius: 999px;
-        border: 1px solid rgba(200, 120, 40, 0.3);
-        background: var(--warning-soft);
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--muted);
-        cursor: pointer;
-        touch-action: manipulation;
-        min-height: 2.2rem;
-    }
-
-    .status-chip.active {
-        background: var(--warning-soft);
-        border-color: rgba(200, 120, 40, 0.5);
-    }
-
-    .status-count {
-        font-size: 0.72rem;
-        font-weight: 700;
-        opacity: 0.7;
-    }
-
-    .type-segmented {
-        display: inline-flex;
-        border-radius: var(--radius-md, 12px);
-        overflow: hidden;
-        border: 1px solid var(--line);
         flex-shrink: 0;
     }
 
-    .seg-btn {
-        min-height: 2.4rem;
-        padding: 0.4rem 0.7rem;
-        border: none;
-        background: var(--paper-soft);
-        font-size: 0.82rem;
+    .status-filters:empty {
+        display: none;
+    }
+
+    @media (min-width: 1000px) {
+        .chip-scroller {
+            flex-direction: column;
+            align-items: stretch;
+            gap: var(--space-3);
+            margin: 0;
+            padding: 0;
+            overflow: visible;
+        }
+
+        .status-filters,
+        .key-chips {
+            flex-wrap: wrap;
+        }
+
+    }
+
+    /* Attention filters ("Incomplete", "Unpracticed") only appear when
+       they'd match something, and carry their count. */
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        min-height: 38px;
+        padding: 0 0.8rem;
+        border-radius: var(--radius-full);
+        border: 1px solid transparent;
+        background: var(--warning-soft);
+        font-size: 0.9rem;
         font-weight: 600;
+        color: var(--warning);
+        white-space: nowrap;
         cursor: pointer;
         touch-action: manipulation;
-        color: var(--ink, #182230);
-        border-right: 1px solid var(--line);
+        -webkit-tap-highlight-color: transparent;
     }
 
-    .seg-btn:last-child {
-        border-right: none;
+    .status-chip.active {
+        border-color: var(--warning);
     }
 
-    .seg-btn.active {
-        background: var(--accent-soft, rgba(225, 91, 55, 0.12));
-        color: var(--accent-strong, #c64724);
+    .status-count {
+        min-width: 1.3rem;
+        padding: 0 0.3rem;
+        border-radius: var(--radius-full);
+        background: var(--warning);
+        color: var(--surface);
+        font-size: 0.74rem;
+        font-weight: 700;
+        line-height: 1.3rem;
+        text-align: center;
     }
 
     .key-filter-section {
-        display: grid;
-        gap: 0.4rem;
-    }
-
-    .key-filter-header {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: var(--space-2);
+        flex-shrink: 0;
     }
 
     .key-filter-label {
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: var(--muted, #6b7a8d);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .key-clear-btn {
-        font-size: 0.78rem;
+        flex-shrink: 0;
+        line-height: 38px;
+        font-size: 0.86rem;
         font-weight: 600;
-        color: var(--accent-strong, #c64724);
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 0.2rem 0.4rem;
-        touch-action: manipulation;
+        color: var(--muted);
     }
 
     .key-chips {
         display: flex;
-        flex-wrap: wrap;
         gap: 0.4rem;
+        align-items: center;
     }
 
-    .empty-state {
-        padding: 3rem 1rem;
-        text-align: center;
-    }
-
-    .empty-title {
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin: 0 0 0.4rem;
-    }
-
-    .empty-sub {
-        color: var(--muted, #6b7a8d);
-        margin: 0;
+    .key-chips :global(.chip-toggle) {
+        min-width: 44px;
+        justify-content: center;
+        font-family: var(--font-display);
+        font-weight: 600;
     }
 
     .song-list {
         list-style: none;
         margin: 0;
         padding: 0;
-        display: grid;
-        gap: 0.5rem;
+        overflow: hidden;
+    }
+
+    .song-list li + li {
+        border-top: 1px solid var(--line);
     }
 
     .song-row {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.75rem;
         width: 100%;
+        min-height: 60px;
+        padding: 0.7rem 0.75rem 0.7rem 1rem;
+        border: none;
+        background: transparent;
         text-align: left;
-        padding: 0.85rem 1rem;
-        border-radius: var(--radius-md, 12px);
-        border: 1px solid var(--line);
-        background: var(--paper);
         cursor: pointer;
         touch-action: manipulation;
-        min-height: 3.2rem;
         font: inherit;
         color: inherit;
         -webkit-tap-highlight-color: transparent;
     }
 
-    .song-content {
-        flex: 1;
-        min-width: 0;
-        display: grid;
-        gap: 0.25rem;
+    @media (hover: hover) {
+    .song-row:hover {
+        background: var(--hover);
     }
-
-    .row-chevron {
-        flex-shrink: 0;
-        color: var(--muted, #6b7a8d);
     }
 
     .song-row:active {
         background: var(--accent-soft);
     }
 
-    .song-top {
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        flex-wrap: wrap;
+    .song-row:focus-visible {
+        outline-offset: -2px;
+    }
+
+    .song-content {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        gap: 0.15rem;
+    }
+
+    .song-row :global(.row-chevron) {
+        flex-shrink: 0;
+        color: var(--faint);
+    }
+
+    /* Inline flow: tags lead, the line-up text continues on the same line
+       and wraps like prose. */
+    .song-sub {
+        line-height: 1.45;
+    }
+
+    .lineup-phrase {
+        white-space: nowrap;
+    }
+
+    .song-sub .pill {
+        margin-right: 0.3rem;
+        vertical-align: 0.08em;
     }
 
     .song-name {
-        font-weight: 700;
-        font-size: 1rem;
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 1.04rem;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
         overflow-wrap: break-word;
         word-break: break-word;
         min-width: 0;
         max-width: 100%;
     }
 
-    .pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.15rem 0.5rem;
-        border-radius: 999px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        background: var(--line);
-        color: var(--muted, #6b7a8d);
-    }
-
-    .pill.warn {
-        background: var(--warning-soft);
-        color: var(--muted);
-    }
-
     .song-members {
-        font-size: 0.82rem;
-        color: var(--muted, #6b7a8d);
-        line-height: 1.3;
-    }
-
-    .song-key {
-        font-size: 0.78rem;
-        color: var(--muted, #6b7a8d);
+        font-size: 0.88rem;
+        color: var(--muted);
     }
 
     .incomplete-reasons {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.25rem 0.5rem;
+        gap: 0.1rem 0.6rem;
     }
 
     .incomplete-reason {
-        font-size: 0.75rem;
-        color: var(--muted);
-        font-weight: 600;
+        font-size: 0.84rem;
+        color: var(--warning);
+        font-weight: 500;
+    }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    /* Desktop rail: label above its chips, left-aligned like the rest. */
+    @media (min-width: 1000px) {
+        .key-filter-section {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--space-2);
+        }
+
+        .key-filter-label {
+            line-height: 1.4;
+        }
     }
 </style>

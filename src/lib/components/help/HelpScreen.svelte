@@ -5,11 +5,12 @@
 </script>
 
 <div class="help-screen">
-    <h1 class="help-title">How Setlist Roller Works</h1>
+    <h1 class="screen-title help-title">How Setlist Roller Works</h1>
     <p class="help-intro">Setlist Roller builds setlists that flow well on stage. It looks at tuning changes, instrument swaps, capo moves, and other gear transitions to put your songs in an order that keeps the chaos to a minimum.</p>
 
+    <div class="help-sections">
     <section class="help-section">
-        <h2>Getting started</h2>
+        <h2 class="section-title">Getting started</h2>
         <ol class="steps">
             <li>
                 <strong>Add members who switch gear</strong>
@@ -31,12 +32,12 @@
     </section>
 
     <section class="help-section">
-        <h2>What "incomplete" means</h2>
-        <p>Songs show an <span class="example-pill">incomplete</span> badge when a tracked band member is missing their instrument setup for that song. The song list shows exactly what's missing — e.g. "nick: needs instrument". Tap the song to fill in the gaps.</p>
+        <h2 class="section-title">What "incomplete" means</h2>
+        <p>Songs show an <span class="example-pill badge badge-warn">incomplete</span> badge when a tracked band member is missing their instrument setup for that song. The song list shows exactly what's missing — e.g. "nick: needs instrument". Tap the song to fill in the gaps.</p>
     </section>
 
     <section class="help-section">
-        <h2>After you roll</h2>
+        <h2 class="section-title">After you roll</h2>
         <ul class="tips">
             <li><strong>Drag to reorder</strong> — not happy with a song's position? Press and hold the handle (or click and drag on desktop) to move it. The card lifts up so you can see exactly where it'll land.</li>
             <li><strong>Lock it in</strong> — prevents accidental re-rolls. You can still unlock and roll again.</li>
@@ -47,7 +48,7 @@
     </section>
 
     <section class="help-section">
-        <h2>Tweaking the results</h2>
+        <h2 class="section-title">Tweaking the results</h2>
         <ul class="tips">
             <li><strong>Demands</strong> — if a member has multiple instruments or tunings, limit which ones are in play tonight, and say how much that member minds changing between songs: avoid it, keep it to a minimum, or don't care. This is the main lever for tuning and instrument changes.</li>
             <li><strong>Set shape</strong> — the energy arc of the set, using each song's energy rating.</li>
@@ -57,95 +58,133 @@
     </section>
 
     <section class="help-section">
-        <h2>Data & backups</h2>
+        <h2 class="section-title">Data & backups</h2>
         <p>Your songs and settings live in remoteStorage. Saved setlists are stored locally on this device. Use <strong>Export</strong> from the <button type="button" class="inline-link" onclick={() => store.navigate("band")}>Band</button> tab to download everything as a JSON file — songs, config, and saved setlists. Keep backups!</p>
     </section>
+    </div>
 </div>
 
 <style>
+    /* Help is prose: one readable column, sections separated by rules
+       instead of boxed into cards. */
     .help-screen {
         display: grid;
-        gap: 1rem;
-        padding: 0.5rem;
-        max-width: 540px;
+        gap: var(--space-6);
+        max-width: 640px;
         margin: 0 auto;
+        padding-bottom: var(--space-4);
     }
 
-    .help-title {
-        font-size: 1.3rem;
-        font-weight: 800;
-        margin: 0;
-        color: var(--ink, #182230);
+    .help-sections {
+        display: grid;
+        gap: var(--space-6);
+    }
+
+    /* Desktop: the page uses the full content width like every other
+       screen; the intro keeps a readable measure and the sections flow
+       into two columns. */
+    @media (min-width: 1000px) {
+        .help-screen {
+            max-width: none;
+            margin: 0;
+        }
+
+        .help-intro {
+            max-width: 62ch;
+        }
+
+        .help-sections {
+            display: block;
+            columns: 2;
+            column-gap: var(--space-8);
+        }
+
+        .help-section {
+            break-inside: avoid;
+            margin-bottom: var(--space-6);
+        }
     }
 
     .help-intro {
-        margin: 0;
-        font-size: 0.88rem;
-        color: var(--muted, #8a95a5);
-        line-height: 1.5;
-    }
-
-    .help-section {
-        border: 1px solid var(--line);
-        border-radius: var(--radius-lg, 16px);
-        background: var(--paper);
-        padding: 1rem;
-        display: grid;
-        gap: 0.5rem;
-    }
-
-    .help-section h2 {
-        margin: 0;
-        font-size: 0.95rem;
-        font-weight: 800;
-        color: var(--ink, #182230);
-    }
-
-    .help-section p {
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--muted, #8a95a5);
+        margin: calc(var(--space-3) * -1) 0 0;
+        font-size: 1.05rem;
+        color: var(--ink-2);
         line-height: 1.55;
     }
 
-    .help-section p strong {
-        color: var(--ink, #182230);
+    .help-section {
+        padding-top: var(--space-5);
+        border-top: 1px solid var(--line-strong);
+        display: grid;
+        gap: var(--space-3);
     }
 
+    .help-section h2 {
+        font-size: 1.2rem;
+    }
+
+    .help-section p,
+    .tips li {
+        margin: 0;
+        font-size: 0.98rem;
+        color: var(--ink-2);
+        line-height: 1.6;
+    }
+
+    .help-section strong {
+        color: var(--ink);
+        font-weight: 600;
+    }
+
+    /* The four setup steps are a real sequence, so they get numerals. */
     .steps {
         margin: 0;
-        padding-left: 1.4rem;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
         display: grid;
-        gap: 0.6rem;
+        gap: var(--space-4);
     }
 
     .steps li {
-        font-size: 0.88rem;
-        font-weight: 700;
-        color: var(--ink, #182230);
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        font-size: 1rem;
+        color: var(--ink);
         line-height: 1.4;
     }
 
+    .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: -0.1rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        color: var(--accent-text);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 0.95rem;
+    }
+
     .steps li p {
-        font-weight: 400;
-        margin: 0.2rem 0 0;
+        margin-top: 0.2rem;
     }
 
     .tips {
         margin: 0;
-        padding-left: 1.4rem;
+        padding-left: 1.2rem;
         display: grid;
-        gap: 0.4rem;
+        gap: var(--space-2);
     }
 
-    .tips li {
-        font-size: 0.85rem;
-        color: var(--muted, #8a95a5);
-        line-height: 1.5;
-    }
-
-    .tips li strong {
-        color: var(--ink, #182230);
+    .tips li::marker {
+        color: var(--muted);
     }
 
     .inline-link {
@@ -153,25 +192,21 @@
         border: none;
         padding: 0;
         font: inherit;
-        font-weight: 700;
-        color: var(--accent, #e15b37);
+        font-weight: 600;
+        color: var(--accent-text);
         cursor: pointer;
         text-decoration: underline;
         text-decoration-thickness: 1.5px;
-        text-underline-offset: 2px;
+        text-underline-offset: 3px;
     }
 
+    @media (hover: hover) {
     .inline-link:hover {
-        color: var(--accent-strong);
+        text-decoration-thickness: 2.5px;
+    }
     }
 
     .example-pill {
-        display: inline-block;
-        padding: 0.1rem 0.4rem;
-        border-radius: 999px;
-        background: var(--warning-soft);
-        color: var(--muted);
-        font-size: 0.75rem;
-        font-weight: 700;
+        vertical-align: 0.05em;
     }
 </style>

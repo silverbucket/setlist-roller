@@ -1,56 +1,85 @@
 :root {
-    font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+    --font-body: "Instrument Sans Variable", "Avenir Next", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    --font-display: "Bricolage Grotesque Variable", "Avenir Next", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    font-family: var(--font-body);
     line-height: 1.45;
     font-weight: 400;
-    color: #182230;
-    background:
-        radial-gradient(circle at top left, rgba(244, 113, 76, 0.16), transparent 28%),
-        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.12), transparent 24%),
-        linear-gradient(180deg, #f7f8fc 0%, #f0f3f9 52%, #e9eef6 100%);
+    color: #16191f;
+    background: #f1f2f4;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
-    /* Colors */
-    --paper: rgba(255, 255, 255, 0.82);
-    --paper-strong: rgba(255, 255, 255, 0.96);
-    --paper-soft: rgba(247, 249, 253, 0.92);
-    --ink: #182230;
-    --muted: #617086;
+    /* Surfaces — flat and opaque. The canvas is a quiet cool grey; cards
+       sit on it in plain white. No gradients or translucency: the only
+       colour on screen should be the band's accent and status signals. */
+    --bg: #f1f2f4;
+    --app-canvas-bg: #f1f2f4;
+    --surface: #ffffff;
+    --surface-2: #f6f7f9;
+    --paper: #ffffff;
+    --paper-strong: #ffffff;
+    --paper-soft: #f6f7f9;
+
+    /* Text */
+    --ink: #16191f;
+    --ink-2: #3a414d;
+    --muted: #626c7c;
+    /* Quiet affordances (grips, chevrons, unpinned pins): still ≥3:1. */
+    --faint: #8a93a1;
+
+    /* Accent. --accent is the fill colour (and is overridden at runtime by
+       the band's die colour — see App.svelte). --accent-text is derived
+       from it and is the one to use for accent-coloured TEXT so it stays
+       legible on the surface whatever die colour is picked. */
     --accent: #e15b37;
     --accent-strong: #c64724;
-    --accent-soft: rgba(225, 91, 55, 0.12);
-    --accent-line: rgba(225, 91, 55, 0.24);
-    --line: rgba(27, 49, 80, 0.12);
-    --line-strong: rgba(27, 49, 80, 0.2);
-    --success: #1f8f61;
-    --danger: #992f20;
+    --accent-soft: rgba(225, 91, 55, 0.1);
+    --accent-line: rgba(225, 91, 55, 0.28);
+    --accent-text: color-mix(in srgb, var(--accent) 78%, #000);
+    /* Background for filled controls with white text: the die colour
+       darkened to 4.5:1 against white (accentFillFor in utils.js; App.svelte
+       overrides it for custom die colours). */
+    --accent-fill: #bf4d2f;
+
+    --line: #e4e7eb;
+    --line-strong: #cfd4db;
+    --success: #1b7f56;
+    --success-soft: rgba(27, 127, 86, 0.1);
+    --danger: #b3321f;
+    --danger-soft: rgba(179, 50, 31, 0.08);
+    --warning: #8a6210;
+    --warning-soft: rgba(214, 150, 20, 0.14);
     --sync: #3a6df0;
-    --app-canvas-bg: #e9eef6;
 
     /* Semantic */
-    --surface: rgba(255, 255, 255, 0.92);
-    --overlay: rgba(30, 38, 52, 0.28);
+    --overlay: rgba(18, 22, 30, 0.42);
     --on-accent: #fff;
     --on-ink: #fff;
-    --hover: rgba(0, 0, 0, 0.04);
-    --hover-strong: rgba(0, 0, 0, 0.08);
-    --toast-bg: #1b3150;
+    --hover: rgba(22, 25, 31, 0.045);
+    --hover-strong: rgba(22, 25, 31, 0.09);
+    /* Solid neutral button (.btn-ink). */
+    --ink-fill: #16191f;
+    --on-ink-fill: #fff;
+    --ink-fill-line: transparent;
+    --toast-bg: #16191f;
     --toast-fg: #fff;
-    --toast-danger: #992f20;
-    --toast-warning: #7a5c10;
-    --warning-soft: rgba(255, 160, 40, 0.12);
+    --toast-danger: #b3321f;
+    --toast-warning: #8a6210;
+    /* Ring behind focused fields: the accent at ~30% so it reads clearly
+       next to the 1px accent border. */
+    --focus-ring: 0 0 0 3px var(--accent-line);
 
-    /* Shadows */
-    --shadow: 0 24px 60px rgba(27, 39, 58, 0.12);
-    --shadow-soft: 0 14px 32px rgba(27, 39, 58, 0.08);
-    --shadow-sm: 0 2px 8px rgba(27, 39, 58, 0.06);
+    /* Shadows — one soft elevation for cards-in-motion, one for overlays. */
+    --shadow: 0 24px 64px rgba(18, 22, 30, 0.18), 0 2px 8px rgba(18, 22, 30, 0.06);
+    --shadow-soft: 0 8px 24px rgba(18, 22, 30, 0.1);
+    --shadow-sm: 0 1px 2px rgba(18, 22, 30, 0.06);
 
     /* Radii */
     --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
     --radius-xl: 20px;
     --radius-full: 999px;
 
@@ -63,55 +92,74 @@
     --space-6: 1.5rem;
     --space-8: 2rem;
 
+    /* Control height shared by buttons, inputs and selects so rows of
+       mixed controls line up. 44px is also the minimum touch target. */
+    --control-h: 44px;
+
     /* Layout
        These are the fixed chrome OUTER heights. TopBar reserves the full
        top safe-area inset. BottomNav only uses part of the bottom inset so the
        bar stays compact while tab buttons keep their 44px+ tap targets. */
-    --top-bar-height: calc(48px + env(safe-area-inset-top, 0px));
+    --top-bar-height: calc(52px + env(safe-area-inset-top, 0px));
     --bottom-nav-safe-padding: calc(env(safe-area-inset-bottom, 0px) * 0.5);
-    --bottom-nav-height: calc(48px + var(--bottom-nav-safe-padding));
+    --bottom-nav-height: calc(58px + var(--bottom-nav-safe-padding));
+    --sidebar-width: 232px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 :root[data-theme="dark"] {
-    color: #e2e6ec;
-    background:
-        radial-gradient(circle at top left, rgba(232, 118, 74, 0.08), transparent 28%),
-        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.06), transparent 24%),
-        linear-gradient(180deg, #14171e 0%, #181c24 52%, #1a1f28 100%);
+    color: #e8eaee;
+    background: #0f1216;
+    color-scheme: dark;
 
-    --paper: rgba(30, 35, 44, 0.82);
-    --paper-strong: rgba(26, 30, 38, 0.96);
-    --paper-soft: rgba(22, 26, 33, 0.92);
-    --ink: #e2e6ec;
-    --muted: #8a95a8;
+    --bg: #0f1216;
+    --app-canvas-bg: #0f1216;
+    --surface: #181c22;
+    --surface-2: #1f242c;
+    --paper: #181c22;
+    --paper-strong: #1c2027;
+    --paper-soft: #1f242c;
+
+    --ink: #e8eaee;
+    --ink-2: #c3c8d1;
+    --muted: #98a1b0;
+    --faint: #6f7888;
+
     --accent: #e8764a;
     --accent-strong: #f08860;
-    --accent-soft: rgba(232, 118, 74, 0.15);
-    --accent-line: rgba(232, 118, 74, 0.28);
-    --line: rgba(200, 215, 240, 0.12);
-    --line-strong: rgba(200, 215, 240, 0.18);
-    --success: #34b87a;
-    --danger: #e05545;
+    --accent-soft: rgba(232, 118, 74, 0.14);
+    --accent-line: rgba(232, 118, 74, 0.34);
+    --accent-text: color-mix(in srgb, var(--accent) 80%, #fff);
+
+    --line: #272d37;
+    --line-strong: #3a4250;
+    --success: #4cc38a;
+    --success-soft: rgba(76, 195, 138, 0.14);
+    --danger: #ef6b5a;
+    --danger-soft: rgba(239, 107, 90, 0.14);
+    --warning: #e0b040;
+    --warning-soft: rgba(224, 176, 64, 0.14);
     --sync: #7da0ff;
-    --app-canvas-bg: #1a1f28;
 
-    --surface: rgba(38, 43, 54, 0.92);
-    --overlay: rgba(0, 0, 0, 0.5);
+    --overlay: rgba(0, 0, 0, 0.6);
     --on-accent: #fff;
-    --on-ink: #1a1e26;
-    --hover: rgba(255, 255, 255, 0.06);
+    --on-ink: #16191f;
+    --hover: rgba(255, 255, 255, 0.055);
     --hover-strong: rgba(255, 255, 255, 0.1);
-    --toast-bg: #e2e6ec;
-    --toast-fg: #1a1e26;
-    --toast-danger: #e05545;
-    --toast-warning: #d4a32c;
-    --warning-soft: rgba(212, 163, 44, 0.15);
+    /* A raised surface rather than inverted ink: a white slab would
+       outshine the Roll button on a dark screen. */
+    --ink-fill: #2c333e;
+    --on-ink-fill: #f2f4f7;
+    --ink-fill-line: #454e5c;
+    --toast-bg: #e8eaee;
+    --toast-fg: #16191f;
+    --toast-danger: #ef6b5a;
+    --toast-warning: #e0b040;
 
-    --shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
-    --shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.3);
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+    --shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -143,19 +191,7 @@ body {
        Paint the browser canvas from body as well as :root so that strip does
        not fall back to white when the app itself is correctly capped to the
        measurable web viewport. */
-    background:
-        radial-gradient(circle at top left, rgba(244, 113, 76, 0.16), transparent 28%),
-        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.12), transparent 24%),
-        linear-gradient(180deg, #f7f8fc 0%, #f0f3f9 52%, var(--app-canvas-bg) 100%);
-    background-attachment: fixed;
-}
-
-:root[data-theme="dark"] body {
-    background:
-        radial-gradient(circle at top left, rgba(232, 118, 74, 0.08), transparent 28%),
-        radial-gradient(circle at 85% 12%, rgba(76, 117, 244, 0.06), transparent 24%),
-        linear-gradient(180deg, #14171e 0%, #181c24 52%, var(--app-canvas-bg) 100%);
-    background-attachment: fixed;
+    background: var(--app-canvas-bg);
 }
 
 button,
@@ -203,8 +239,609 @@ p {
 h1,
 h2,
 h3 {
-    letter-spacing: -0.04em;
-    line-height: 1.05;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+}
+
+/* No orphaned last words in headings or short copy. */
+h1,
+h2,
+h3,
+.dialog-title,
+.empty-title {
+    text-wrap: balance;
+}
+
+p {
+    text-wrap: pretty;
+}
+
+/* Keyboard focus: one visible ring everywhere. Mouse/touch focus stays
+   quiet (:focus-visible), text fields get their own ring in components. */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+::placeholder {
+    color: var(--muted);
+    opacity: 0.75;
+}
+
+/* Selects: drop the platform chrome so they match text inputs, and draw
+   our own chevron. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237b8494' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    padding-right: 2.2rem !important;
+    text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ==========================================================================
+   Shared UI primitives
+   Global (unscoped) classes used by every screen so buttons, fields, cards
+   and dialogs look and behave the same everywhere. Component <style> blocks
+   only add layout on top of these.
+   ========================================================================== */
+
+/* ---- Buttons ---- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: var(--control-h);
+    padding: 0 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 0.94rem;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        background 120ms ease,
+        border-color 120ms ease,
+        transform 80ms ease;
+}
+
+@media (hover: hover) {
+    .btn:hover {
+        background: var(--surface-2);
+    }
+}
+
+.btn:active {
+    transform: scale(0.98);
+    background: var(--hover-strong);
+}
+
+.btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn svg {
+    flex-shrink: 0;
+}
+
+.btn-primary {
+    background: var(--accent-fill);
+    border-color: transparent;
+    color: var(--on-accent);
+}
+
+@media (hover: hover) {
+    .btn-primary:hover {
+        background: color-mix(in srgb, var(--accent-fill) 90%, #000);
+    }
+}
+
+.btn-primary:active {
+    background: color-mix(in srgb, var(--accent-fill) 82%, #000);
+}
+
+/* Disabled filled buttons go neutral rather than fading the accent, which
+   washes out to salmon on light and mud on dark. */
+.btn-primary:disabled,
+.btn-ink:disabled,
+.btn-danger:disabled {
+    background: var(--hover-strong);
+    color: var(--muted);
+    opacity: 1;
+}
+
+/* Solid neutral — the "commit" action when the accent is already spoken
+   for on the same screen (e.g. next to the Roll button). */
+.btn-ink {
+    background: var(--ink-fill);
+    border-color: var(--ink-fill-line);
+    color: var(--on-ink-fill);
+}
+
+@media (hover: hover) {
+    .btn-ink:hover,
+    .btn-ink:active {
+        background: color-mix(in srgb, var(--ink-fill) 86%, var(--muted));
+    }
+}
+
+.btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--ink-2);
+}
+
+@media (hover: hover) {
+    .btn-ghost:hover {
+        background: var(--hover);
+    }
+}
+
+.btn-accent-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--accent-text);
+}
+
+@media (hover: hover) {
+    .btn-accent-ghost:hover {
+        background: var(--accent-soft);
+    }
+}
+
+.btn-danger {
+    background: var(--danger);
+    border-color: transparent;
+    color: #fff;
+}
+
+@media (hover: hover) {
+    .btn-danger:hover,
+    .btn-danger:active {
+        background: color-mix(in srgb, var(--danger) 88%, #000);
+    }
+}
+
+.btn-danger-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--danger);
+}
+
+@media (hover: hover) {
+    .btn-danger-ghost:hover,
+    .btn-danger-ghost:active {
+        background: var(--danger-soft);
+    }
+}
+
+.btn-sm {
+    min-height: 36px;
+    padding: 0 0.75rem;
+    font-size: 0.86rem;
+    border-radius: var(--radius-sm);
+}
+
+.btn-block {
+    width: 100%;
+}
+
+/* Square icon-only button with a full 44px hit area. */
+.icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: var(--control-h);
+    height: var(--control-h);
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        background 120ms ease,
+        color 120ms ease;
+}
+
+@media (hover: hover) {
+    .icon-btn:hover {
+        background: var(--hover);
+        color: var(--ink);
+    }
+}
+
+.icon-btn:active {
+    background: var(--hover-strong);
+}
+
+/* ---- Fields ---- */
+.field {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.field-label {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.field-hint {
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+.input {
+    width: 100%;
+    min-height: var(--control-h);
+    padding: 0.55rem 0.8rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line-strong);
+    /* background-color, not the shorthand: selects carry their chevron as
+       a background-image (see the base select rule). */
+    background-color: var(--surface);
+    color: var(--ink);
+    /* iOS zooms inputs <16px on focus — keep at 16px (not rem). See the
+       note above the base input rule. */
+    font-size: 16px;
+    transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+}
+
+@media (hover: hover) {
+    .input:hover {
+        border-color: color-mix(in srgb, var(--line-strong) 60%, var(--muted));
+    }
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+.input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+textarea.input {
+    line-height: 1.5;
+    resize: vertical;
+}
+
+/* ---- Surfaces ---- */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+}
+
+/* ---- Screen scaffolding ---- */
+.screen-title {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+    color: var(--ink);
+}
+
+.section-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+}
+
+.empty-state {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    padding: 3rem 1.25rem;
+    text-align: center;
+}
+
+.empty-title {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.empty-sub {
+    max-width: 34ch;
+    font-size: 0.92rem;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+/* ---- Badges ---- */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--radius-full);
+    background: var(--hover-strong);
+    color: var(--ink-2);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.badge-warn {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+
+.badge-success {
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+/* Musical key: a fixed-width monogram so keys line up in a column. */
+.key-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 2.1rem;
+    height: 1.6rem;
+    padding: 0 0.4rem;
+    flex-shrink: 0;
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: var(--surface);
+}
+
+/* ---- Segmented control ---- */
+.segmented {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: var(--radius-md);
+    background: var(--hover-strong);
+    max-width: 100%;
+}
+
+.segmented > button {
+    flex: 1 1 auto;
+    min-height: 36px;
+    padding: 0 0.8rem;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        background 120ms ease,
+        color 120ms ease;
+}
+
+@media (hover: hover) {
+    .segmented > button:hover {
+        color: var(--ink);
+    }
+}
+
+.segmented > button.active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ---- Dialogs ----
+   One dialog shell for every modal. On phones it docks to the bottom edge
+   as a sheet (thumb-reachable, keyboard-friendly); from 600px up it is a
+   centered card. */
+.dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    display: grid;
+    align-items: end;
+    justify-items: center;
+    padding: max(1rem, var(--safe-top)) 0 0;
+    background: var(--overlay);
+    animation: ui-fade-in 160ms ease;
+}
+
+.dialog {
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(100dvh - max(1rem, var(--safe-top)));
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding: 1.25rem 1.25rem calc(1.25rem + var(--safe-bottom));
+    background: var(--paper-strong);
+    border: 1px solid var(--line);
+    border-bottom: none;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    box-shadow: var(--shadow);
+    color: var(--ink);
+    overflow-y: auto;
+    animation: ui-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dialog:focus {
+    outline: none;
+}
+
+.dialog-title {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    color: var(--ink);
+}
+
+.dialog-desc {
+    font-size: 0.94rem;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.dialog-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.dialog-actions > .btn {
+    flex: 1;
+}
+
+.dialog-actions.stacked {
+    flex-direction: column;
+}
+
+@media (min-width: 600px) {
+    .dialog-backdrop {
+        align-items: center;
+        padding: 1.5rem;
+    }
+
+    .dialog {
+        max-height: calc(100dvh - 3rem);
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        animation: ui-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+/* Searchable pick-list used inside dialogs (add / swap / keep-apart). */
+.pick-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -0.5rem;
+    overscroll-behavior: contain;
+}
+
+.pick-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--control-h);
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink);
+    font-size: 0.96rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) {
+    .pick-item:hover:not(:disabled) {
+        background: var(--hover);
+    }
+}
+
+.pick-item:active:not(:disabled) {
+    background: var(--accent-soft);
+}
+
+.pick-item:disabled {
+    color: var(--muted);
+    cursor: default;
+}
+
+.pick-item > .pick-item-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.pick-empty {
+    padding: 1.5rem 1rem;
+    text-align: center;
+    font-size: 0.92rem;
+    color: var(--muted);
+}
+
+@keyframes ui-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes ui-sheet-up {
+    from {
+        transform: translateY(24px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes ui-pop-in {
+    from {
+        transform: scale(0.96);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 @media print {

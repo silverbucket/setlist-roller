@@ -1,25 +1,34 @@
 <script>
   import { getContext } from "svelte";
+  import DieMark from "../shared/DieMark.svelte";
+  import Icon from "../shared/Icon.svelte";
 
   const store = getContext("app");
 
   const tabs = [
-    { id: "roll", label: "Roll", icon: "\u2684" },
-    { id: "saved", label: "Saved", icon: "\u2605" },
-    { id: "songs", label: "Songs", icon: "\u266B" },
-    { id: "band", label: "Band", icon: "\u2699" },
-    { id: "help", label: "Help", icon: "?" },
+    { id: "roll", label: "Roll", icon: "dice" },
+    { id: "saved", label: "Saved", icon: "bookmark" },
+    { id: "songs", label: "Songs", icon: "music" },
+    { id: "band", label: "Band", icon: "users" },
+    { id: "help", label: "Help", icon: "help" },
   ];
 </script>
 
-<nav class="bottom-nav">
+<nav class="bottom-nav" aria-label="Main">
+  <!-- Wordmark: only shown when the nav is a desktop sidebar. -->
+  <div class="brand" aria-hidden="true">
+    <DieMark size={26} />
+    <span class="brand-name">Setlist Roller</span>
+  </div>
+
   {#each tabs as tab (tab.id)}
     <button type="button"
       class="tab"
       class:active={store.activeView === tab.id}
+      aria-current={store.activeView === tab.id ? "page" : undefined}
       onclick={() => store.navigate(tab.id)}
     >
-      <span class="tab-icon" aria-hidden="true">{tab.icon}</span>
+      <span class="tab-icon"><Icon name={tab.icon} size={22} stroke={store.activeView === tab.id ? 2.2 : 1.9} /></span>
       <span class="tab-label">{tab.label}</span>
     </button>
   {/each}
@@ -34,11 +43,9 @@
     height: var(--bottom-nav-height);
     display: flex;
     align-items: stretch;
-    background: var(--paper);
+    background: var(--surface);
     border-top: 1px solid var(--line);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    padding-bottom: var(--bottom-nav-safe-padding);
+    padding: 0 var(--space-1) var(--bottom-nav-safe-padding);
   }
 
   @media print {
@@ -47,41 +54,138 @@
     }
   }
 
+  .brand {
+    display: none;
+  }
+
   .tab {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     min-height: 44px;
     min-width: 44px;
     border: none;
     background: none;
     cursor: pointer;
     color: var(--muted);
-    padding: 11px 0 1px;
+    padding: 6px 0 4px;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transition: color 0.15s ease;
   }
 
-  .tab:active {
-    opacity: 0.7;
+  @media (hover: hover) {
+  .tab:hover {
+    color: var(--ink);
   }
-
-  .tab.active {
-    color: var(--accent);
   }
 
   .tab-icon {
-    font-size: 22px;
-    line-height: 1;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    transition: background 0.15s ease;
+  }
+
+  .tab:active .tab-icon {
+    background: var(--hover-strong);
+  }
+
+  .tab.active {
+    color: var(--accent-text);
+  }
+
+  .tab.active .tab-icon {
+    background: var(--accent-soft);
   }
 
   .tab-label {
-    font-size: 11px;
+    font-size: 0.72rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+
+  /* ---- Desktop: the same nav, laid out as a sidebar ---- */
+  @media (min-width: 900px) {
+    .bottom-nav {
+      height: auto;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      padding: var(--space-4) var(--space-3);
+      border-top: none;
+      border-right: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 40px;
+      padding: 0 10px;
+      margin-bottom: var(--space-5);
+    }
+
+    .brand-name {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .tab {
+      flex: none;
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 12px;
+      min-height: 42px;
+      padding: 0 10px;
+      border-radius: var(--radius-md);
+      color: var(--ink-2);
+    }
+
+    @media (hover: hover) {
+    .tab:hover {
+      background: var(--hover);
+    }
+    }
+
+    .tab-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 0;
+      color: var(--muted);
+    }
+
+    .tab:active .tab-icon,
+    .tab.active .tab-icon {
+      background: none;
+    }
+
+    .tab.active {
+      background: var(--accent-soft);
+      color: var(--accent-text);
+    }
+
+    .tab.active .tab-icon {
+      color: inherit;
+    }
+
+    .tab-label {
+      font-size: 0.94rem;
+    }
+
+    /* Help sits apart at the bottom of the rail: it's reference, not a
+       place you work in. */
+    .tab:last-child {
+      margin-top: auto;
+    }
   }
 </style>
