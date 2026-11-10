@@ -7,6 +7,7 @@
     import TopBar from "./lib/components/layout/TopBar.svelte";
     import RollScreen from "./lib/components/roll/RollScreen.svelte";
     import SavedScreen from "./lib/components/saved/SavedScreen.svelte";
+    import Icon from "./lib/components/shared/Icon.svelte";
     import SongsScreen from "./lib/components/songs/SongsScreen.svelte";
     import { generateDieSvgString, updatePwaIcons } from "./lib/pwa-icon.js";
     import { createRemoteStorageRepository } from "./lib/remotestorage.js";
@@ -159,18 +160,21 @@
 {:else}
     <main class="connect-shell">
         <section class="connect-card">
-            <p class="eyebrow">
-                Setlist Roller
-                {#if isStaging}<span class="eyebrow-staging">· Staging</span>{/if}
-            </p>
-            <h1>{store.appTitle}</h1>
-            <p class="lede">
-                Connect to remoteStorage so your songs survive the tour bus.
-            </p>
+            <div class="connect-brand">
+                <img class="connect-die" src={faviconHref} alt="" width="56" height="56" />
+                {#if isStaging}<span class="badge badge-warn">Staging</span>{/if}
+            </div>
+            <div class="connect-intro">
+                <h1>{store.appTitle}</h1>
+                <p class="lede">
+                    Connect to remoteStorage so your songs survive the tour bus.
+                </p>
+            </div>
 
             <label class="field">
-                <span>remoteStorage address</span>
+                <span class="field-label">remoteStorage address</span>
                 <input
+                    class="input"
                     value={store.connectAddress}
                     oninput={(e) => store.connectAddress = e.currentTarget.value}
                     placeholder="you@example.com"
@@ -183,26 +187,28 @@
                 />
             </label>
 
-            <button type="button" class="btn primary" onclick={() => store.connectStorage()} disabled={store.connectionStatus === "connecting" || !store.connectAddress.trim()}>
+            <button type="button" class="btn btn-primary btn-block connect-btn" onclick={() => store.connectStorage()} disabled={store.connectionStatus === "connecting" || !store.connectAddress.trim()}>
                 {store.connectionStatus === "connecting" ? "Connecting..." : "Connect"}
             </button>
 
             {#if store.loadError}
-                <p class="error-text">{store.loadError}</p>
+                <p class="error-text" role="alert">{store.loadError}</p>
             {/if}
 
             {#if store.knownAccounts.length > 0}
                 <div class="recent-accounts">
                     <span class="recent-label">Recent</span>
-                    {#each store.knownAccounts as account (account.address)}
-                        <div class="recent-account">
-                            <button type="button" class="recent-account-btn" onclick={() => store.connectToAccount(account.address)}>
-                                <span class="recent-band">{account.metadata?.bandName || "Unnamed"}</span>
-                                <span class="recent-address">{account.address}</span>
-                            </button>
-                            <button type="button" class="recent-forget" onclick={() => confirmForget(account)} aria-label="Forget account">&times;</button>
-                        </div>
-                    {/each}
+                    <div class="recent-list">
+                        {#each store.knownAccounts as account (account.address)}
+                            <div class="recent-account">
+                                <button type="button" class="recent-account-btn" onclick={() => store.connectToAccount(account.address)}>
+                                    <span class="recent-band">{account.metadata?.bandName || "Unnamed"}</span>
+                                    <span class="recent-address">{account.address}</span>
+                                </button>
+                                <button type="button" class="icon-btn recent-forget" onclick={() => confirmForget(account)} aria-label="Forget account"><Icon name="x" size={18} /></button>
+                            </div>
+                        {/each}
+                    </div>
                 </div>
             {/if}
         </section>
@@ -210,21 +216,21 @@
 {/if}
 
 {#if store.showFirstRunPrompt}
-    <div class="modal-backdrop">
-        <div class="modal">
-            <p class="eyebrow">First Run</p>
-            <h3>Name Your Band</h3>
-            <p class="modal-desc">What do we call this operation? Don't overthink it.</p>
+    <div class="modal-backdrop dialog-backdrop first-run-backdrop">
+        <div class="modal dialog">
+            <h3 class="dialog-title">Name your band</h3>
+            <p class="modal-desc dialog-desc">What do we call this operation? Don't overthink it.</p>
             <label class="field">
-                <span>Band name</span>
+                <span class="field-label">Band name</span>
                 <input
+                    class="input"
                     value={store.firstRunBandName}
                     oninput={(e) => store.firstRunBandName = e.currentTarget.value}
                     placeholder="Your Band Name"
                     onkeydown={(e) => { if (e.key === "Enter") store.finishFirstRun(); }}
                 />
             </label>
-            <button type="button" class="btn primary" onclick={store.finishFirstRun}>Save</button>
+            <button type="button" class="btn btn-primary" onclick={store.finishFirstRun}>Save</button>
         </div>
     </div>
 {/if}
@@ -235,22 +241,23 @@
     {@const confirm = store.confirmRequest}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="modal-backdrop confirm-backdrop" onclick={() => store.resolveConfirm(false)}>
+    <div class="modal-backdrop confirm-backdrop dialog-backdrop" onclick={() => store.resolveConfirm(false)}>
         <div
-            class="modal"
+            class="modal dialog"
             role="alertdialog"
             aria-modal="true"
             aria-label={confirm.title}
             onclick={(e) => e.stopPropagation()}
         >
-            <h3>{confirm.title}</h3>
+            <h3 class="dialog-title">{confirm.title}</h3>
             {#if confirm.message}
-                <p class="modal-desc">{confirm.message}</p>
+                <p class="modal-desc dialog-desc">{confirm.message}</p>
             {/if}
             {#if confirm.requireText}
                 <label class="field">
-                    <span>Type <strong>{confirm.requireText}</strong> to confirm</span>
+                    <span class="field-label">Type <strong>{confirm.requireText}</strong> to confirm</span>
                     <input
+                        class="input"
                         value={confirmTypedText}
                         oninput={(e) => { confirmTypedText = e.currentTarget.value; }}
                         placeholder={confirm.requireText}
@@ -258,11 +265,11 @@
                     />
                 </label>
             {/if}
-            <div class="confirm-actions">
+            <div class="confirm-actions dialog-actions">
                 <button type="button" class="btn" onclick={() => store.resolveConfirm(false)}>{confirm.cancelLabel}</button>
                 <button
                     type="button"
-                    class="btn danger"
+                    class="btn btn-danger"
                     disabled={!!confirm.requireText && confirmTypedText.trim() !== confirm.requireText}
                     onclick={() => store.resolveConfirm(true)}
                 >{confirm.confirmLabel}</button>
@@ -282,20 +289,22 @@
 
 {#if store.toastMessages[0]}
     {@const toast = store.toastMessages[0]}
-    <div class="toast-stack" class:with-busy={!!store.busyMessage} aria-live="polite">
-        <div class="toast-pill {toast.tone}" class:sticky={toast.sticky}>
-            {toast.message}
-            {#if toast.action}
-                <button
-                    type="button"
-                    class="toast-action"
-                    onclick={() => store.runToastAction(toast.id)}
-                >{toast.action.label}</button>
-            {/if}
-            {#if toast.sticky}
-                <button type="button" class="toast-dismiss" aria-label="Dismiss" onclick={() => store.dismissToast(toast.id)}>&times;</button>
-            {/if}
-        </div>
+    <div class="toast-stack" class:with-busy={!!store.busyMessage} class:in-app={!!store.currentUserAddress || store.connectionStatus === "connected"} aria-live="polite">
+        {#key toast.id}
+            <div class="toast-pill {toast.tone}" class:sticky={toast.sticky}>
+                <span class="toast-text">{toast.message}</span>
+                {#if toast.action}
+                    <button
+                        type="button"
+                        class="toast-action"
+                        onclick={() => store.runToastAction(toast.id)}
+                    >{toast.action.label}</button>
+                {/if}
+                {#if toast.sticky}
+                    <button type="button" class="toast-dismiss" aria-label="Dismiss" onclick={() => store.dismissToast(toast.id)}><Icon name="x" size={16} /></button>
+                {/if}
+            </div>
+        {/key}
     </div>
 {/if}
 
@@ -306,40 +315,63 @@
         display: grid;
         place-items: center;
         overflow-y: auto;
-        padding: var(--space-4);
+        padding: max(var(--space-4), var(--safe-top)) var(--space-4) max(var(--space-4), var(--safe-bottom));
     }
 
     .connect-card {
-        width: min(100%, 440px);
+        width: min(100%, 420px);
         padding: var(--space-6);
         display: grid;
-        gap: var(--space-4);
-        background: var(--paper-strong);
+        gap: var(--space-5);
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: var(--radius-xl);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
+        box-shadow: var(--shadow-soft);
     }
 
-    .eyebrow {
-        margin: 0;
-        color: var(--accent);
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
+    @media (min-width: 600px) {
+        .connect-card {
+            padding: var(--space-8);
+        }
     }
 
-    .eyebrow-staging {
-        color: var(--toast-warning);
+    .connect-brand {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .connect-die {
+        display: block;
+        width: 56px;
+        height: 56px;
+        /* A die mid-tumble: the one bit of personality on an otherwise
+           plain form. */
+        transform: rotate(-8deg);
+        filter: drop-shadow(0 6px 10px rgba(18, 22, 30, 0.18));
+    }
+
+    .connect-intro {
+        display: grid;
+        gap: var(--space-2);
     }
 
     h1 {
-        font-size: clamp(1.6rem, 4vw, 2.4rem);
+        font-size: clamp(1.8rem, 6vw, 2.25rem);
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        overflow-wrap: anywhere;
     }
 
     .lede {
         color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.5;
+    }
+
+    .connect-btn {
+        min-height: 48px;
+        font-size: 1rem;
     }
 
     /* ---- App shell ----
@@ -359,7 +391,7 @@
         min-height: 0;
         overflow-y: auto;
         overscroll-behavior-y: contain;
-        padding: var(--space-3);
+        padding: var(--space-4) var(--space-4) var(--space-8);
     }
 
     .content-column {
@@ -368,9 +400,37 @@
         margin: 0 auto;
     }
 
-    @media (min-width: 960px) {
+    /* Desktop: the tab bar becomes a full-height sidebar (BottomNav
+       restyles itself at the same breakpoint) and the top bar + content
+       share the remaining column. Still no position:fixed. */
+    @media (min-width: 900px) {
+        .app-shell {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+            grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        .app-shell > :global(.top-bar) {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .app-shell > :global(.bottom-nav) {
+            grid-column: 1;
+            grid-row: 1 / -1;
+        }
+
+        .main-content {
+            grid-column: 2;
+            grid-row: 2;
+            padding: var(--space-6) var(--space-8) 4rem;
+        }
+
+        /* Left-aligned so screen titles line up with the band name in the
+           top bar instead of floating in the middle of a wide window. */
         .content-column {
-            max-width: 720px;
+            max-width: 1040px;
+            margin: 0;
         }
     }
 
@@ -385,88 +445,32 @@
         }
     }
 
-    /* ---- Field ---- */
-    .field {
-        display: grid;
-        gap: 0.35rem;
-    }
-
-    .field > span {
-        color: var(--ink);
-        font-weight: 700;
-        font-size: 0.85rem;
-    }
-
-    input {
-        width: 100%;
-        min-height: 2.8rem;
-        padding: 0.7rem 0.85rem;
-        border-radius: var(--radius-md);
-        border: 1px solid var(--line);
-        background: var(--surface);
-        color: var(--ink);
-        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
-        font-size: 16px;
-        transition: border-color 140ms ease, box-shadow 140ms ease;
-    }
-
-    input:focus {
-        outline: none;
-        border-color: var(--accent-line);
-        box-shadow: 0 0 0 0.2rem var(--accent-soft);
-    }
-
-    /* ---- Buttons ---- */
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 2.8rem;
-        padding: 0.7rem 1rem;
-        border-radius: var(--radius-md);
-        border: 1px solid transparent;
-        background: var(--surface);
-        color: var(--ink);
-        font-weight: 800;
-        font-size: 0.95rem;
-        line-height: 1;
-        transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
-        touch-action: manipulation;
-        cursor: pointer;
-    }
-
-    .btn:active {
-        transform: scale(0.98);
-    }
-
-    .btn.primary {
-        color: var(--on-accent);
-        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-        border-color: var(--hover);
-    }
-
-    .btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
     .error-text {
+        padding: 0.6rem 0.8rem;
+        border-radius: var(--radius-md);
+        background: var(--danger-soft);
         color: var(--danger);
-        font-size: 0.85rem;
+        font-size: 0.9rem;
+        font-weight: 500;
     }
 
     /* ---- Recent accounts ---- */
     .recent-accounts {
         display: grid;
         gap: 0.5rem;
+        padding-top: var(--space-4);
+        border-top: 1px solid var(--line);
     }
 
     .recent-label {
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
+        font-size: 0.86rem;
+        font-weight: 600;
         color: var(--muted);
+    }
+
+    .recent-list {
+        display: grid;
+        gap: 0.4rem;
     }
 
     .recent-account {
@@ -476,6 +480,11 @@
         border-radius: var(--radius-md);
         background: var(--surface);
         overflow: hidden;
+        transition: border-color 120ms ease;
+    }
+
+    .recent-account:hover {
+        border-color: var(--line-strong);
     }
 
     .recent-account-btn {
@@ -486,28 +495,32 @@
         min-width: 0;
         overflow: hidden;
         display: grid;
-        gap: 0.15rem;
-        padding: 0.6rem 0.75rem;
+        gap: 0.1rem;
+        padding: 0.6rem 0.8rem;
         border: none;
         background: none;
         cursor: pointer;
         text-align: left;
-        min-height: 44px;
+        min-height: 52px;
         -webkit-tap-highlight-color: transparent;
     }
 
+    .recent-account-btn:hover {
+        background: var(--hover);
+    }
+
     .recent-account-btn:active {
-        background: var(--line);
+        background: var(--hover-strong);
     }
 
     .recent-band {
-        font-size: 0.9rem;
-        font-weight: 700;
+        font-size: 0.96rem;
+        font-weight: 600;
         color: var(--ink);
     }
 
     .recent-address {
-        font-size: 0.75rem;
+        font-size: 0.82rem;
         color: var(--muted);
         overflow: hidden;
         text-overflow: ellipsis;
@@ -515,83 +528,24 @@
     }
 
     .recent-forget {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 44px;
-        min-height: 44px;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-size: 1.1rem;
         color: var(--muted);
-        flex-shrink: 0;
-        -webkit-tap-highlight-color: transparent;
+        border-radius: 0;
+        height: 52px;
     }
 
-    .recent-forget:active {
-        background: var(--line);
+    /* ---- Dialog layering ----
+       The dialog shell itself lives in app.css (.dialog-backdrop/.dialog).
+       Destructive-confirm sits above everything, including the song
+       editor (z-index 300) and its pickers. */
+    .first-run-backdrop {
+        z-index: 350;
     }
 
-    /* ---- Modal ---- */
-    .modal-backdrop {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: var(--space-4);
-        background: var(--overlay);
-        backdrop-filter: blur(8px);
-        z-index: 50;
-    }
-
-    .modal {
-        width: min(100%, 400px);
-        padding: var(--space-6);
-        display: grid;
-        gap: var(--space-4);
-        background: var(--paper-strong);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-xl);
-        box-shadow: var(--shadow);
-    }
-
-    h3 {
-        font-size: 1.2rem;
-    }
-
-    .modal-desc {
-        color: var(--muted);
-        font-size: 0.9rem;
-    }
-
-    /* Destructive-confirm modal sits above everything, including the
-       song-editor overlay (z-index 300). */
     .confirm-backdrop {
-        z-index: 400;
+        z-index: 700;
     }
 
-    .confirm-actions {
-        display: flex;
-        gap: var(--space-2);
-        justify-content: flex-end;
-    }
-
-    .confirm-actions .btn {
-        flex: 1;
-    }
-
-    .btn.danger {
-        color: var(--on-accent);
-        background: var(--danger);
-        border-color: transparent;
-    }
-
-    .btn.danger:disabled {
-        opacity: 0.4;
-    }
-
-    /* ---- Busy overlay ---- */
+    /* ---- Busy chip ---- */
     .busy-overlay {
         position: fixed;
         top: calc(var(--top-bar-height) + var(--space-2));
@@ -604,14 +558,14 @@
         display: inline-flex;
         align-items: center;
         gap: var(--space-2);
-        padding: 0.5rem 1rem;
+        padding: 0.45rem 0.9rem;
         border-radius: var(--radius-full);
         background: var(--paper-strong);
         border: 1px solid var(--line);
         box-shadow: var(--shadow-soft);
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: var(--muted);
+        font-size: 0.86rem;
+        font-weight: 500;
+        color: var(--ink-2);
         white-space: nowrap;
     }
 
@@ -625,97 +579,115 @@
         flex-shrink: 0;
     }
 
-    /* ---- Toast stack ---- */
+    /* ---- Toasts ----
+       A floating pill near the bottom edge, above the tab bar. It used to
+       be a full-width strip under the top bar, where it covered the first
+       row of whatever screen you were on. */
     .toast-stack {
         position: fixed;
-        top: var(--top-bar-height);
         left: 0;
         right: 0;
-        z-index: 300;
-        width: 100%;
+        bottom: calc(var(--space-4) + var(--safe-bottom));
+        z-index: 800;
+        display: flex;
+        justify-content: center;
+        padding: 0 var(--space-4);
         pointer-events: none;
     }
 
-    /* When the busy chip is showing, drop the toast stack below it so they
-       don't sit on top of each other. The chip is anchored at top-bar +
-       space-2 and is roughly space-8 tall once padding/text are accounted for. */
-    .toast-stack.with-busy {
-        top: calc(var(--top-bar-height) + var(--space-8) + var(--space-2));
+    .toast-stack.in-app {
+        bottom: calc(var(--bottom-nav-height) + var(--space-3));
+    }
+
+    @media (min-width: 900px) {
+        .toast-stack.in-app {
+            left: var(--sidebar-width);
+            bottom: var(--space-6);
+        }
     }
 
     .toast-pill {
-        width: 100%;
-        min-width: 0;
-        box-sizing: border-box;
-        padding: 5px 14px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        text-align: center;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        max-width: min(100%, 520px);
+        min-height: 44px;
+        padding: 0.55rem 1rem;
+        font-size: 0.92rem;
+        font-weight: 500;
+        line-height: 1.35;
         color: var(--toast-fg);
         background: var(--toast-bg);
-        border: none;
-        border-radius: 0 0 var(--radius-md, 12px) var(--radius-md, 12px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        animation: toast-slide-down 200ms ease;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-soft);
+        animation: toast-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
-    /* Sticky toasts (e.g. the update prompt) carry buttons — switch from
-       centered ellipsized text to an inline flex row. They must also
+    .toast-text {
+        min-width: 0;
+    }
+
+    /* Sticky toasts (e.g. the update prompt) carry buttons. They must
        restore hit-testing: the stack is pointer-events:none so passive
        toasts never block taps on content underneath, but a toast with
        actions has to be clickable. */
     .toast-pill.sticky {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        white-space: normal;
-        text-overflow: clip;
         pointer-events: auto;
+        padding-right: 0.5rem;
     }
 
     .toast-action {
         flex: none;
-        padding: 2px 10px;
+        min-height: 32px;
+        padding: 0 0.75rem;
         font: inherit;
-        font-weight: 700;
+        font-weight: 600;
         color: var(--toast-bg);
         background: var(--toast-fg);
         border: none;
-        border-radius: 999px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
     }
 
     .toast-dismiss {
         flex: none;
-        padding: 0 2px;
-        font-size: 1rem;
-        line-height: 1;
+        display: inline-grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
         color: var(--toast-fg);
         background: none;
         border: none;
-        opacity: 0.7;
+        border-radius: var(--radius-sm);
+        opacity: 0.75;
         cursor: pointer;
+    }
+
+    .toast-dismiss:hover {
+        opacity: 1;
     }
 
     .toast-pill.danger {
         background: var(--toast-danger);
-        color: var(--toast-fg);
+        color: #fff;
     }
 
     .toast-pill.warning {
         background: var(--toast-warning);
-        color: var(--toast-fg);
+        color: #fff;
+    }
+
+    :global(:root[data-theme="dark"]) .toast-pill.danger,
+    :global(:root[data-theme="dark"]) .toast-pill.warning {
+        color: #16191f;
     }
 
     @keyframes spin {
         to { transform: rotate(360deg); }
     }
 
-    @keyframes toast-slide-down {
-        from { opacity: 0; transform: translateY(-8px); }
+    @keyframes toast-rise {
+        from { opacity: 0; transform: translateY(8px); }
         to { opacity: 1; transform: translateY(0); }
     }
 </style>

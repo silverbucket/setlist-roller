@@ -124,11 +124,21 @@ export class BandPage {
         await expect(this.advancedTitle).toBeVisible();
     }
 
+    /** The swatch grid lives in a collapsed <details>; open it before picking. */
+    async openDieColorPicker() {
+        const picker = this.screen.locator("details.die-color");
+        if (!(await picker.evaluate((el) => (el as HTMLDetailsElement).open))) {
+            await picker.locator("summary").click();
+        }
+    }
+
     async pickDieColor(color: string) {
+        await this.openDieColorPicker();
         await this.screen.getByRole("button", { name: `Set die color to ${color}` }).click();
     }
 
     async resetDieColor() {
+        await this.openDieColorPicker();
         await this.screen.getByRole("button", { name: "Reset to default color" }).click();
     }
 

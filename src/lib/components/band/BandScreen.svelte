@@ -1,6 +1,7 @@
 <script>
     import { getContext } from "svelte";
     import { DEFAULT_DIE_COLOR } from "../../utils.js";
+    import Icon from "../shared/Icon.svelte";
 
     const store = getContext("app");
     const deployedAtDisplay = __DEPLOYED_AT__.replace("T", " ").replace("Z", " UTC");
@@ -161,8 +162,8 @@
     {#if store.bandSubView === "member-edit"}
         <!-- MEMBER EDIT SUB-VIEW -->
         <div class="sub-header">
-            <button type="button" class="back-btn" onclick={handleBackToMain}>&larr; Back</button>
-            <h2 class="sub-title">Edit Member</h2>
+            <button type="button" class="btn btn-sm back-btn" onclick={handleBackToMain}>&larr; Back</button>
+            <h2 class="screen-title sub-title">Edit Member</h2>
         </div>
 
         {#each store.bandMemberEntries.filter(([name]) => name === store.editingMemberName) as [memberName, memberConfig]}
@@ -170,7 +171,7 @@
                 <label class="field-group">
                     <span class="field-label">Member name</span>
                     <input
-                        class="text-input"
+                        class="input text-input"
                         type="text"
                         value={memberName}
                         onblur={handleRenameMember}
@@ -182,7 +183,7 @@
                     <label class="field-group">
                         <span class="field-label">Default instrument</span>
                         <select
-                            class="select-input"
+                            class="input select-input"
                             value={memberConfig.defaultInstrument || ""}
                             onchange={(e) => store.setMemberDefaultInstrument(memberName, e.currentTarget.value)}
                         >
@@ -195,20 +196,20 @@
                 {/if}
 
                 <button type="button"
-                    class="danger-btn"
+                    class="btn btn-danger-ghost danger-btn"
                     onclick={() => { store.removeBandMember(memberName); handleBackToMain(); }}
                 >Remove member</button>
             </div>
 
             <div class="section-block">
-                <h3 class="section-label">Instruments</h3>
+                <h3 class="section-title section-label">Instruments</h3>
 
                 {#each memberConfig.instruments || [] as instrument, idx}
                     <details class="card instrument-card">
                         <summary class="instrument-summary">
                             <span class="instrument-name">{instrument.name}</span>
                             {#if instrument.defaultTuning}
-                                <span class="pill">{instrument.defaultTuning}</span>
+                                <span class="pill badge">{instrument.defaultTuning}</span>
                             {/if}
                             {#if store.songsUsingInstrument(memberName, instrument.name).length > 0}
                                 <span class="ref-count">{store.songsUsingInstrument(memberName, instrument.name).length}</span>
@@ -220,7 +221,7 @@
                             <label class="field-group">
                                 <span class="field-label">Default tuning</span>
                                 <select
-                                    class="select-input"
+                                    class="input select-input"
                                     value={instrument.defaultTuning || ""}
                                     onchange={(e) => store.setInstrumentDefaultTuning(memberName, instrument.name, e.currentTarget.value)}
                                 >
@@ -244,30 +245,30 @@
                                                 class="chip-remove"
                                                 onclick={() => store.removeTuningChoice(memberName, instrument.name, tuning)}
                                                 aria-label="Remove {tuning}"
-                                            >&times;</button>
+                                            ><Icon name="x" size={13} stroke={2.6} /></button>
                                         </span>
                                     {/each}
                                 </div>
                                 <div class="inline-add">
                                     <input
-                                        class="text-input small"
+                                        class="input text-input"
                                         type="text"
                                         placeholder="New tuning..."
                                         value={tuningDrafts[instrument.name] || ""}
                                         oninput={(e) => { tuningDrafts = { ...tuningDrafts, [instrument.name]: e.currentTarget.value }; }}
                                         onkeydown={(e) => handleAddTuningKeydown(e, memberName, instrument.name)}
                                     />
-                                    <button type="button" class="add-sm-btn" onclick={() => handleAddTuning(memberName, instrument.name)}>Add</button>
+                                    <button type="button" class="btn btn-ink add-sm-btn" onclick={() => handleAddTuning(memberName, instrument.name)}>Add</button>
                                 </div>
                             </div>
 
                             <div class="field-group">
                                 <span class="field-label">Techniques</span>
                                 {#if (instrument.techniques || []).length > 0}
-                                    <label class="field-group" style="margin-bottom: 0.5rem">
-                                        <span class="field-label" style="font-size: 0.75rem">Default technique</span>
+                                    <label class="field-group">
+                                        <span class="field-label field-label-sub">Default technique</span>
                                         <select
-                                            class="select-input"
+                                            class="input select-input"
                                             value={instrument.defaultTechnique || ""}
                                             onchange={(e) => store.setInstrumentDefaultTechnique(memberName, instrument.name, e.currentTarget.value)}
                                         >
@@ -288,26 +289,26 @@
                                                     class="chip-remove"
                                                     onclick={() => store.removeTechniqueChoice(memberName, instrument.name, technique)}
                                                     aria-label="Remove {technique}"
-                                                >&times;</button>
+                                                ><Icon name="x" size={13} stroke={2.6} /></button>
                                             </span>
                                         {/each}
                                     </div>
                                 {/if}
                                 <div class="inline-add">
                                     <input
-                                        class="text-input small"
+                                        class="input text-input"
                                         type="text"
                                         placeholder="New technique..."
                                         value={techniqueDrafts[instrument.name] || ""}
                                         oninput={(e) => { techniqueDrafts = { ...techniqueDrafts, [instrument.name]: e.currentTarget.value }; }}
                                         onkeydown={(e) => handleAddTechniqueKeydown(e, memberName, instrument.name)}
                                     />
-                                    <button type="button" class="add-sm-btn" onclick={() => handleAddTechnique(memberName, instrument.name)}>Add</button>
+                                    <button type="button" class="btn btn-ink add-sm-btn" onclick={() => handleAddTechnique(memberName, instrument.name)}>Add</button>
                                 </div>
                             </div>
 
                             <button type="button"
-                                class="danger-btn small"
+                                class="btn btn-sm btn-danger-ghost danger-btn"
                                 onclick={() => store.removeBandMemberInstrument(memberName, instrument.name)}
                             >Remove instrument</button>
                         </div>
@@ -316,14 +317,14 @@
 
                 <div class="inline-add">
                     <input
-                        class="text-input"
+                        class="input text-input"
                         type="text"
                         placeholder="New instrument..."
                         value={newInstrumentDraft}
                         oninput={(e) => { newInstrumentDraft = e.currentTarget.value; }}
                         onkeydown={(e) => handleAddInstrumentKeydown(e, memberName)}
                     />
-                    <button type="button" class="add-sm-btn" onclick={() => handleAddInstrument(memberName)}>Add</button>
+                    <button type="button" class="btn btn-ink add-sm-btn" onclick={() => handleAddInstrument(memberName)}>Add</button>
                 </div>
             </div>
         {/each}
@@ -331,8 +332,8 @@
     {:else if store.bandSubView === "advanced"}
         <!-- ADVANCED CONFIG SUB-VIEW -->
         <div class="sub-header">
-            <button type="button" class="back-btn" onclick={handleBackToMain}>&larr; Back</button>
-            <h2 class="sub-title">Advanced Config</h2>
+            <button type="button" class="btn btn-sm back-btn" onclick={handleBackToMain}>&larr; Back</button>
+            <h2 class="screen-title sub-title">Advanced Config</h2>
         </div>
 
         <p class="autosave-hint">Changes save automatically.</p>
@@ -352,7 +353,7 @@
                             {/if}
                             {#if field.type === "boolean"}
                                 <select
-                                    class="select-input"
+                                    class="input select-input"
                                     value={store.configFieldValue(store.appConfig, field) ? "true" : "false"}
                                     onchange={(e) => store.updateConfigField(field.path, e.currentTarget.value === "true")}
                                 >
@@ -361,7 +362,7 @@
                                 </select>
                             {:else if field.type === "order-rule"}
                                 <select
-                                    class="select-input"
+                                    class="input select-input"
                                     value={store.configFieldValue(store.appConfig, field) ? "true" : "false"}
                                     onchange={(e) => store.updateConfigField(field, e.currentTarget.value)}
                                 >
@@ -370,7 +371,7 @@
                                 </select>
                             {:else if field.type === "number"}
                                 <input
-                                    class="text-input"
+                                    class="input text-input"
                                     type="number"
                                     min={field.min}
                                     max={field.max}
@@ -380,7 +381,7 @@
                                 />
                             {:else}
                                 <input
-                                    class="text-input"
+                                    class="input text-input"
                                     type="text"
                                     value={store.configFieldValue(store.appConfig, field) ?? ""}
                                     oninput={(e) => store.updateConfigField(field.path, e.currentTarget.value)}
@@ -398,182 +399,195 @@
             <h2 class="screen-title">Band</h2>
         </header>
 
-        <!-- Band Name -->
-        <div class="card">
-            <label class="field-group">
-                <span class="field-label">Band name</span>
-                <!-- Single source of truth: the config renders the value and
-                     the input element holds the in-progress text; commit on
-                     blur (Enter blurs). No parallel draft state to drift. -->
-                <input
-                    class="text-input band-name-input"
-                    type="text"
-                    value={store.appConfig?.bandName ?? ""}
-                    onblur={(e) => {
-                        const next = e.currentTarget.value.trim();
-                        if (next && next !== store.appConfig?.bandName) store.updateConfigField("bandName", next);
-                    }}
-                    onkeydown={handleBandNameKeydown}
-                />
-            </label>
-            {#if store.connectionStatus === "connected"}
-                <div class="field-group">
-                    <span class="field-label">Die color</span>
-                    <div class="pip-color-swatches">
-                        {#each PIP_COLOR_OPTIONS as color}
-                            <button type="button"
-                                class="pip-swatch"
-                                class:active={persistedDieColor === color}
-                                style="background: {color};"
-                                onclick={() => setDieColor(color)}
-                                aria-label="Set die color to {color}"
-                            ></button>
+        <div class="band-grid">
+            <div class="band-col">
+                <section class="card panel">
+                    <label class="field-group">
+                        <span class="field-label">Band name</span>
+                        <!-- Single source of truth: the config renders the value and
+                             the input element holds the in-progress text; commit on
+                             blur (Enter blurs). No parallel draft state to drift. -->
+                        <input
+                            class="input text-input band-name-input"
+                            type="text"
+                            value={store.appConfig?.bandName ?? ""}
+                            onblur={(e) => {
+                                const next = e.currentTarget.value.trim();
+                                if (next && next !== store.appConfig?.bandName) store.updateConfigField("bandName", next);
+                            }}
+                            onkeydown={handleBandNameKeydown}
+                        />
+                    </label>
+                    {#if store.connectionStatus === "connected"}
+                        <details class="die-color">
+                            <summary class="die-color-summary">
+                                <span class="die-color-current" style="background: {persistedDieColor ?? DEFAULT_DIE_COLOR};"></span>
+                                <span class="die-color-text">
+                                    <span class="field-label">Die color</span>
+                                    <span class="die-color-hint">Also the accent colour across the app</span>
+                                </span>
+                                <svg aria-hidden="true" class="chevron-down" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </summary>
+                            <div class="pip-color-swatches">
+                                {#each PIP_COLOR_OPTIONS as color}
+                                    <button type="button"
+                                        class="pip-swatch"
+                                        class:active={persistedDieColor === color}
+                                        style="background: {color};"
+                                        onclick={() => setDieColor(color)}
+                                        aria-label="Set die color to {color}"
+                                    ></button>
+                                {/each}
+                                <!-- type=color never triggers the iOS focus zoom, so the
+                                     16px input rule doesn't apply to this hidden control. -->
+                                <label
+                                    class="pip-swatch pip-swatch--custom"
+                                    class:active={isCustomDieColor}
+                                    style={isCustomDieColor ? `background: ${persistedDieColor};` : ""}
+                                    title="Custom color"
+                                >
+                                    <input
+                                        type="color"
+                                        class="pip-swatch-input"
+                                        value={persistedDieColor ?? DEFAULT_DIE_COLOR}
+                                        onchange={(e) => setDieColor(e.currentTarget.value.toLowerCase())}
+                                        aria-label="Pick a custom die color"
+                                    />
+                                    {#if !isCustomDieColor}
+                                        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                                    {/if}
+                                </label>
+                                <button type="button"
+                                    class="pip-swatch pip-swatch--reset"
+                                    class:active={!persistedDieColor}
+                                    onclick={() => setDieColor(null)}
+                                    aria-label="Reset to default color"
+                                >
+                                    <svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 7 7 0 0 0-5 2l-3 3"/><path d="M3 3v6h6"/></svg>
+                                </button>
+                            </div>
+                        </details>
+                    {/if}
+                </section>
+
+                <section class="section-block card panel">
+                    <h3 class="section-title section-label">Members</h3>
+
+                    {#if store.bandMemberEntries?.length === 0}
+                        <div class="empty-state">
+                            <p class="empty-title">No members yet</p>
+                            <p class="empty-sub">Add members who switch instruments, tunings, or capos between songs. If someone plays the same gear every song, they don't need to be here.</p>
+                        </div>
+                    {/if}
+
+                    <div class="member-list">
+                        {#each store.bandMemberEntries || [] as [memberName, memberConfig]}
+                            <button type="button" class="member-row" onclick={() => openMemberEdit(memberName)}>
+                                <div class="member-info">
+                                    <span class="member-name">{memberName}</span>
+                                    {#if instrumentSummary(memberConfig)}
+                                        <span class="member-instruments">{instrumentSummary(memberConfig)}</span>
+                                    {/if}
+                                </div>
+                                {#if store.songsUsingMember(memberName).length > 0}
+                                    <span class="ref-count">{store.songsUsingMember(memberName).length}</span>
+                                {/if}
+                                <Icon name="chevron-right" size={18} class="chevron-icon" />
+                            </button>
                         {/each}
-                        <!-- type=color never triggers the iOS focus zoom, so the
-                             16px input rule doesn't apply to this hidden control. -->
-                        <label
-                            class="pip-swatch pip-swatch--custom"
-                            class:active={isCustomDieColor}
-                            style={isCustomDieColor ? `background: ${persistedDieColor};` : ""}
-                            title="Custom color"
-                        >
-                            <input
-                                type="color"
-                                class="pip-swatch-input"
-                                value={persistedDieColor ?? DEFAULT_DIE_COLOR}
-                                onchange={(e) => setDieColor(e.currentTarget.value.toLowerCase())}
-                                aria-label="Pick a custom die color"
-                            />
-                            {#if !isCustomDieColor}
-                                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                            {/if}
-                        </label>
-                        <button type="button"
-                            class="pip-swatch pip-swatch--reset"
-                            class:active={!persistedDieColor}
-                            onclick={() => setDieColor(null)}
-                            aria-label="Reset to default color"
-                        >
-                            <svg aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 7 7 0 0 0-5 2l-3 3"/><path d="M3 3v6h6"/></svg>
-                        </button>
+                    </div>
+
+                    <div class="inline-add">
+                        <input
+                            class="input text-input"
+                            type="text"
+                            placeholder="New member name..."
+                            value={newMemberDraft}
+                            oninput={(e) => { newMemberDraft = e.currentTarget.value; }}
+                            onkeydown={handleAddMemberKeydown}
+                        />
+                        <button type="button" class="btn btn-ink add-sm-btn" onclick={handleAddMember}>Add</button>
+                    </div>
+                </section>
+            </div>
+
+            <div class="band-col">
+                <div class="stats-row">
+                    <div class="stat-box">
+                        <span class="stat-value">{store.songs?.length ?? 0}</span>
+                        <span class="stat-label">songs</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value">{store.instrumentTypeCount ?? 0}</span>
+                        <span class="stat-label">instrument types</span>
                     </div>
                 </div>
-            {/if}
-        </div>
 
-        <!-- Stats Row -->
-        <div class="stats-row">
-            <div class="stat-box">
-                <span class="stat-value">{store.songs?.length ?? 0}</span>
-                <span class="stat-label">songs</span>
-            </div>
-            <div class="stat-box">
-                <span class="stat-value">{store.instrumentTypeCount ?? 0}</span>
-                <span class="stat-label">instrument types</span>
-            </div>
-        </div>
+                <button type="button" class="card link-card" onclick={() => { store.bandSubView = "advanced"; }}>
+                    <span class="link-card-text">
+                        <span class="link-card-label">Advanced config</span>
+                        <span class="link-card-desc">Transition costs and switching rules</span>
+                    </span>
+                    <Icon name="chevron-right" size={18} class="link-card-arrow" />
+                </button>
 
-        <hr class="section-divider" />
+                <section class="section-block card panel">
+                    <h3 class="section-title section-label">Data</h3>
 
-        <!-- Members Section -->
-        <div class="section-block">
-            <h3 class="section-label">Members</h3>
-
-            {#if store.bandMemberEntries?.length === 0}
-                <div class="empty-state">
-                    <p class="empty-title">No members yet</p>
-                    <p class="empty-sub">Add members who switch instruments, tunings, or capos between songs. If someone plays the same gear every song, they don't need to be here.</p>
-                </div>
-            {/if}
-
-            <div class="member-list">
-                {#each store.bandMemberEntries || [] as [memberName, memberConfig]}
-                    <button type="button" class="member-row" onclick={() => openMemberEdit(memberName)}>
-                        <div class="member-info">
-                            <span class="member-name">{memberName}</span>
-                            {#if instrumentSummary(memberConfig)}
-                                <span class="member-instruments">{instrumentSummary(memberConfig)}</span>
-                            {/if}
+                    <div class="data-row">
+                        <div class="data-row-text">
+                            <span class="data-row-title">Back up everything</span>
+                            <span class="data-row-desc">Songs, band setup and saved setlists as one JSON file.</span>
                         </div>
-                        {#if store.songsUsingMember(memberName).length > 0}
-                            <span class="ref-count">{store.songsUsingMember(memberName).length}</span>
-                        {/if}
-                        <svg aria-hidden="true" class="chevron-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>
-                    </button>
-                {/each}
+                        <button type="button" class="btn secondary-btn" onclick={() => store.exportAllData()}><Icon name="download" size={17} /> Export All</button>
+                    </div>
+
+                    <div class="import-group">
+                        <span class="data-row-title">Import from a backup</span>
+                        <input
+                            class="file-input"
+                            type="file"
+                            accept=".json"
+                            onchange={(e) => { store.importFile = e.currentTarget.files?.[0] ?? null; }}
+                        />
+                        <div class="import-row">
+                            <select
+                                class="input select-input"
+                                value={store.importMode || "skip"}
+                                onchange={(e) => { store.importMode = e.currentTarget.value; }}
+                            >
+                                <option value="skip">Skip existing</option>
+                                <option value="overwrite">Overwrite existing</option>
+                            </select>
+                            <button type="button" class="btn btn-ink add-sm-btn" onclick={() => store.importFromFile()} disabled={!store.importFile}>Import</button>
+                        </div>
+                    </div>
+
+                    <div class="data-row danger-row">
+                        <div class="data-row-text">
+                            <span class="data-row-title">Delete everything</span>
+                            <span class="data-row-desc">Removes all songs, members and setlists from this account.</span>
+                        </div>
+                        <button type="button" class="btn btn-danger-ghost danger-btn" onclick={() => store.deleteAllData()}>Delete All Data</button>
+                    </div>
+                </section>
+
+                <section class="section-block card panel">
+                    <h3 class="section-title section-label">Account</h3>
+
+                    {#if store.connectAddress}
+                        <div class="data-row">
+                            <div class="connect-info data-row-text">
+                                <span class="data-row-desc">Connected as</span>
+                                <span class="connect-address">{store.connectAddress}</span>
+                            </div>
+                            <button type="button" class="btn danger-btn" onclick={() => store.disconnectStorage()}><Icon name="logout" size={17} /> Disconnect</button>
+                        </div>
+                    {:else}
+                        <p class="empty-sub">Not connected.</p>
+                    {/if}
+                </section>
             </div>
-
-            <div class="inline-add">
-                <input
-                    class="text-input"
-                    type="text"
-                    placeholder="New member name..."
-                    value={newMemberDraft}
-                    oninput={(e) => { newMemberDraft = e.currentTarget.value; }}
-                    onkeydown={handleAddMemberKeydown}
-                />
-                <button type="button" class="add-sm-btn" onclick={handleAddMember}>Add</button>
-            </div>
-        </div>
-
-        <hr class="section-divider" />
-
-        <!-- Config Section -->
-        <div class="section-block">
-            <h3 class="section-label">Config</h3>
-            <button type="button" class="card link-card" onclick={() => { store.bandSubView = "advanced"; }}>
-                <span class="link-card-label">Transition costs and switching rules</span>
-                <span class="link-card-arrow">&rsaquo;</span>
-            </button>
-        </div>
-
-        <hr class="section-divider" />
-
-        <!-- Data Section -->
-        <div class="section-block">
-            <h3 class="section-label">Data</h3>
-
-            <button type="button" class="secondary-btn" onclick={() => store.exportAllData()}>Export All</button>
-
-            <div class="import-group">
-                <span class="field-label">Import</span>
-                <input
-                    class="file-input"
-                    type="file"
-                    accept=".json"
-                    onchange={(e) => { store.importFile = e.currentTarget.files?.[0] ?? null; }}
-                />
-                <div class="import-row">
-                    <select
-                        class="select-input"
-                        value={store.importMode || "skip"}
-                        onchange={(e) => { store.importMode = e.currentTarget.value; }}
-                    >
-                        <option value="skip">Skip existing</option>
-                        <option value="overwrite">Overwrite existing</option>
-                    </select>
-                    <button type="button" class="add-sm-btn" onclick={() => store.importFromFile()} disabled={!store.importFile}>Import</button>
-                </div>
-            </div>
-
-            <button type="button" class="danger-btn" onclick={() => store.deleteAllData()}>Delete All Data</button>
-        </div>
-
-        <hr class="section-divider" />
-
-        <!-- Account Section -->
-        <div class="section-block">
-            <h3 class="section-label">Account</h3>
-
-            {#if store.connectAddress}
-                <div class="connect-info">
-                    <span class="field-label">Connected as</span>
-                    <span class="connect-address">{store.connectAddress}</span>
-                </div>
-                <button type="button" class="danger-btn" onclick={() => store.disconnectStorage()}>Disconnect</button>
-            {:else}
-                <p class="empty-sub">Not connected.</p>
-            {/if}
         </div>
 
         <footer class="app-footer">
@@ -588,185 +602,140 @@
 <style>
     .band-screen {
         display: grid;
-        gap: 0.85rem;
-        padding: 1rem;
+        gap: var(--space-4);
         max-width: 640px;
         margin: 0 auto;
-        padding-bottom: 5rem;
     }
 
-    /* Header */
+    .band-grid,
+    .band-col {
+        display: grid;
+        gap: var(--space-4);
+        align-content: start;
+        min-width: 0;
+    }
+
+    @media (min-width: 1000px) {
+        .band-screen {
+            max-width: none;
+        }
+
+        .band-grid {
+            grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+            gap: var(--space-6);
+            align-items: start;
+        }
+
+        /* Sub-views are single forms; keep them at a readable measure. */
+        .band-screen > :global(:not(.band-grid):not(.screen-header):not(.app-footer)) {
+            max-width: 640px;
+        }
+    }
+
     .screen-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
     }
 
-    .screen-title {
-        font-size: 1.4rem;
-        font-weight: 800;
-        margin: 0;
-    }
-
     .sub-header {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: var(--space-3);
     }
 
     .sub-title {
-        font-size: 1.2rem;
-        font-weight: 800;
-        margin: 0;
+        font-size: 1.4rem;
     }
 
-    .back-btn {
-        min-height: 2.4rem;
-        padding: 0.4rem 0.75rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--paper, rgba(255, 255, 255, 0.82));
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: var(--ink, #182230);
-        cursor: pointer;
-        touch-action: manipulation;
-    }
-
-    .back-btn:active {
-        background: var(--hover);
-    }
-
-    /* Card */
-    .card {
-        padding: 0.85rem 1rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--paper, rgba(255, 255, 255, 0.82));
+    /* Card / panel */
+    .card,
+    .panel {
+        padding: var(--space-4);
         display: grid;
-        gap: 0.65rem;
+        gap: var(--space-4);
+    }
+
+    .section-block {
+        display: grid;
+        gap: var(--space-3);
+        min-width: 0;
+    }
+
+    .panel.section-block {
+        gap: var(--space-4);
     }
 
     /* Stats */
     .stats-row {
-        display: flex;
-        gap: 0.5rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-3);
     }
 
     .stat-box {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 0.65rem 0.5rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--paper, rgba(255, 255, 255, 0.82));
+        display: grid;
+        gap: 0.1rem;
+        padding: var(--space-3) var(--space-4);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--line);
+        background: var(--surface);
     }
 
     .stat-value {
-        font-size: 1.4rem;
-        font-weight: 800;
-        color: var(--accent, #e15b37);
+        font-family: var(--font-display);
+        font-size: 1.9rem;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
     }
 
     .stat-label {
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--muted, #617086);
-    }
-
-    /* Section divider */
-    .section-divider {
-        border: none;
-        border-top: 1px solid var(--line, rgba(27, 49, 80, 0.1));
-        margin: 0.5rem 0;
-    }
-
-    /* Section */
-    .section-block {
-        display: grid;
-        gap: 0.65rem;
-    }
-
-    .section-label {
-        font-size: 0.78rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted, #617086);
-        margin: 0;
-        padding-top: 0;
+        font-size: 0.88rem;
+        color: var(--muted);
     }
 
     /* Fields */
     .field-group {
         display: grid;
-        gap: 0.25rem;
+        gap: 0.4rem;
+        min-width: 0;
     }
 
-    .field-label {
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--muted, #617086);
-    }
-
-    .text-input {
-        width: 100%;
-        min-height: 2.8rem;
-        padding: 0.6rem 0.9rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--surface);
-        /* iOS zooms inputs <16px on focus — keep at 16px (not rem) to prevent zoom. See app.css. */
-        font-size: 16px;
-        box-sizing: border-box;
-    }
-
-    .text-input.small {
-        min-height: 2.2rem;
-        padding: 0.4rem 0.7rem;
-        /* iOS zooms inputs <16px on focus — keep at 16px to prevent zoom. */
-        font-size: 16px;
-    }
-
-    .select-input {
-        min-height: 2.6rem;
-        padding: 0.5rem 0.7rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--surface);
-        /* iOS zooms selects <16px on focus — keep at 16px to prevent zoom. */
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--ink, #182230);
-        cursor: pointer;
-        width: 100%;
+    .field-label-sub {
+        font-weight: 500;
+        color: var(--muted);
     }
 
     .band-name-input {
-        font-size: 1.15rem;
-        font-weight: 700;
+        font-family: var(--font-display);
+        font-size: 1.2rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
     }
 
     /* Member list */
     .member-list {
         display: grid;
-        gap: 0.4rem;
+        border-top: 1px solid var(--line);
+        margin: 0 calc(var(--space-4) * -1);
+    }
+
+    .member-list:empty {
+        display: none;
     }
 
     .member-row {
         display: flex;
         align-items: center;
         gap: 0.65rem;
-        padding: 0.75rem 1rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--paper, rgba(255, 255, 255, 0.82));
+        min-height: 60px;
+        padding: 0.6rem var(--space-4);
+        border: none;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
         width: 100%;
         cursor: pointer;
         touch-action: manipulation;
@@ -776,55 +745,64 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    .member-row:hover {
+        background: var(--hover);
+    }
+
     .member-row:active {
         background: var(--accent-soft);
+    }
+
+    .member-row:focus-visible {
+        outline-offset: -2px;
     }
 
     .member-info {
         flex: 1;
         display: grid;
-        gap: 0.15rem;
+        gap: 0.05rem;
         min-width: 0;
     }
 
     .member-name {
-        font-weight: 700;
+        font-weight: 600;
         font-size: 1rem;
     }
 
     .member-instruments {
-        font-size: 0.8rem;
-        color: var(--muted, #617086);
+        font-size: 0.88rem;
+        color: var(--muted);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
+    /* How many songs reference this member / instrument. */
     .ref-count {
         flex-shrink: 0;
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: var(--muted, #617086);
-        background: var(--line);
-        min-width: 1.4rem;
-        height: 1.4rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--ink-2);
+        background: var(--hover-strong);
+        min-width: 1.6rem;
+        height: 1.5rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        padding: 0 0.3rem;
+        padding: 0 0.45rem;
+        font-variant-numeric: tabular-nums;
     }
 
     .chip-ref-count {
-        font-size: 0.65rem;
-        font-weight: 700;
-        color: var(--muted, #617086);
-        opacity: 0.7;
+        font-size: 0.74rem;
+        font-weight: 600;
+        color: var(--muted);
     }
 
-    .chevron-icon {
+    .member-row :global(.chevron-icon) {
         flex-shrink: 0;
-        color: var(--muted, #617086);
+        color: var(--faint);
     }
 
     /* Inline add */
@@ -836,24 +814,11 @@
 
     .inline-add .text-input {
         flex: 1;
+        min-width: 0;
     }
 
     .add-sm-btn {
-        min-height: 2.8rem;
-        padding: 0.5rem 1rem;
-        border-radius: var(--radius-md, 16px);
-        border: none;
-        background: var(--ink, #182230);
-        color: var(--on-ink);
-        font-size: 0.82rem;
-        font-weight: 700;
-        cursor: pointer;
-        touch-action: manipulation;
         flex-shrink: 0;
-    }
-
-    .add-sm-btn:active {
-        opacity: 0.85;
     }
 
     /* Link card */
@@ -861,77 +826,87 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: var(--space-3);
+        width: 100%;
         cursor: pointer;
         touch-action: manipulation;
         font: inherit;
         color: inherit;
         text-align: left;
+        transition: border-color 140ms ease, background 140ms ease;
     }
 
-    .link-card:active {
-        background: var(--hover);
+    .link-card:hover {
+        border-color: var(--line-strong);
+        background: var(--surface-2);
+    }
+
+    .link-card-text {
+        display: grid;
+        gap: 0.1rem;
     }
 
     .link-card-label {
-        font-weight: 700;
+        font-weight: 600;
         font-size: 1rem;
     }
 
-    .link-card-arrow {
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: var(--muted, #617086);
+    .link-card-desc {
+        font-size: 0.88rem;
+        color: var(--muted);
     }
 
-    /* Buttons */
-    .secondary-btn {
-        width: 100%;
-        min-height: 2.6rem;
-        padding: 0.5rem 1rem;
-        border-radius: var(--radius-md, 16px);
-        border: 2px solid var(--accent, #e15b37);
-        background: transparent;
-        color: var(--accent, #e15b37);
-        font-size: 0.9rem;
-        font-weight: 700;
-        cursor: pointer;
-        touch-action: manipulation;
-        transition: background 140ms ease;
+    .link-card :global(.link-card-arrow) {
+        flex-shrink: 0;
+        color: var(--muted);
     }
 
-    .secondary-btn:hover {
-        background: var(--accent-soft, rgba(225, 91, 55, 0.12));
+    /* Data / account rows: what it does on the left, the button on the right. */
+    .data-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
     }
 
-    .secondary-btn:active {
-        background: var(--accent-soft, rgba(225, 91, 55, 0.12));
+    .data-row-text {
+        display: grid;
+        gap: 0.1rem;
+        min-width: 0;
     }
 
-    .danger-btn {
-        min-height: 2.4rem;
-        padding: 0.5rem 1rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--danger, #992f20);
-        background: transparent;
-        color: var(--danger, #992f20);
-        font-size: 0.85rem;
-        font-weight: 700;
-        cursor: pointer;
-        touch-action: manipulation;
+    .data-row-title {
+        font-weight: 600;
+        font-size: 0.96rem;
     }
 
-    .danger-btn.small {
-        min-height: 2rem;
-        padding: 0.3rem 0.7rem;
-        font-size: 0.78rem;
+    .data-row-desc {
+        font-size: 0.88rem;
+        color: var(--muted);
+        line-height: 1.4;
     }
 
-    .danger-btn:active {
-        background: rgba(153, 47, 32, 0.08);
+    .data-row .btn {
+        flex-shrink: 0;
+    }
+
+    .danger-row,
+    .import-group {
+        padding-top: var(--space-4);
+        border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 440px) {
+        .data-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
     }
 
     /* Instrument card */
     .instrument-card {
+        gap: 0;
+        padding: 0;
         overflow: hidden;
     }
 
@@ -942,8 +917,12 @@
         cursor: pointer;
         user-select: none;
         list-style: none;
-        padding: 0;
-        min-height: 2.4rem;
+        padding: 0 var(--space-4);
+        min-height: 56px;
+    }
+
+    .instrument-summary:hover {
+        background: var(--hover);
     }
 
     .instrument-summary::-webkit-details-marker {
@@ -951,14 +930,14 @@
     }
 
     .instrument-name {
-        font-weight: 700;
-        font-size: 0.95rem;
+        font-weight: 600;
+        font-size: 1rem;
         flex: 1;
     }
 
     .chevron-down {
         flex-shrink: 0;
-        color: var(--muted, #617086);
+        color: var(--muted);
         transition: transform 200ms ease;
     }
 
@@ -968,76 +947,70 @@
 
     .instrument-body {
         display: grid;
-        gap: 0.65rem;
-        padding-top: 0.65rem;
-        border-top: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        margin-top: 0.65rem;
+        gap: var(--space-4);
+        padding: var(--space-4);
+        border-top: 1px solid var(--line);
+    }
+
+    .instrument-body .danger-btn {
+        justify-self: start;
     }
 
     /* Chips */
     .chip-list {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.35rem;
+        gap: 0.4rem;
+    }
+
+    .chip-list:empty {
+        display: none;
     }
 
     .removable-chip {
         display: inline-flex;
         align-items: center;
         gap: 0.3rem;
-        padding: 0.3rem 0.6rem;
+        min-height: 34px;
+        padding: 0 0.3rem 0 0.75rem;
         border-radius: 999px;
-        background: var(--paper-soft, rgba(247, 249, 253, 0.92));
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        font-size: 0.8rem;
-        font-weight: 600;
+        background: var(--surface-2);
+        border: 1px solid var(--line-strong);
+        font-size: 0.9rem;
+        font-weight: 500;
     }
 
     .chip-remove {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 1.2rem;
-        height: 1.2rem;
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
         border: none;
         background: none;
-        color: var(--muted, #617086);
-        font-size: 1rem;
-        line-height: 1;
+        color: var(--muted);
         padding: 0;
         cursor: pointer;
         border-radius: 50%;
     }
 
     .chip-remove:hover {
-        color: var(--danger, #992f20);
-        background: rgba(153, 47, 32, 0.08);
-    }
-
-    .pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.15rem 0.5rem;
-        border-radius: 999px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        background: var(--line);
-        color: var(--muted, #617086);
+        color: var(--danger);
+        background: var(--danger-soft);
     }
 
     /* Collapsible sections (advanced) */
     .section-details {
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        border-radius: var(--radius-lg, 20px);
-        background: var(--paper, rgba(255, 255, 255, 0.82));
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
         overflow: hidden;
     }
 
     .section-summary {
-        padding: 0.75rem 1rem;
-        font-weight: 700;
-        font-size: 0.95rem;
-        color: var(--ink, #182230);
+        padding: 0 var(--space-4);
+        font-weight: 600;
+        font-size: 1rem;
+        color: var(--ink);
         cursor: pointer;
         user-select: none;
         list-style: none;
@@ -1045,7 +1018,11 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.4rem;
-        min-height: 2.8rem;
+        min-height: 56px;
+    }
+
+    .section-summary:hover {
+        background: var(--hover);
     }
 
     .section-summary::-webkit-details-marker {
@@ -1061,40 +1038,42 @@
     }
 
     .section-body {
-        padding: 0 1rem 1rem;
+        padding: var(--space-4);
+        border-top: 1px solid var(--line);
         display: grid;
-        gap: 0.75rem;
+        gap: var(--space-4);
     }
 
     .section-intro {
-        font-size: 0.82rem;
-        color: var(--muted, #617086);
-        line-height: 1.45;
+        font-size: 0.9rem;
+        color: var(--muted);
+        line-height: 1.5;
         margin: 0;
     }
 
     /* Config fields */
     .config-field {
         display: grid;
-        gap: 0.2rem;
+        gap: 0.3rem;
     }
 
     .config-field-label {
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: var(--ink, #182230);
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--ink);
     }
 
     .config-field-desc {
-        font-size: 0.75rem;
-        color: var(--muted, #617086);
-        line-height: 1.35;
+        font-size: 0.86rem;
+        color: var(--muted);
+        line-height: 1.4;
+        margin-bottom: 0.15rem;
     }
 
     /* Import */
     .import-group {
         display: grid;
-        gap: 0.4rem;
+        gap: var(--space-2);
     }
 
     .import-row {
@@ -1105,71 +1084,63 @@
 
     .import-row .select-input {
         flex: 1;
+        min-width: 0;
     }
 
     .file-input {
-        font-size: 0.85rem;
-        color: var(--muted, #617086);
+        max-width: 100%;
+        font-size: 0.9rem;
+        color: var(--muted);
     }
 
-    /* Connect info */
-    .connect-info {
-        display: grid;
-        gap: 0.3rem;
-        padding: 0.75rem;
-        border-radius: var(--radius-md, 16px);
-        border: 1px solid var(--line, rgba(27, 49, 80, 0.12));
-        background: var(--paper-soft, rgba(247, 249, 253, 0.92));
+    .file-input::file-selector-button {
+        margin-right: 0.75rem;
+        min-height: 36px;
+        padding: 0 0.8rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.86rem;
+        font-weight: 600;
+        cursor: pointer;
     }
 
     .connect-address {
-        font-size: 0.82rem;
+        font-size: 0.96rem;
         font-weight: 600;
         word-break: break-all;
-        color: var(--ink, #182230);
+        color: var(--ink);
     }
 
     .autosave-hint {
         margin: 0;
-        font-size: 0.8rem;
-        color: var(--muted, #617086);
+        font-size: 0.9rem;
+        color: var(--muted);
     }
 
-    /* Empty state */
     .empty-state {
-        padding: 1.5rem 1rem;
-        text-align: center;
-    }
-
-    .empty-title {
-        font-size: 1rem;
-        font-weight: 700;
-        margin: 0 0 0.3rem;
-    }
-
-    .empty-sub {
-        color: var(--muted, #617086);
-        margin: 0;
-        font-size: 0.88rem;
+        padding: var(--space-2) 0 var(--space-3);
     }
 
     /* App footer */
     .app-footer {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.2rem;
-        padding: 1.5rem 0 0.5rem;
-        font-size: 0.72rem;
-        color: var(--muted, #617086);
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.2rem 0.9rem;
+        padding: var(--space-5) 0 0;
+        font-size: 0.82rem;
+        color: var(--muted);
     }
 
     .app-footer-name {
-        font-weight: 700;
+        font-weight: 600;
     }
 
     .app-footer-link {
-        color: var(--accent, #e15b37);
+        color: var(--accent-text);
         text-decoration: none;
         font-weight: 600;
     }
@@ -1178,31 +1149,78 @@
         text-decoration: underline;
     }
 
-    /* ---- Die color picker ---- */
-    .pip-color-swatches {
+    /* ---- Die color picker ----
+       Collapsed by default: ~90 swatches would otherwise push Members off
+       the first screen on a phone. */
+    .die-color-summary {
         display: flex;
-        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 52px;
+        margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1);
+        padding: 0 var(--space-2);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+    }
+
+    .die-color-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .die-color-summary:hover {
+        background: var(--hover);
+    }
+
+    .die-color-current {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        border-radius: 9px;
+        box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.16) inset;
+    }
+
+    .die-color-text {
+        flex: 1;
+        display: grid;
+        gap: 0.05rem;
+        min-width: 0;
+    }
+
+    .die-color-hint {
+        font-size: 0.86rem;
+        color: var(--muted);
+    }
+
+    .die-color[open] > .die-color-summary .chevron-down {
+        transform: rotate(180deg);
+    }
+
+    .pip-color-swatches {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, 28px);
         gap: 8px;
+        padding-top: var(--space-4);
     }
 
     .pip-swatch {
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        border: 2px solid transparent;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        border: none;
         cursor: pointer;
-        transition: transform 150ms ease, border-color 150ms ease;
+        transition: transform 150ms ease;
         -webkit-tap-highlight-color: transparent;
         padding: 0;
     }
 
     .pip-swatch:hover {
-        transform: scale(1.15);
+        transform: scale(1.12);
     }
 
     .pip-swatch.active {
-        border-color: var(--ink);
-        box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+        box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink);
     }
 
     .pip-swatch--custom {
@@ -1233,8 +1251,8 @@
     }
 
     .pip-swatch--reset {
-        background: var(--paper);
-        border: 2px dashed var(--line-strong);
+        background: var(--surface);
+        border: 1.5px dashed var(--line-strong);
         display: flex;
         align-items: center;
         justify-content: center;

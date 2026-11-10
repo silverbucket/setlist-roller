@@ -2,6 +2,7 @@
   import { getContext, tick } from "svelte";
   import { anxietyLabel } from "../../anxiety.js";
   import { songChangeLines } from "../../transitions.js";
+  import Icon from "../shared/Icon.svelte";
 
   const store = getContext("app");
 
@@ -259,7 +260,7 @@
 <div class="saved-screen">
   <h2 class="screen-title">Setlists</h2>
 
-  <div class="list-tabs" aria-label="Setlist status">
+  <div class="list-tabs segmented" aria-label="Setlist status">
     <button type="button" aria-pressed={activeList === "drafts"} class:active={activeList === "drafts"} onclick={() => activeList = "drafts"}>Drafts <span>{draftSetlists.length}</span></button>
     <button type="button" aria-pressed={activeList === "performed"} class:active={activeList === "performed"} onclick={() => activeList = "performed"}>Performed <span>{performedSetlists.length}</span></button>
   </div>
@@ -277,14 +278,14 @@
           {#if editingId === saved.id}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="edit-form" onclick={(e) => e.stopPropagation()}>
-              <input class="edit-input" type="text" bind:value={editName} placeholder="Setlist name" onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }} />
-              <input class="edit-input date" type="date" bind:value={editDate} />
+              <input class="edit-input input" type="text" aria-label="Setlist name" bind:value={editName} placeholder="Setlist name" onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }} />
+              <input class="edit-input input date" type="date" aria-label="Date" bind:value={editDate} />
               {#if saved.performedAt}
-                <input class="edit-input" type="text" bind:value={editVenue} placeholder="Venue (optional)" />
+                <input class="edit-input input" type="text" aria-label="Venue" bind:value={editVenue} placeholder="Venue (optional)" />
               {/if}
               <div class="edit-actions">
-                <button type="button" class="card-btn save" onclick={saveEdit}>Save</button>
-                <button type="button" class="card-btn cancel" onclick={cancelEdit}>Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary card-btn save" onclick={saveEdit}>Save</button>
+                <button type="button" class="btn btn-sm btn-ghost card-btn cancel" onclick={cancelEdit}>Cancel</button>
               </div>
             </div>
           {:else}
@@ -294,22 +295,22 @@
             </div>
             <div class="saved-meta">
               <span>{saved.songs?.length || 0} songs</span>
-              {#if saved.venue}<span>{saved.venue}</span>{/if}
+              {#if saved.venue}<span class="saved-venue">{saved.venue}</span>{/if}
             </div>
             <div class="saved-card-actions">
-              <button type="button" class="card-btn edit" onclick={(e) => startEdit(e, saved)}>Edit</button>
-              <button type="button" class="card-btn load" onclick={(e) => handleLoad(e, saved.id)}>{saved.performedAt ? "Use as draft" : "Open"}</button>
+              <button type="button" class="btn btn-sm btn-primary card-btn load" onclick={(e) => handleLoad(e, saved.id)}>{saved.performedAt ? "Use as draft" : "Open"}</button>
               {#if saved.performedAt}
-                <button type="button" class="card-btn status" onclick={(e) => moveToDrafts(e, saved)}>Move to drafts</button>
+                <button type="button" class="btn btn-sm card-btn status" onclick={(e) => moveToDrafts(e, saved)}>Move to drafts</button>
               {:else}
-                <button type="button" class="card-btn status" onclick={(e) => startMarkPerformed(e, saved)}>Mark performed</button>
+                <button type="button" class="btn btn-sm card-btn status" onclick={(e) => startMarkPerformed(e, saved)}>Mark performed</button>
               {/if}
               <span class="action-spacer"></span>
+              <button type="button" class="icon-btn card-btn edit" onclick={(e) => startEdit(e, saved)} aria-label="Edit" title="Rename or change date"><Icon name="pencil" size={17} /></button>
               {#if confirmingRemoveId === saved.id}
-                <button type="button" class="card-btn confirm-delete" onclick={(e) => handleRemove(e, saved.id)}>Delete?</button>
-                <button type="button" class="card-btn cancel-delete" onclick={cancelRemove}>No</button>
+                <button type="button" class="btn btn-sm btn-danger card-btn confirm-delete" onclick={(e) => handleRemove(e, saved.id)}>Delete?</button>
+                <button type="button" class="btn btn-sm btn-ghost card-btn cancel-delete" onclick={cancelRemove}>No</button>
               {:else}
-                <button type="button" class="card-btn remove" onclick={(e) => handleRemove(e, saved.id)} aria-label="Remove">&times;</button>
+                <button type="button" class="icon-btn card-btn remove" onclick={(e) => handleRemove(e, saved.id)} aria-label="Remove"><Icon name="trash" size={17} /></button>
               {/if}
             </div>
           {/if}
@@ -326,7 +327,7 @@
       <div class="modal-content">
         <div class="print-setlist" bind:this={printEl}>
           <div class="print-top">
-            <button type="button" class="modal-close no-print" onclick={handleClose} aria-label="Close">&times;</button>
+            <button type="button" class="icon-btn modal-close no-print" onclick={handleClose} aria-label="Close"><Icon name="x" size={20} /></button>
             <h2 class="print-band">{store.appTitle.replace(/ — Setlist Roller$/, "")}</h2>
             <p class="print-subtitle">{viewingSet.name || "Setlist"} &middot; {viewingSet.performedAt ? `Performed ${formatDate(viewingSet.performedAt)}${viewingSet.venue ? ` at ${viewingSet.venue}` : ""}` : `Draft updated ${formatDate(viewingSet.savedAt)}`}</p>
           </div>
@@ -337,7 +338,7 @@
               {@const changes = songChangeLines(song, prevSong)}
               <div class="print-song">
                 <div class="print-song-row">
-                  <span class="print-num">{i + 1}.</span>
+                  <span class="print-num">{i + 1}</span>
                   <span class="print-song-name">{song.name || song.title || "Untitled"}</span>
                   {#if song.key}
                     <span class="print-song-key">{song.key}</span>
@@ -367,7 +368,7 @@
           {#if viewingSet.summary?.anxiety}
             {@const anxiety = viewingSet.summary.anxiety}
             <div class="print-anxiety">
-              <span class="print-anxiety-title">Bass Player Anxiety:</span>
+              <span class="print-anxiety-title">Bass player anxiety:</span>
               <span class="print-anxiety-score">{anxiety.scaled}/10</span>
               <span class="print-anxiety-label">{anxietyLabel(anxiety)}</span>
             </div>
@@ -376,8 +377,8 @@
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="modal-btn" onclick={handlePrint}>Print / Export PDF</button>
-        <button type="button" class="modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>{viewingSet.performedAt ? "Use as new draft" : "Edit setlist"}</button>
+        <button type="button" class="btn modal-btn" onclick={handlePrint}><Icon name="printer" size={17} /> Print / Export PDF</button>
+        <button type="button" class="btn btn-primary modal-btn primary" onclick={(e) => { handleLoad(e, viewingSet.id); viewingId = null; }}>{viewingSet.performedAt ? "Use as new draft" : "Edit setlist"}</button>
       </div>
     </div>
   </div>
@@ -385,18 +386,22 @@
 
 {#if markingPerformedId}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop confirmation-backdrop" role="presentation" onclick={cancelMarkPerformed}>
+  <div class="dialog-backdrop confirmation-backdrop" role="presentation" onclick={cancelMarkPerformed}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm-sheet" bind:this={confirmDialogEl} role="dialog" aria-modal="true" aria-labelledby="performed-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-      <h2 id="performed-title">Mark as performed?</h2>
-      <p>This preserves the setlist as a record of the show.</p>
-      <label for="performed-date">Show date</label>
-      <input id="performed-date" type="date" bind:value={performedDate} />
-      <label for="performed-venue">Venue <span class="optional">Optional</span></label>
-      <input id="performed-venue" type="text" bind:value={performedVenue} placeholder="Venue name" />
-      <div class="confirm-actions">
-        <button type="button" class="modal-btn" onclick={cancelMarkPerformed}>Cancel</button>
-        <button type="button" class="modal-btn primary" onclick={confirmMarkPerformed}>Mark as performed</button>
+    <div class="confirm-sheet dialog" bind:this={confirmDialogEl} role="dialog" aria-modal="true" aria-labelledby="performed-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <h2 id="performed-title" class="dialog-title">Mark as performed?</h2>
+      <p class="dialog-desc">This preserves the setlist as a record of the show.</p>
+      <div class="field">
+        <label class="field-label" for="performed-date">Show date</label>
+        <input class="input" id="performed-date" type="date" bind:value={performedDate} />
+      </div>
+      <div class="field">
+        <label class="field-label" for="performed-venue">Venue <span class="optional">(optional)</span></label>
+        <input class="input" id="performed-venue" type="text" bind:value={performedVenue} placeholder="Venue name" />
+      </div>
+      <div class="confirm-actions dialog-actions">
+        <button type="button" class="btn modal-btn" onclick={cancelMarkPerformed}>Cancel</button>
+        <button type="button" class="btn btn-primary modal-btn primary" onclick={confirmMarkPerformed}>Mark as performed</button>
       </div>
     </div>
   </div>
@@ -404,14 +409,14 @@
 
 {#if confirmingHistoryDeleteId}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop confirmation-backdrop" role="presentation" onclick={() => confirmingHistoryDeleteId = null}>
+  <div class="dialog-backdrop confirmation-backdrop" role="presentation" onclick={() => confirmingHistoryDeleteId = null}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm-sheet" bind:this={confirmDialogEl} role="alertdialog" aria-modal="true" aria-labelledby="history-delete-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-      <h2 id="history-delete-title">Delete performed setlist?</h2>
-      <p>This setlist is part of your show history. Deleting it permanently removes that record.</p>
-      <div class="confirm-actions">
-        <button type="button" class="modal-btn" onclick={() => confirmingHistoryDeleteId = null}>Keep history</button>
-        <button type="button" class="modal-btn danger" onclick={confirmHistoryDelete}>Delete permanently</button>
+    <div class="confirm-sheet dialog" bind:this={confirmDialogEl} role="alertdialog" aria-modal="true" aria-labelledby="history-delete-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <h2 id="history-delete-title" class="dialog-title">Delete performed setlist?</h2>
+      <p class="dialog-desc">This setlist is part of your show history. Deleting it permanently removes that record.</p>
+      <div class="confirm-actions dialog-actions">
+        <button type="button" class="btn modal-btn" onclick={() => confirmingHistoryDeleteId = null}>Keep history</button>
+        <button type="button" class="btn btn-danger modal-btn danger" onclick={confirmHistoryDelete}>Delete permanently</button>
       </div>
     </div>
   </div>
@@ -420,293 +425,142 @@
 <style>
   .saved-screen {
     display: grid;
-    gap: 1rem;
-    padding: 0.75rem;
-    max-width: 540px;
+    gap: var(--space-4);
+    max-width: 760px;
     margin: 0 auto;
   }
 
-  .screen-title {
-    font-size: 1.1rem;
-    font-weight: 800;
-    color: var(--ink, #182230);
+  @media (min-width: 900px) {
+    .saved-screen {
+      margin: 0;
+    }
   }
 
   .list-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0.25rem;
-    border-radius: var(--radius-lg, 16px);
-    background: var(--hover);
+    display: flex;
+    justify-self: start;
+    width: min(100%, 360px);
   }
 
   .list-tabs button {
-    min-height: 44px;
-    border: 0;
-    border-radius: var(--radius-md, 12px);
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.9rem;
-    font-weight: 750;
-    cursor: pointer;
-  }
-
-  .list-tabs button.active {
-    background: var(--surface);
-    color: var(--ink);
-    box-shadow: 0 1px 4px rgba(20, 30, 45, 0.12);
+    flex: 1;
+    min-height: 40px;
   }
 
   .list-tabs span {
-    margin-left: 0.2rem;
+    margin-left: 0.3rem;
+    font-weight: 500;
     color: var(--muted);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 3rem 1rem;
-  }
-
-  .empty-title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--ink, #182230);
-    margin-bottom: 0.35rem;
-  }
-
-  .empty-sub {
-    font-size: 0.85rem;
-    color: var(--muted, #8a95a5);
-    line-height: 1.5;
   }
 
   .saved-list {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--space-3);
   }
 
   .saved-card {
-    border-radius: var(--radius-lg, 16px);
+    border-radius: var(--radius-lg);
     background: var(--surface);
     border: 1px solid var(--line);
-    padding: 0.75rem;
+    padding: var(--space-4);
     display: grid;
-    gap: 0.4rem;
+    align-content: start;
+    gap: 0.25rem;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: border-color 140ms ease, box-shadow 140ms ease;
   }
 
   .saved-card:hover {
-    border-color: var(--accent);
-    box-shadow: 0 2px 8px var(--accent-soft);
-  }
-
-  .saved-card:active {
-    background: var(--accent-soft);
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-sm);
   }
 
   .saved-top {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    gap: var(--space-3);
   }
 
   .saved-name {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--ink, #182230);
+    font-family: var(--font-display);
+    font-size: 1.12rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--ink);
+    overflow-wrap: anywhere;
   }
 
   .saved-date {
-    font-size: 0.72rem;
-    color: var(--muted, #8a95a5);
-    font-weight: 600;
+    flex-shrink: 0;
+    font-size: 0.86rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
 
   .saved-meta {
     display: flex;
-    gap: 0.6rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--muted, #8a95a5);
+    flex-wrap: wrap;
+    gap: 0 0.35rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .saved-venue::before {
+    content: "at ";
   }
 
   .saved-card-actions {
     display: flex;
-    gap: 0.35rem;
-    margin-top: 0.15rem;
-  }
-
-  .card-btn {
-    border: none;
-    border-radius: var(--radius-md, 12px);
-    font-size: 0.78rem;
-    font-weight: 700;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    padding: 0.35rem 0.7rem;
-    min-height: 1.8rem;
-    transition: background 120ms ease, transform 80ms ease;
-  }
-
-  .card-btn:active {
-    transform: scale(0.96);
-  }
-
-  .card-btn.load {
-    background: linear-gradient(140deg, var(--accent) 0%, var(--accent-strong) 100%);
-    color: var(--on-accent);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: var(--space-3);
   }
 
   .action-spacer {
     flex: 1;
   }
 
+  .card-btn.edit,
   .card-btn.remove {
-    background: none;
-    color: var(--muted, #8a95a5);
-    font-size: 1.1rem;
-    padding: 0.2rem 0.4rem;
+    width: 36px;
+    height: 36px;
+    color: var(--muted);
   }
 
-  .card-btn.remove:hover,
-  .card-btn.remove:active {
-    color: var(--accent, #e15b37);
-  }
-
-  .card-btn.confirm-delete {
-    background: var(--danger, #b91c1c);
-    color: var(--on-accent);
-    font-size: 0.72rem;
-  }
-
-  .card-btn.cancel-delete {
-    background: var(--hover);
-    color: var(--muted, #8a95a5);
-    font-size: 0.72rem;
-  }
-
-  .card-btn.edit {
-    background: var(--hover);
-    color: var(--ink, #182230);
-    border: 1px solid var(--line);
-  }
-
-  .card-btn.status {
-    background: none;
-    color: var(--accent);
-  }
-
-  .card-btn.save {
-    background: #1f8f61;
-    color: var(--on-accent);
-  }
-
-  .card-btn.cancel {
-    background: var(--hover);
-    color: var(--muted, #8a95a5);
-    border: 1px solid var(--line);
+  .card-btn.remove:hover {
+    color: var(--danger);
+    background: var(--danger-soft);
   }
 
   .edit-form {
     display: grid;
-    gap: 0.4rem;
-  }
-
-  .edit-input {
-    width: 100%;
-    min-height: 2.2rem;
-    padding: 0.4rem 0.6rem;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md, 12px);
-    background: var(--paper-strong);
-    /* iOS zooms inputs <16px on focus — keep at 16px to prevent zoom. */
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--ink, #182230);
-  }
-
-  .edit-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-soft);
-  }
-
-  .edit-input.date {
-    color: var(--muted, #617086);
+    gap: var(--space-2);
   }
 
   .edit-actions {
     display: flex;
-    gap: 0.35rem;
-  }
-
-  .confirm-sheet {
-    width: min(100%, 380px);
-    padding: 1.25rem;
-    border-radius: var(--radius-xl, 20px);
-    background: var(--paper-strong);
-    box-shadow: var(--shadow);
-    color: var(--ink);
-  }
-
-  .confirm-sheet h2 {
-    margin-bottom: 0.35rem;
-    font-size: 1.1rem;
-  }
-
-  .confirm-sheet p {
-    margin-bottom: 1rem;
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
-
-  .confirm-sheet label {
-    display: block;
-    margin: 0.85rem 0 0.35rem;
-    font-size: 0.8rem;
-    font-weight: 700;
+    gap: 0.4rem;
+    margin-top: var(--space-1);
   }
 
   .confirm-sheet .optional {
     color: var(--muted);
-    font-weight: 500;
-  }
-
-  .confirm-sheet input {
-    width: 100%;
-    min-height: 44px;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-md, 12px);
-    background: var(--surface);
-    color: var(--ink);
-    font-size: 16px;
-  }
-
-  .confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-
-  .modal-btn.danger {
-    background: var(--danger, #b91c1c);
-    color: var(--on-accent);
+    font-weight: 400;
   }
 
   .confirmation-backdrop {
-    z-index: 400;
+    z-index: 700;
   }
 
-  /* ---- Modal ---- */
+  /* ---- Setlist viewer ---- */
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(30, 38, 52, 0.35);
-    backdrop-filter: blur(4px);
+    background: var(--overlay);
     display: grid;
     place-items: center;
     z-index: 300;
@@ -718,23 +572,23 @@
     padding-right: 1rem;
     padding-bottom: max(1rem, var(--safe-bottom, 0px));
     padding-left: 1rem;
-    animation: fade-in 150ms ease;
+    animation: ui-fade-in 150ms ease;
   }
 
   .modal-sheet {
-    width: min(100%, 420px);
+    width: min(100%, 560px);
     /* Match the backdrop padding so the sheet never extends behind the
        status bar / home indicator even when its content is tall. */
     max-height: calc(100dvh - max(1rem, var(--safe-top, 0px)) - max(1rem, var(--safe-bottom, 0px)));
     background: var(--paper-strong);
-    border-radius: var(--radius-xl, 20px);
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow);
     /* flex column lets the inner .modal-content take the remaining space and
        scroll, while .modal-actions stays pinned as a sticky-style footer. */
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: pop-in 200ms ease;
+    animation: ui-pop-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .modal-content {
@@ -750,35 +604,23 @@
 
   .modal-close {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    border: none;
-    background: var(--hover);
-    font-size: 1.3rem;
-    color: var(--muted);
-    cursor: pointer;
-    line-height: 1;
-    padding: 0;
-    width: 1.8rem;
-    height: 1.8rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    top: 0.6rem;
+    right: 0.6rem;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
+    background: var(--hover);
     z-index: 1;
   }
 
-  .modal-close:active {
-    background: var(--hover-strong);
-  }
-
-  /* ---- Setlist viewer (theme-aware on screen) ----
+  /* The viewer is the stage sheet: the band name as a masthead, then the
+     running order in type big enough to read at arm's length.
      The class names start with "print-" for historical reasons (the same DOM
-     was originally cloned into a popup window for printing). The actual print
-     popup now injects its own black-on-white CSS in handlePrint(), so these
-     rules only style the on-screen viewer and are free to follow the theme. */
+     is cloned into a popup window for printing). The print popup injects its
+     own black-on-white CSS in handlePrint(), so these rules only style the
+     on-screen viewer and are free to follow the theme. */
   .print-setlist {
-    padding: 0.75rem;
+    padding: var(--space-5) var(--space-5) var(--space-4);
     display: grid;
     gap: 0;
     color: var(--ink);
@@ -786,24 +628,23 @@
   }
 
   .print-top {
-    padding-bottom: 0.5rem;
+    padding: 0 2.5rem var(--space-3) 0;
     border-bottom: 2px solid var(--ink);
-    margin-bottom: 0.35rem;
   }
 
   .print-band {
-    font-size: 1.15rem;
-    font-weight: 800;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
     color: var(--ink);
     margin: 0;
-    line-height: 1.2;
+    line-height: 1.15;
   }
 
   .print-subtitle {
-    font-size: 0.78rem;
-    font-weight: 400;
+    font-size: 0.9rem;
     color: var(--muted);
-    margin: 0.1rem 0 0;
+    margin: 0.25rem 0 0;
   }
 
   .print-songs {
@@ -812,55 +653,63 @@
   }
 
   .print-song {
-    padding: 0.45rem 0;
+    padding: 0.65rem 0;
     border-bottom: 1px solid var(--line);
   }
 
   .print-song-row {
     display: flex;
     align-items: baseline;
-    gap: 0.4rem;
+    gap: 0.6rem;
   }
 
   .print-num {
-    font-size: 0.78rem;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
     font-weight: 700;
     color: var(--muted);
-    min-width: 1.6rem;
+    min-width: 1.5rem;
     text-align: right;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
 
   .print-song-name {
-    font-size: 0.9rem;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
     color: var(--ink);
     flex: 1;
   }
 
   .print-song-key {
-    font-size: 0.72rem;
+    font-family: var(--font-display);
+    font-size: 0.82rem;
     font-weight: 700;
-    color: var(--ink);
+    color: var(--ink-2);
     flex-shrink: 0;
-    padding: 0.05rem 0.35rem;
+    min-width: 2.1rem;
+    text-align: center;
+    padding: 0.1rem 0.4rem;
     border: 1px solid var(--line-strong);
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   .print-changes {
-    padding-left: 2rem;
-    padding-top: 0.15rem;
+    padding-left: 2.1rem;
+    padding-top: 0.3rem;
     display: grid;
-    gap: 0.05rem;
+    gap: 0.25rem;
   }
 
   .print-change {
     display: flex;
     align-items: baseline;
-    gap: 0.3rem;
-    font-size: 0.72rem;
-    color: var(--ink);
+    gap: 0.4rem;
+    font-size: 0.84rem;
+    color: var(--ink-2);
   }
 
   .print-change.setup {
@@ -868,7 +717,7 @@
   }
 
   .print-change-member {
-    font-weight: 700;
+    font-weight: 600;
     flex-shrink: 0;
   }
 
@@ -876,25 +725,22 @@
     display: inline-flex;
     flex-wrap: wrap;
     gap: 0.25rem;
-    font-weight: 500;
   }
 
   .print-chip {
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
-    padding: 0 0.4rem;
-    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    border-radius: 6px;
     border: 1px solid var(--line-strong);
+    font-size: 0.8rem;
     font-weight: 600;
     white-space: nowrap;
   }
 
   .print-chip-kind {
-    font-size: 0.85em;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-weight: 700;
   }
 
   .print-chip.tuning {
@@ -906,19 +752,19 @@
   .print-chip.instrument {
     background: var(--accent-soft);
     border-color: var(--accent-line);
-    color: var(--accent-strong);
+    color: var(--accent-text);
   }
 
   .print-chip.capo {
-    background: var(--warning-soft, rgba(255, 160, 40, 0.12));
+    background: var(--warning-soft);
     border-color: transparent;
-    color: var(--toast-warning, #7a5c10);
+    color: var(--warning);
   }
 
   .print-chip.technique {
-    background: var(--line);
+    background: var(--hover-strong);
     border-color: transparent;
-    color: var(--ink);
+    color: var(--ink-2);
   }
 
   .print-chip-icon {
@@ -927,79 +773,48 @@
 
   .print-change.setup .print-chip {
     background: transparent;
-    border-color: var(--line);
+    border-color: var(--line-strong);
     color: var(--muted);
-  }
-
-  .print-notes {
-    padding-left: 2rem;
-    padding-top: 0.15rem;
-    font-size: 0.72rem;
-    font-style: italic;
-    color: var(--muted);
-    line-height: 1.45;
-    white-space: pre-line;
     font-weight: 500;
   }
 
+  .print-notes {
+    padding-left: 2.1rem;
+    padding-top: 0.3rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.45;
+    white-space: pre-line;
+  }
+
   .print-anxiety {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    margin-top: -1px;
+    padding-top: var(--space-3);
     border-top: 2px solid var(--ink);
     display: flex;
     align-items: baseline;
-    gap: 0.4rem;
-    font-size: 0.82rem;
+    flex-wrap: wrap;
+    gap: 0.1rem 0.4rem;
+    font-size: 0.9rem;
     color: var(--ink);
   }
 
-  .print-anxiety-title { font-weight: 700; }
-  .print-anxiety-score { font-weight: 800; }
-  .print-anxiety-label { font-weight: 400; color: var(--muted); }
+  .print-anxiety-title { font-weight: 600; }
+  .print-anxiety-score { font-family: var(--font-display); font-weight: 700; }
+  .print-anxiety-label { color: var(--muted); }
 
   .modal-actions {
     display: flex;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem 0.75rem;
+    padding: var(--space-3) var(--space-4) var(--space-4);
     border-top: 1px solid var(--line);
     /* Pinned footer: stays in place while .modal-content scrolls. */
     flex-shrink: 0;
     background: var(--paper-strong);
   }
 
-  .modal-btn {
+  .modal-actions .modal-btn {
     flex: 1;
-    min-height: 2.4rem;
-    border: 1.5px solid var(--line);
-    border-radius: var(--radius-md, 12px);
-    background: transparent;
-    color: var(--ink, #182230);
-    font-size: 0.82rem;
-    font-weight: 700;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 120ms ease, transform 80ms ease;
+    padding: 0 0.6rem;
   }
-
-  .modal-btn:active {
-    transform: scale(0.97);
-  }
-
-  .modal-btn.primary {
-    background: linear-gradient(140deg, var(--accent) 0%, var(--accent-strong) 100%);
-    color: var(--on-accent);
-    border-color: transparent;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes pop-in {
-    0% { transform: scale(0.92); opacity: 0; }
-    70% { transform: scale(1.02); }
-    100% { transform: scale(1); opacity: 1; }
-  }
-
 </style>

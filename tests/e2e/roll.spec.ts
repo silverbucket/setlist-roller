@@ -76,7 +76,7 @@ test.describe("Roll screen — generation flow", () => {
         await roll.setSongCount(5);
 
         await roll.pinBeforeRoll("Jolene");
-        await expect(roll.screen.getByText("📌 Jolene")).toBeVisible();
+        await expect(roll.screen.locator(".pre-roll-pin").filter({ hasText: "Jolene" })).toBeVisible();
         await roll.clickRoll();
         await roll.waitForRollResult();
 
