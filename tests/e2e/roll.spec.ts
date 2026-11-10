@@ -485,11 +485,14 @@ test.describe("Roll screen — hero scroll behavior", () => {
         expect(initialBox).not.toBeNull();
         const initialTop = initialBox?.y ?? 0;
 
-        // Force scrollable content height.
+        // Force scrollable content height. On phones .roll-screen is a grid
+        // whose children are placed by `order` (hero is 1), so the spacer
+        // needs an explicit high order to land below the hero — otherwise
+        // its default order 0 puts it first and pushes the hero down.
         await page.evaluate(() => {
             const spacer = document.createElement("div");
             spacer.id = "__hero_scroll_spacer";
-            spacer.style.cssText = "height: 2000px; pointer-events: none;";
+            spacer.style.cssText = "height: 2000px; order: 99; pointer-events: none;";
             document.querySelector(".roll-screen")?.appendChild(spacer);
         });
 
