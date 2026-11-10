@@ -220,6 +220,7 @@
   .title-row {
     min-height: 1.5rem;
     line-height: 1.4;
+    text-wrap: balance;
   }
 
   /* The key rides along with the title, so the right edge only holds the
@@ -262,6 +263,7 @@
     font-size: 1.06rem;
     line-height: 1.3;
     letter-spacing: -0.01em;
+    text-wrap: balance;
     color: var(--ink);
     overflow-wrap: break-word;
     word-break: break-word;

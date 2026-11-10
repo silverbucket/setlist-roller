@@ -19,15 +19,15 @@
     ];
 
     function memberSummary(song) {
-        return Object.entries(song.members || {})
-            .map(([name, setup]) => {
+        // One phrase per member ("nick on guitar"); the template keeps each
+        // phrase unbroken so lines only wrap between members.
+        return Object.entries(song.members || {}).map(([name, setup]) => {
                 const instruments = (setup.instruments || [])
                     .map((i) => i.name)
                     .filter(Boolean)
                     .join(", ");
                 return instruments ? `${name} on ${instruments}` : name;
-            })
-            .join(", ");
+            });
     }
 </script>
 
@@ -113,13 +113,14 @@
         <ul class="song-list card">
             {#each store.visibleSongs as song (song.id)}
                 {@const reasons = store.songIncompleteReasons(song)}
+                {@const lineup = memberSummary(song)}
                 <li>
                     <button type="button" class="song-row" onclick={() => store.openSong(song)}>
                         <div class="song-content">
                             <span class="song-name">{song.name || "Untitled"}</span>
                             <!-- Tags share the second line with the line-up, so a
                                  long title never strands a tag on its own row. -->
-                            {#if song.unpracticed || store.isSongIncomplete(song) || song.cover || song.instrumental || memberSummary(song)}
+                            {#if song.unpracticed || store.isSongIncomplete(song) || song.cover || song.instrumental || lineup.length > 0}
                                 <div class="song-sub">
                                     {#if song.unpracticed}
                                         <span class="pill warn badge badge-warn">unpracticed</span>
@@ -133,8 +134,8 @@
                                     {#if song.instrumental}
                                         <span class="pill badge">instrumental</span>
                                     {/if}
-                                    {#if memberSummary(song)}
-                                        <span class="song-members">{memberSummary(song)}</span>
+                                    {#if lineup.length > 0}
+                                        <span class="song-members">{#each lineup as phrase, i}<span class="lineup-phrase">{phrase}{i < lineup.length - 1 ? "," : ""}</span>{" "}{/each}</span>
                                     {/if}
                                 </div>
                             {/if}
@@ -419,7 +420,10 @@
        and wraps like prose. */
     .song-sub {
         line-height: 1.45;
-        text-wrap: balance;
+    }
+
+    .lineup-phrase {
+        white-space: nowrap;
     }
 
     .song-sub .pill {
@@ -433,6 +437,7 @@
         font-size: 1.04rem;
         line-height: 1.3;
         letter-spacing: -0.01em;
+        text-wrap: balance;
         overflow-wrap: break-word;
         word-break: break-word;
         min-width: 0;
