@@ -21,18 +21,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      # Node stays the runtime for vite/vitest/playwright (their bins use
+      # a node shebang); bun handles installs and scripts.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run test
 
   e2e:
     name: E2E shard ${{ matrix.shard }}
     needs: validate
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now 26.04, which Playwright 1.59 can't
+    # install browsers on. Unpin when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     strategy:
       # Don't cancel remaining shards when one fails — collect all
       # failures before blocking the deploy.
@@ -41,11 +47,13 @@ jobs:
         shard: ["1/3", "2/3", "3/3"]
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       - name: Start armadietto
         # Each shard runner gets its own fresh armadietto container, so
@@ -66,14 +74,14 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium webkit
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Install Playwright system deps
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
+        run: bunx playwright install-deps chromium webkit
 
       - name: E2E tests (chromium + mobile webkit, shard ${{ matrix.shard }})
-        run: npx playwright test --shard=${{ matrix.shard }}
+        run: bunx playwright test --shard=${{ matrix.shard }}
 
       - name: Upload Playwright report on failure
         if: failure()
@@ -125,12 +133,14 @@ jobs:
           # don't leave the token persisted in the local git config.
           persist-credentials: false
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       - name: Bump version
         id: version
@@ -139,19 +149,19 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version "$BUMP" --no-git-tag-version
+          bun pm version "$BUMP" --no-git-tag-version
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit release version
         id: source
         run: |
-          git add package.json package-lock.json
+          git add package.json
           git commit -m "release v${{ steps.version.outputs.version }}"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" npm run build
+        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" bun run build
 
       - name: Setup SSH for 5apps
         env:
