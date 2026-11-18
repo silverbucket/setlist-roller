@@ -33,7 +33,9 @@ jobs:
   e2e:
     name: E2E shard ${{ matrix.shard }}
     needs: validate
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now 26.04, which Playwright 1.59 can't
+    # install browsers on. Unpin when Playwright is upgraded.
+    runs-on: ubuntu-24.04
     strategy:
       # Don't cancel remaining shards when one fails — collect all
       # failures before blocking the deploy.
