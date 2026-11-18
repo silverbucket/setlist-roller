@@ -58,19 +58,19 @@ Data persistence uses [remoteStorage](https://remotestorage.io).
 
 | Task | Command |
 |------|---------|
-| Dev server | `pnpm run dev` (port 4173) |
-| Lint | `pnpm run lint` (Biome) |
-| Unit tests | `pnpm test` (Vitest) |
-| E2E tests | `pnpm run test:e2e` (Playwright + Chromium) |
-| Build | `pnpm run build` |
+| Dev server | `bun run dev` (port 4173) |
+| Lint | `bun run lint` (Biome) |
+| Unit tests | `bun run test` (Vitest) |
+| E2E tests | `bun run test:e2e` (Playwright + Chromium) |
+| Build | `bun run build` |
 
 ### E2E test prerequisites
 
 E2E tests require Docker and the armadietto remoteStorage server:
 
 1. Docker must be running (`sudo dockerd` if not already started).
-2. Start armadietto: `pnpm run armadietto:up` (port 8000).
-3. Install Playwright browsers: `pnpm exec playwright install --with-deps chromium`.
+2. Start armadietto: `bun run armadietto:up` (port 8000).
+3. Install Playwright browsers: `bunx playwright install --with-deps chromium`.
 4. The Playwright `webServer` config auto-starts the Vite dev server for E2E
    runs, so you do not need to start it separately.
 

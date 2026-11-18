@@ -12,26 +12,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      # Node stays the runtime for vite/vitest/playwright (their bins use
+      # a node shebang); bun handles installs and scripts.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run lint
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
 
   test:
     name: Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - run: bun install --frozen-lockfile
+      - run: bun run test
 
   e2e:
     name: E2E (Playwright + armadietto)
@@ -40,12 +44,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
       - name: Start armadietto
         # Real-backend e2e: bring up the local remoteStorage server the
@@ -69,18 +74,18 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Install Playwright system deps
         # Cached browsers don't include OS-level deps (libnss3, etc.), so we
         # still need the deps step on a cache hit.
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+        run: bunx playwright install-deps chromium
 
       - name: Run smoke tests (chromium only)
         # PRs run the @smoke subset (~20 tests) on Chromium only.
         # The full suite (both browsers) runs as a release pre-flight in release.yml.
-        run: pnpm run test:e2e:smoke
+        run: bun run test:e2e:smoke
 
       - name: Upload Playwright report on failure
         if: failure()

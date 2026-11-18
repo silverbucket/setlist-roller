@@ -30,14 +30,17 @@ jobs:
           # No pushes from this job — don't leave the workflow token in
           # the local git config (same hardening as the deploy job).
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      # Node stays the runtime for vite/vitest/playwright (their bins use
+      # a node shebang); bun handles installs and scripts.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run lint
-      - run: pnpm test
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run test
 
   deploy:
     name: Build & deploy to setlist-staging.5apps.com
@@ -52,14 +55,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
       - name: Build (staging mode)
         # --mode staging turns on sourcemaps, keeps function names in the
@@ -68,7 +71,7 @@ jobs:
         # See the mode handling in vite.config.js.
         env:
           DEPLOY_BUILD_NUMBER: ${{ github.run_number }}
-        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" pnpm run build:staging
+        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" bun run build:staging
 
       - name: Setup SSH for 5apps
         env:

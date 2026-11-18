@@ -40,5 +40,5 @@
         "vitest": "^3.2.4",
         "workbox-window": "^7.4.0"
     },
-    "packageManager": "pnpm@11.10.0"
+    "packageManager": "bun@1.4.4"
 }

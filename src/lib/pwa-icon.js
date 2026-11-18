@@ -83,7 +83,7 @@ function tileGradientStops(color) {
 // of radius 0.4 * 512 = 204.8), so no adaptive-icon shape crops the artwork.
 // Don't scale it down "to be safe" — that's what left a tiny die on a big
 // dark square in the macOS dock. Must stay in lockstep with the static
-// /public fallbacks (regenerate with `pnpm run icons`).
+// /public fallbacks (regenerate with `bun run icons`).
 export function generateMaskableDieSvgString(color) {
     const die = generateDieSvgString(color)
         .replace(/<svg[^>]*>/, "")

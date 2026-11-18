@@ -1,5 +1,5 @@
 # Local remoteStorage server for real-backend e2e tests. Used by the
-# `pnpm run test:e2e` Playwright suite, which exercises the full
+# `bun run test:e2e` Playwright suite, which exercises the full
 # discovery + OAuth + sync stack against a real RS server instead of the
 # in-memory fake-repo. Adapted from the inbox-rs project's setup.
 services:
