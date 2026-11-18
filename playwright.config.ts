@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test";
  * brought up via docker-compose at the repo root. There is no fake
  * repo path — every test exercises real rs.js + real webfinger + real
  * OAuth + real sync. CI brings up the container before invoking
- * `playwright test`; locally run `npm run armadietto:up` first.
+ * `playwright test`; locally run `pnpm run armadietto:up` first.
  *
  * baseURL points at `localhost` (not `127.0.0.1`) so the page origin
  * matches the OAuth redirect_uri armadietto sends back; rs.js parses
@@ -56,7 +56,7 @@ export default defineConfig({
     webServer: {
         // Bind to localhost (not 0.0.0.0) so the dev server is reachable
         // via the same hostname rs.js will redirect to during OAuth.
-        command: "npm run dev -- --host localhost --port 4173",
+        command: "pnpm run dev --host localhost --port 4173",
         url: "http://localhost:4173",
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

@@ -21,13 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm test
 
   e2e:
     name: E2E shard ${{ matrix.shard }}
@@ -41,11 +42,12 @@ jobs:
         shard: ["1/3", "2/3", "3/3"]
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
 
       - name: Start armadietto
         # Each shard runner gets its own fresh armadietto container, so
@@ -66,14 +68,14 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium webkit
+        run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Install Playwright system deps
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
+        run: pnpm exec playwright install-deps chromium webkit
 
       - name: E2E tests (chromium + mobile webkit, shard ${{ matrix.shard }})
-        run: npx playwright test --shard=${{ matrix.shard }}
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}
 
       - name: Upload Playwright report on failure
         if: failure()
@@ -125,12 +127,14 @@ jobs:
           # don't leave the token persisted in the local git config.
           persist-credentials: false
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Bump version
         id: version
@@ -139,6 +143,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # npm (not pnpm) — pnpm version refuses to run on a dirty tree and this
+          # only needs to rewrite package.json.
           npm version "$BUMP" --no-git-tag-version
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -146,12 +152,12 @@ jobs:
       - name: Commit release version
         id: source
         run: |
-          git add package.json package-lock.json
+          git add package.json
           git commit -m "release v${{ steps.version.outputs.version }}"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" npm run build
+        run: DEPLOYED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" pnpm run build
 
       - name: Setup SSH for 5apps
         env:

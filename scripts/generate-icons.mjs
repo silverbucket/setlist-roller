@@ -2,7 +2,7 @@
 // same SVG generators the app uses at runtime (src/lib/pwa-icon.js), so the
 // two can't drift. Requires `rsvg-convert` (brew install librsvg).
 //
-//   npm run icons
+//   pnpm run icons
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateAppIconSvgString, generateMaskableDieSvgString } from "../src/lib/pwa-icon.js";

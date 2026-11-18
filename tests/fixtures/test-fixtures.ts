@@ -188,7 +188,7 @@ async function provisionAndSeed(
 export const test = base.extend<{ app: AppContext }>({
     app: async ({ page }, use) => {
         // One-time wait for armadietto. If the user hasn't run
-        // `npm run armadietto:up` the test fails loudly here instead of
+        // `pnpm run armadietto:up` the test fails loudly here instead of
         // timing out at the first signup.
         await waitForArmadietto();
 

@@ -55,8 +55,8 @@ The app walks you through it — there's a getting-started guide built right in.
 Built with [Svelte 5](https://svelte.dev), [Vite](https://vite.dev), and [remoteStorage](https://remotestorage.io). No backend, no database, no tracking. The setlist generator runs in a web worker so the UI stays snappy while it crunches numbers.
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Open source

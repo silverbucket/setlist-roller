@@ -47,7 +47,7 @@ function cspPlugin() {
     };
 }
 
-// Staging builds (vite build --mode staging, via npm run build:staging and
+// Staging builds (vite build --mode staging, via pnpm run build:staging and
 // .github/workflows/staging.yml) trade a few bytes for debuggability:
 // sourcemaps, preserved function/class names in stack traces, a build-number
 // version, and a renamed PWA manifest so the installed staging app is
